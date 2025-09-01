@@ -1,0 +1,390 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Nunito", sans-serif;
+    line-height: 1.6;
+    background-color: #ffffff;
+    color: #000000;
+}
+
+/* Utility container */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* ------------------------------
+   2. HEADER
+------------------------------ */
+#site-header {
+    position: fixed;
+    /* keep floating at top */
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 1000;
+    /* translucent glass effect */
+    background: rgba(255, 255, 255, 0.85);
+    border-bottom: 1px solid rgba(200, 200, 200, 0.5);
+    backdrop-filter: blur(8px);
+    transition: background 0.4s ease, backdrop-filter 0.4s ease;
+}
+
+#site-header.scrolled {
+    background: rgba(255, 255, 255, 0.15);
+    /* more translucent after scroll */
+    backdrop-filter: blur(10px);
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    gap: 30px;
+}
+
+
+#logo {
+    margin-right: auto;
+    font-family: 'Abril Fatface', serif;
+    font-weight: 400;
+    letter-spacing: 1px;
+}
+
+
+#logo>a {
+    text-decoration: none;
+    color: #000000;
+}
+
+
+#main-nav {
+    display: flex;
+    flex: 1;
+    justify-content: center;
+    gap: 30px;
+}
+
+
+#main-nav .nav-list {
+    list-style: none;
+    display: flex;
+    gap: 30px;
+    align-items: center;
+}
+
+.nav-link {
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #333;
+    transition: color 0.3s ease;
+}
+
+.nav-link:hover {
+    color: #324ABD;
+    /* Darker blue accent */
+}
+
+.nav-right {
+    display: flex;
+    padding: 0 10px;
+    justify-content: space-between;
+}
+
+/*  Cart icon design (may use at a later date) */
+
+/* .cartIcon>img {
+    width: 2rem;
+    height: auto;
+
+
+} */
+
+.loginIcon>img {
+    width: 2rem;
+    height: auto;
+}
+
+/* ------------------------------
+   DROPDOWN MENU STYLES
+------------------------------ */
+.login-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.login-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 120%;
+    /* below the icon */
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    min-width: 180px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    list-style: none;
+    padding: 10px 0;
+    z-index: 1000;
+}
+
+.login-menu li {
+    width: 100%;
+}
+
+.login-menu a {
+    display: block;
+    padding: 10px 15px;
+    color: #333;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.login-menu a:hover {
+    background: #f2f2f8;
+    color: #324ABD;
+}
+
+/* Show menu on hover */
+.login-dropdown:hover .login-menu,
+.login-dropdown:focus-within .login-menu {
+    display: block;
+}
+
+/* ------------------------------
+   3. HERO SECTION
+------------------------------ */
+#hero {
+    position: relative;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* Slides */
+
+.slide {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    animation: slideShow 16s infinite;
+
+}
+
+/* Individual images with staggered delays */
+.slide:nth-child(1) {
+    background-image: url(../images/test\ image\ 3.jpg);
+    animation-delay: 0s;
+}
+
+.slide:nth-child(2) {
+    background-image: url(../images/test\ image\ 5.jpg);
+    animation-delay: 4s;
+}
+
+.slide:nth-child(3) {
+    background-image: url(../images/test\ image\ 6.jpg );
+    animation-delay: 8s;
+}
+
+.slide:nth-child(4) {
+    background-image: url(../images/test\ image\ 7.jpg);
+    animation-delay: 12s;
+}
+
+/* Animation: fade in and out */
+@keyframes slideShow {
+    0% {
+        opacity: 0;
+    }
+
+    5% {
+        opacity: 1;
+    }
+
+    25% {
+        opacity: 1;
+    }
+
+    30% {
+        opacity: 0;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+.hero-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1;
+
+}
+
+.hero-content {
+    position: absolute;
+    z-index: 2;
+    color: white;
+    text-align: center;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.hero-title {
+    font-family: Helvetica, sans-serif;
+    font-weight: 300;
+    font-size: 4.5rem;
+    letter-spacing: 2px;
+    margin-bottom: 15px;
+}
+
+.hero-subtitle {
+    font-size: 1.8rem;
+    margin-bottom: 25px;
+}
+
+.btn-primary {
+    display: inline-block;
+    background: #31313d;
+    /* Darker purple */
+    color: #fff;
+    padding: 12px 20px;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: background 0.3s ease;
+    width: 14rem;
+    height: 3rem;
+}
+
+.btn-primary:hover {
+    background: #20202f;
+}
+
+/* ------------------------------
+   4. FEATURED SECTION
+------------------------------ */
+#featured {
+    padding: 80px 20px;
+    background-color: #F2F2F8;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 2rem;
+    margin-bottom: 50px;
+    color: #111111;
+}
+
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 30px;
+}
+
+.product-card {
+    background: #fff;
+    border: 1px solid #DDD;
+    border-radius: 6px;
+    padding: 20px;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.product-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.product-image {
+    width: 100%;
+    border-radius: 6px;
+    margin-bottom: 15px;
+}
+
+.product-title {
+    font-size: 1.1rem;
+    margin-bottom: 5px;
+    color: #111111;
+}
+
+.product-price {
+    color: #000000;
+    /* Brand accent */
+    font-weight: bold;
+}
+
+/* ------------------------------
+   5. ABOUT PREVIEW SECTION (Home Page)
+------------------------------ */
+#about-preview {
+    padding: 20px 15px;
+    background-color: #ffffff;
+    text-align: center;
+    color: #000000;
+}
+
+#about-preview .section-title {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    color: #000000;
+}
+
+#about-preview .about-text {
+    max-width: 1000px;
+    margin: 0 auto 15px;
+    font-size: 0.9rem;
+    color: #000000;
+    line-height: 1.4;
+
+}
+
+#about-preview .btn-secondary {
+    display: inline-block;
+    border: 2px solid #5A3CC4;
+    color: #5A3CC4;
+    padding: 10px 40px;
+    /* smaller button */
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.3s ease;
+}
+
+#about-preview .btn-secondary:hover {
+    background: #5A3CC4;
+    color: #fff;
+}
+
+#site-footer {
+    background-color: #111118;
+    /* dark footer */
+    color: #CCCCCC;
+    text-align: center;
+    padding: 30px 0;
+    z-index: 3;
+    /* ensure above other content if needed */
+}

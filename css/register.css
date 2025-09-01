@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background: linear-gradient(135deg, #324ABD, #5A3CC4);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Container */
+.register-container {
+  width: 100%;
+  max-width: 450px;
+  padding: 20px;
+}
+
+/* Card */
+.register-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 40px 30px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+/* Title + subtitle */
+.register-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #111;
+}
+
+.register-subtitle {
+  font-size: 0.95rem;
+  color: #555;
+  margin-bottom: 25px;
+}
+
+/* Form */
+.register-form {
+  text-align: left;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="password"] {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.3s ease;
+}
+
+.form-group input:focus {
+  border-color: #5A3CC4;
+}
+
+/* Terms */
+.form-group.terms {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.form-group.terms input {
+  margin-right: 8px;
+}
+
+.form-group.terms a {
+  color: #324ABD;
+  text-decoration: none;
+}
+
+.form-group.terms a:hover {
+  text-decoration: underline;
+}
+
+/* Button */
+.btn-register {
+  width: 100%;
+  background: #324ABD;
+  color: #fff;
+  border: none;
+  padding: 14px;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.btn-register:hover {
+  background: #202C82;
+}
+
+/* Login link */
+.login-link {
+  margin-top: 20px;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.login-link a {
+  color: #5A3CC4;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-link a:hover {
+  text-decoration: underline;
+}

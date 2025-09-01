@@ -1,0 +1,281 @@
+/* ------------------------------
+   SHOP PAGE STYLES
+------------------------------ */
+
+/* Page Wrapper */
+#shop-page {
+    background-color: #fffefe;
+    color: #000;
+    font-family: 'Arial', sans-serif;
+}
+
+/* Hero Section */
+#shop-page #hero-shop {
+    position: relative;
+    height: 50vh;
+    width: 100%;
+    background: url('/BeyondSilhouette/images/test\ image\ 5.jpg') center/cover no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #fff;
+}
+
+#shop-page #hero-shop .hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+#shop-page #hero-shop .hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+#shop-page #hero-shop .hero-title {
+    font-size: clamp(2rem, 5vw, 3rem);
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+#shop-page #hero-shop .hero-subtitle {
+    font-size: 1.25rem;
+}
+
+/* ------------------------------
+   NAV CONSISTENCY
+------------------------------ */
+#main-nav .nav-link--current {
+    color: #324ABD;
+    font-weight: 700;
+    pointer-events: none;
+    cursor: default;
+    text-decoration: none;
+    opacity: 0.8;
+}
+
+/* ------------------------------
+   CART BADGE
+------------------------------ */
+.nav-icons {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.cartIcon {
+    position: relative;
+    display: inline-block;
+}
+
+.cart-img {
+    width: 28px;
+    height: 28px;
+    vertical-align: middle;
+}
+
+.cart-count {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    background: #2917ca;
+    color: white;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 50%;
+    font-weight: bold;
+}
+
+
+/* ------------------------------
+   PRODUCTS GRID
+------------------------------ */
+#shop-page .products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 40px;
+    padding: 60px 20px;
+}
+
+/* Product Card */
+#shop-page .product-card {
+    position: relative;
+    overflow: hidden;
+    background: #fff;
+    border-radius: 20px;
+    padding: 15px;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+#shop-page .product-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 25px rgba(0, 0, 0, 0.12);
+}
+
+#shop-page .product-card img {
+    width: 100%;
+    border-radius: 15px;
+    transition: transform 0.3s ease;
+}
+
+#shop-page .product-card:hover img {
+    transform: scale(1.05);
+}
+
+#shop-page .product-card h3 {
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+    color: #324ABD;
+}
+
+#shop-page .product-card .price {
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+/* ------------------------------
+   SIZE DROPDOWN
+------------------------------ */
+#shop-page .product-card .size-label {
+    font-size: 0.9rem;
+    margin-right: 8px;
+    font-weight: 500;
+    color: #324ABD;
+}
+
+#shop-page .product-card .product-size-select {
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: 1px solid #324ABD;
+    font-size: 0.95rem;
+    cursor: pointer;
+    margin-bottom: 10px;
+    background-color: #fff;
+    color: #333;
+    transition: all 0.3s ease;
+}
+
+#shop-page .product-card .product-size-select:hover {
+    border-color: #5A3CC4;
+}
+
+/* Little feedback when size isn't selected */
+.product-size-select.shake {
+    animation: shake 0.35s linear;
+}
+
+@keyframes shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    25% {
+        transform: translateX(-4px);
+    }
+
+    75% {
+        transform: translateX(4px);
+    }
+}
+
+/* ------------------------------
+   STOCK INFO
+------------------------------ */
+#shop-page .product-card .stock {
+    font-size: 0.85rem;
+    margin-bottom: 15px;
+}
+
+/* Stock levels */
+.stock-low {
+    color: #d9534f;
+    /* red */
+}
+
+.stock-medium {
+    color: #f0ad4e;
+    /* orange */
+}
+
+.stock-high {
+    color: #5cb85c;
+    /* green */
+}
+
+/* ------------------------------
+   QUICK VIEW OVERLAY
+------------------------------ */
+#shop-page .product-card .quick-view {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(5px);
+    color: #324ABD;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+    border-radius: 15px;
+}
+
+#shop-page .product-card:hover .quick-view {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+#shop-page .product-card .quick-view p {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 15px;
+}
+
+/* ------------------------------
+   BUTTONS
+------------------------------ */
+.btn {
+    background-color: #324ABD;
+    color: #fff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.btn:hover {
+    background-color: #5A3CC4;
+}
+
+/* Disabled button state */
+.btn:disabled,
+.btn[disabled] {
+    background: #c9cbe8;
+    color: #fff;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+/* ------------------------------
+   FOOTER
+------------------------------ */
+#shop-page #site-footer {
+    text-align: center;
+    padding: 30px 20px;
+    background: #ffffff;
+    color: #000000;
+}

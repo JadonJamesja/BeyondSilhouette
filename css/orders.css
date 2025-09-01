@@ -1,0 +1,253 @@
+/* Body */
+#orders-page {
+    font-family: 'Arial', sans-serif;
+    background-color: #fffefe;
+    color: #000;
+    margin: 0;
+    padding-top: 80px;
+    /* space for fixed header */
+}
+
+/* Header/Nav (same as shop page) */
+#site-header {
+    position: fixed;
+    width: 100%;
+    top: 0;
+    z-index: 1000;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    padding: 15px 20px;
+}
+
+#logo a {
+    font-family: 'Abril Fatface', serif;
+    font-size: 1.8rem;
+    color: #111;
+    text-decoration: none;
+}
+
+.nav-list {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-link {
+    text-decoration: none;
+    color: #111;
+    font-weight: 600;
+    transition: color 0.3s ease;
+}
+
+.nav-link:hover {
+    color: #5A3CC4;
+}
+
+.nav-icons {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.cartIcon {
+    position: relative;
+    display: inline-block;
+}
+
+.cart-img {
+    width: 28px;
+    height: 28px;
+}
+
+.cart-count {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    background: #2917ca;
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 50%;
+    font-weight: bold;
+}
+
+/* Login Dropdown */
+.login-dropdown {
+    position: relative;
+}
+
+.login-menu {
+    display: none;
+    position: absolute;
+    top: 40px;
+    right: 0;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    list-style: none;
+    padding: 10px 0;
+    min-width: 180px;
+}
+
+.login-menu li a {
+    text-decoration: none;
+    display: block;
+    padding: 10px 20px;
+    color: #111;
+    transition: background 0.3s ease;
+}
+
+.login-menu li a:hover {
+    background: #f1f0ff;
+    color: #5A3CC4;
+}
+
+.login-dropdown:hover .login-menu {
+    display: block;
+}
+
+/* Orders Container */
+.orders-container {
+    max-width: 900px;
+    margin: 0 auto 50px auto;
+    padding: 20px;
+}
+
+.orders-container h1 {
+    text-align: center;
+    font-size: 2.5rem;
+    margin-bottom: 40px;
+    color: #324ABD;
+}
+
+/* Order Cards */
+.order-card {
+    background: #fff;
+    border-radius: 20px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.order-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 25px rgba(0, 0, 0, 0.12);
+}
+
+.order-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.order-header h2 {
+    font-size: 1.4rem;
+    color: #324ABD;
+}
+
+.order-body p {
+    margin: 6px 0;
+}
+
+.order-body ul {
+    margin-top: 8px;
+    padding-left: 20px;
+}
+
+.status {
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+}
+
+.status.delivered {
+    background: #e0e6ff;
+    color: #324ABD;
+}
+
+.status.shipped {
+    background: #d9f0ff;
+    color: #0a68c5;
+}
+
+.status.processing {
+    background: #fff0d9;
+    color: #c87a00;
+}
+
+/* Buttons */
+.btn {
+    background-color: #324ABD;
+    color: #fff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    margin-top: 10px;
+}
+
+.btn:hover {
+    background-color: #5A3CC4;
+}
+
+/* No Orders Message */
+.no-orders {
+    text-align: center;
+    margin-top: 50px;
+    font-size: 1rem;
+}
+
+.no-orders a {
+    color: #5A3CC4;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.no-orders a:hover {
+    text-decoration: underline;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    overflow: auto;
+}
+
+.modal-content {
+    background: #fff;
+    margin: 10% auto;
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 600px;
+    position: relative;
+}
+
+.close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #111;
+}
+
+/* Footer */
+#site-footer {
+    text-align: center;
+    padding: 30px 20px;
+    background: #ffffff;
+    color: #000000;
+}

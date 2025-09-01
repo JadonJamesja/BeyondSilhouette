@@ -1,0 +1,157 @@
+/* ------------------------------
+   ABOUT PAGE SPECIFIC STYLES
+------------------------------ */
+
+/* Scope everything to the about page body or a wrapper */
+#about-page {
+    background-color: #fffefe;
+    color: #000000;
+}
+
+/* Hero section for About page */
+#about-page #hero-about {
+    position: relative;
+    height: 60vh;
+    width: 100%;
+    overflow: hidden;
+    background: url('../images/test image 8.jpg') center/cover no-repeat; 
+}
+
+#about-page #hero-about .hero-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1;
+}
+
+#about-page #hero-about .hero-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #fff;
+    z-index: 2;
+}
+
+#about-page #hero-about .hero-title {
+    font-size: clamp(2rem, 5vw, 3.5rem);
+}
+
+#about-page #hero-about .hero-subtitle {
+    font-size: 1.5rem;
+    margin-top: 10px;
+}
+
+/* ------------------------------
+   STORY SECTION
+------------------------------ */
+#about-page #our-story {
+    padding: 80px 20px;
+    background: #fafafa; /* light contrast from hero */
+}
+
+#about-page #our-story .story-text {
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+#about-page #our-story p {
+    font-size: 1.15rem;
+    line-height: 1.8;
+    margin-bottom: 25px;
+    color: #333;
+    opacity: 0;
+    transform: translateY(15px);
+    animation: fadeInUp 0.8s ease forwards;
+}
+
+#about-page #our-story p:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+@keyframes fadeInUp {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ------------------------------
+   VALUES / MISSION GRID
+------------------------------ */
+#about-page .values-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 50px;
+    margin-top: 40px;
+}
+
+#about-page .value-card {
+    background: #F2F2F8;
+    border-radius: 30px;
+    padding: 50px;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+#about-page .value-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+#about-page .value-card h3 {
+    margin-bottom: 10px;
+    font-size: 1.5rem;
+    color: #324ABD;
+}
+
+#about-page .value-card p {
+    color: #555;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+/* ------------------------------
+   CONTACT SECTION
+------------------------------ */
+#about-page #contact {
+    padding: 60px 20px;
+    background: #ffffff;
+    text-align: center;
+}
+
+#about-page #contact .section-title {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: #111;
+}
+
+#about-page #contact .contact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 30px;
+    margin-top: 30px;
+}
+
+#about-page #contact .contact-item h3 {
+    margin-bottom: 10px;
+    color: #324ABD;
+    font-size: 1.2rem;
+}
+
+#about-page #contact .contact-item a {
+    color: #000;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+#about-page #contact .contact-item a:hover {
+    color: #5A3CC4;
+    text-decoration: underline;
+}

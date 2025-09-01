@@ -1,0 +1,172 @@
+/* General Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #fafafa;
+    color: #333;
+    line-height: 1.6;
+}
+
+/* Header */
+#site-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+}
+
+.logo a {
+    font-size: 1.5rem;
+    text-decoration: none;
+    font-weight: bold;
+    color: #111;
+}
+
+.nav-right {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+/* Cart */
+.cartIcon {
+    position: relative;
+    display: inline-block;
+    margin-right: 1rem;
+}
+
+.cart-img {
+    width: 28px;
+    height: 28px;
+}
+
+.cart-count {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    background: #ff4081;
+    color: white;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 50%;
+    font-weight: bold;
+}
+
+/* Login Dropdown */
+.login-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.loginIcon img {
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+}
+
+.login-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    min-width: 160px;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+    list-style: none;
+}
+
+.login-menu li a {
+    display: block;
+    padding: 10px 15px;
+    text-decoration: none;
+    color: #333;
+    font-size: 0.9rem;
+}
+
+.login-menu li a:hover {
+    background: #ff4081;
+    color: white;
+}
+
+.login-dropdown:hover .login-menu {
+    display: block;
+}
+
+/* Account Page */
+.account-container {
+    max-width: 900px;
+    margin: 2rem auto;
+    padding: 1rem;
+}
+
+.account-container h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.account-details,
+.account-links {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.account-details h2,
+.account-links h2 {
+    margin-bottom: 1rem;
+    color: #111;
+}
+
+.account-links ul {
+    list-style: none;
+}
+
+.account-links ul li {
+    margin-bottom: 0.8rem;
+}
+
+.account-links ul li a {
+    text-decoration: none;
+    color: #ff4081;
+    font-weight: bold;
+}
+
+.account-links ul li a:hover {
+    text-decoration: underline;
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    background: #ff4081;
+    color: #fff;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+    transition: background 0.3s;
+}
+
+.btn:hover {
+    background: #e0346c;
+}
+
+/* Footer */
+#site-footer {
+    text-align: center;
+    padding: 1rem;
+    background: #fff;
+    border-top: 1px solid #ddd;
+    margin-top: 3rem;
+}
