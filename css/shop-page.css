@@ -14,7 +14,7 @@
     position: relative;
     height: 50vh;
     width: 100%;
-    background: url('/BeyondSilhouette/images/test\ image\ 5.jpg') center/cover no-repeat;
+    background: url(../images/test\ image\ 5.jpg) center/cover no-repeat;
     display: flex;
     align-items: center;
     justify-content: center;
