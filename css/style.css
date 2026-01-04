@@ -47,8 +47,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px 20px;
-    gap: 30px;
+    padding: 15px 40px;
+    gap: 0;
 }
 
 
@@ -96,22 +96,18 @@ body {
 
 .nav-right {
     display: flex;
-    padding: 0 10px;
-    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 0;
+    margin-left: 10px;
 }
 
-/*  Cart icon design (may use at a later date) */
 
-/* .cartIcon>img {
-    width: 2rem;
-    height: auto;
-
-
-} */
 
 .loginIcon>img {
-    width: 2rem;
+    width: 1.7rem;
     height: auto;
+    vertical-align: middle;
 }
 
 /* ------------------------------
