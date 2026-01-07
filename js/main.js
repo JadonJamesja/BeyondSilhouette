@@ -1,677 +1,1010 @@
 /**
- * site.js — Unified client-side app for Beyond Silhouette
- * Single-file drop-in replacement for main.js / shop.js / cart.js.
+ * Beyond Silhouette — main.js (FULL SITE)
+ * Single JS file for ALL pages in the BeyondSilhouette-main.zip
  *
- * Local/demo behavior:
- *  - Cart persisted in localStorage under 'bs_cart' (migrates old format automatically)
- *  - Session persisted in localStorage under 'bs_session' (demo user creation)
- *  - Checkout simulated locally (delay + success) and clears cart
+ * Supports:
+ * - Products (from shop-page.html .product-card data attributes)
+ * - Size selection enforcement
+ * - Cart: persistent, renders on cart.html into .cart-container
+ * - Auth: local demo (login/register/forgot) using your exact form structure
+ * - Checkout: requires login, injects checkout UI into checkout.html
+ * - Orders: saves receipts locally and renders dynamic orders on orders.html
+ * - Header/footer placeholders (#site-header/#site-footer) get populated if empty
+ * - Logout link (logout.html) intercepted since file doesn't exist
  *
- * Main selectors observed in your HTML:
- *  - product card container: .product-card (data-id, data-name, data-price, data-stock)
- *  - size select: .product-size-select
- *  - add-to-cart buttons: .add-to-cart
- *  - stock: .stock-count
- *  - cart badge: .cart-count
- *  - cart page container: .cart-container
- *
- * Notes:
- *  - This script is defensive and skips missing elements
- *  - It supports cross-tab sync using window.storage events
+ * IMPORTANT:
+ * - This is a LOCAL/DEMO client-side auth/cart/orders system.
+ * - Server-side placeholders are included and commented for Node + DB later.
  */
 
-/* =================== Utilities =================== */
-const S_KEYS = {
-  CART: 'bs_cart',
-  SESSION: 'bs_session'
-};
+(() => {
+  'use strict';
 
-const now = () => Date.now();
-const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  // -----------------------------
+  // GLOBAL NAMESPACE
+  // -----------------------------
+  window.BeyondSilhouette = window.BeyondSilhouette || {};
+  const BS = window.BeyondSilhouette;
 
-const formatJMD = (n) => {
-  const num = Number(n) || 0;
-  return 'J$' + num.toLocaleString('en-JM', { maximumFractionDigits: 0 });
-};
-
-const safeJSONParse = (s) => {
-  try { return JSON.parse(s); } catch (e) { return null; }
-};
-
-const isElement = (x) => x instanceof Element;
-
-/* =================== Cart Module (single source of truth) =================== */
-/*
-  Storage shape (new):
-  {
-    version: 1,
-    users: {
-      "<userId_or_guest>": {
-         items: { "<prodId|size>": { id, productId, size, name, price, qty } },
-         updatedAt: 123456
-      },
-      ...
-    },
-    activeUserId: null | "<userId>"
-  }
-
-  Backwards compatibility: If localStorage[S_KEYS.CART] is an ARRAY (old), migrate into users.guest
-*/
-const Cart = (function () {
-  const STORAGE_KEY = S_KEYS.CART;
-  let state = { version: 1, users: {}, activeUserId: null };
-
-  function _load() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      state = { version: 1, users: {}, activeUserId: null };
-      _save();
-      return;
-    }
-    const parsed = safeJSONParse(raw);
-    if (!parsed) {
-      // fallback: wipe and reinit
-      state = { version: 1, users: {}, activeUserId: null };
-      _save();
-      return;
-    }
-    // migration: if parsed is an array (old shape), convert
-    if (Array.isArray(parsed)) {
-      const guestItems = {};
-      parsed.forEach((it) => {
-        // create a unique key per product+size to avoid collisions
-        const key = `${String(it.id || it.productId)}::${String(it.size || '')}`;
-        guestItems[key] = {
-          id: key,
-          productId: it.id || it.productId,
-          size: it.size || '',
-          name: it.name || it.title || 'Product',
-          price: Number(it.price) || 0,
-          qty: Number(it.qty) || 1
-        };
-      });
-      state = { version: 1, users: { guest: { items: guestItems, updatedAt: now() } }, activeUserId: null };
-      _save();
-      return;
-    }
-    // otherwise assume new shape
-    state = parsed;
-    // ensure minimal shape
-    if (!state.users) state.users = {};
-    if (!('activeUserId' in state)) state.activeUserId = null;
-  }
-
-  function _save() {
-    state.updatedAt = now();
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      // let other listeners know
-      window.dispatchEvent(new CustomEvent('bs:cart:updated', { detail: { state } }));
-    } catch (e) {
-      console.error('Cart save failed', e);
-    }
-  }
-
-  _load();
-
-  function _ensureUser(uid) {
-    const k = uid == null ? 'guest' : String(uid);
-    if (!state.users[k]) state.users[k] = { items: {}, updatedAt: now() };
-    return state.users[k];
-  }
-
-  function getActiveUserId() {
-    return state.activeUserId;
-  }
-
-  function setActiveUserId(uid) {
-    state.activeUserId = uid == null ? null : String(uid);
-    _save();
-  }
-
-  function listItems(userId = state.activeUserId) {
-    const key = userId == null ? 'guest' : String(userId);
-    if (!state.users[key]) return [];
-    return Object.values(state.users[key].items || {});
-  }
-
-  function itemCount(userId = state.activeUserId) {
-    return listItems(userId).reduce((s, it) => s + (Number(it.qty) || 0), 0);
-  }
-
-  function subtotal(userId = state.activeUserId) {
-    return listItems(userId).reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
-  }
-
-  function _itemKey(productId, size) {
-    return `${String(productId)}::${String(size || '')}`;
-  }
-
-  function add(productId, { name = '', price = 0, size = '', qty = 1 } = {}, userId = state.activeUserId) {
-    qty = Math.max(1, Math.floor(Number(qty) || 1));
-    const key = userId == null ? 'guest' : String(userId);
-    _ensureUser(key);
-    const itemKey = _itemKey(productId, size);
-    const existing = state.users[key].items[itemKey];
-    if (existing) {
-      existing.qty = existing.qty + qty;
-    } else {
-      state.users[key].items[itemKey] = {
-        id: itemKey,
-        productId: String(productId),
-        size: String(size || ''),
-        name: name || '',
-        price: Number(price) || 0,
-        qty
-      };
-    }
-    state.users[key].updatedAt = now();
-    _save();
-  }
-
-  function updateQuantity(productId, size, qty, userId = state.activeUserId) {
-    qty = Math.floor(Number(qty) || 0);
-    const key = userId == null ? 'guest' : String(userId);
-    const itemKey = _itemKey(productId, size);
-    if (!state.users[key] || !state.users[key].items[itemKey]) return;
-    if (qty <= 0) {
-      delete state.users[key].items[itemKey];
-    } else {
-      state.users[key].items[itemKey].qty = qty;
-    }
-    state.users[key].updatedAt = now();
-    _save();
-  }
-
-  function remove(productId, size, userId = state.activeUserId) {
-    const key = userId == null ? 'guest' : String(userId);
-    const itemKey = _itemKey(productId, size);
-    if (!state.users[key]) return;
-    delete state.users[key].items[itemKey];
-    state.users[key].updatedAt = now();
-    _save();
-  }
-
-  function clear(userId = state.activeUserId) {
-    const key = userId == null ? 'guest' : String(userId);
-    state.users[key] = { items: {}, updatedAt: now() };
-    _save();
-  }
-
-  function mergeGuestIntoUser(userId) {
-    const guest = state.users['guest'];
-    if (!guest || !guest.items || Object.keys(guest.items).length === 0) return;
-    const targetKey = String(userId);
-    _ensureUser(targetKey);
-    const target = state.users[targetKey];
-    Object.values(guest.items).forEach((it) => {
-      const k = _itemKey(it.productId, it.size);
-      if (target.items[k]) {
-        target.items[k].qty = Number(target.items[k].qty || 0) + Number(it.qty || 0);
-      } else {
-        target.items[k] = { ...it };
-      }
-    });
-    // clear guest
-    state.users['guest'] = { items: {}, updatedAt: now() };
-    _save();
-  }
-
-  // respond to storage events (cross-tab)
-  window.addEventListener('storage', (ev) => {
-    if (ev.key === STORAGE_KEY) {
-      _load();
-      window.dispatchEvent(new CustomEvent('bs:cart:remote', { detail: { state } }));
-    }
-  });
-
-  return {
-    _rawState: () => JSON.parse(JSON.stringify(state)),
-    getActiveUserId,
-    setActiveUserId,
-    listItems,
-    itemCount,
-    subtotal,
-    add,
-    updateQuantity,
-    remove,
-    clear,
-    mergeGuestIntoUser,
+  // -----------------------------
+  // KEYS / STORAGE
+  // -----------------------------
+  const KEYS = {
+    state: 'bs_state_v1',          // { cartByUser, productCache, ordersByUser }
+    session: 'bs_session_v1',      // { email, token, createdAt, provider }
+    users: 'bs_users_v1',          // { [email]: { email, name, passwordHash, createdAt, role } }
+    returnTo: 'bs_return_to_v1'    // { href }
   };
-})();
 
-/* =================== Session (local demo) =================== */
-/*
-  Session shape: { user: { id, name, email } }
-  Stored under S_KEYS.SESSION
-*/
-const Session = (function () {
-  const KEY = S_KEYS.SESSION;
-  let session = null;
+  const USER_GUEST = '__guest__';
 
-  function _load() {
-    const raw = localStorage.getItem(KEY);
-    session = safeJSONParse(raw);
-    if (!session || !session.user) session = null;
+  // -----------------------------
+  // UTILS
+  // -----------------------------
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
+  const nowISO = () => new Date().toISOString();
+  const uid = (p = '') => p + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
+  const page = () => (location.pathname.split('/').pop() || '').toLowerCase();
+
+  // -----------------------------
+  // TOAST (VISIBLE + FALLBACK)
+  // -----------------------------
+  function ensureToastStyles() {
+    if (document.getElementById('bs-toast-style')) return;
+    const style = document.createElement('style');
+    style.id = 'bs-toast-style';
+    style.textContent = `
+      .bs-toast{
+        position:fixed;
+        left:50%;
+        bottom:24px;
+        transform:translateX(-50%);
+        background:rgba(0,0,0,.88);
+        color:#fff;
+        padding:10px 14px;
+        border-radius:12px;
+        font-size:14px;
+        z-index:999999;
+        opacity:0;
+        transition:opacity .2s ease, transform .2s ease;
+        pointer-events:none;
+        max-width:min(92vw,520px);
+        text-align:center;
+      }
+      .bs-toast.show{
+        opacity:1;
+        transform:translateX(-50%) translateY(-6px);
+      }
+    `;
+    document.head.appendChild(style);
   }
 
-  function _save() {
-    if (session) localStorage.setItem(KEY, JSON.stringify(session));
-    else localStorage.removeItem(KEY);
-    window.dispatchEvent(new CustomEvent('bs:session:changed', { detail: { session } }));
-  }
+  function toast(msg, { important = false } = {}) {
+    ensureToastStyles();
 
-  _load();
-
-  function getUser() { return session ? session.user : null; }
-
-  function isLoggedIn() { return !!(session && session.user && session.user.id); }
-
-  async function login({ email }) {
-    // demo: create a user
-    const user = { id: 'u_' + uid(), name: (email && email.split('@')[0]) || 'User', email: email || '' };
-    session = { user };
-    _save();
-    // merge guest cart into user
-    Cart.mergeGuestIntoUser(user.id);
-    Cart.setActiveUserId(user.id);
-    return user;
-  }
-
-  async function register({ name, email }) {
-    // demo register behaves same as login for local flow
-    const user = { id: 'u_' + uid(), name: name || (email && email.split('@')[0]) || 'User', email: email || '' };
-    session = { user };
-    _save();
-    Cart.mergeGuestIntoUser(user.id);
-    Cart.setActiveUserId(user.id);
-    return user;
-  }
-
-  function logout() {
-    session = null;
-    _save();
-    Cart.setActiveUserId(null);
-    // session change event already dispatched in _save
-  }
-
-  // Cross-tab: respond to session storage changes
-  window.addEventListener('storage', (ev) => {
-    if (ev.key === KEY) {
-      _load();
-      window.dispatchEvent(new CustomEvent('bs:session:remote', { detail: { session } }));
+    // Important prompts also use alert so you NEVER miss them
+    if (important) {
+      try { alert(msg); } catch (_) {}
     }
-  });
 
-  return { getUser, isLoggedIn, login, register, logout };
-})();
-
-/* =================== UI Helper (toasts + dom utilities) =================== */
-
-const UI = (function () {
-  // toast container
-  let toastRoot = document.getElementById('bs-toast-root');
-  if (!toastRoot) {
-    toastRoot = document.createElement('div');
-    toastRoot.id = 'bs-toast-root';
-    Object.assign(toastRoot.style, {
-      position: 'fixed', right: '12px', bottom: '12px', zIndex: 99999, maxWidth: '360px'
-    });
-    document.body.appendChild(toastRoot);
-  }
-
-  function toast(msg, { type = 'info', duration = 3500 } = {}) {
     const el = document.createElement('div');
-    el.className = `bs-toast bs-toast-${type}`;
-    el.style.padding = '8px 12px';
-    el.style.marginTop = '8px';
-    el.style.borderRadius = '8px';
-    el.style.boxShadow = '0 6px 18px rgba(0,0,0,0.08)';
-    el.style.background = type === 'error' ? '#ffecec' : (type === 'success' ? '#ecffe8' : '#fff');
-    el.style.border = '1px solid rgba(0,0,0,0.06)';
-    el.innerText = msg;
-    toastRoot.appendChild(el);
-    setTimeout(() => { try { el.remove(); } catch (e) { } }, duration);
-    return el;
+    el.className = 'bs-toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => {
+      el.classList.remove('show');
+      setTimeout(() => el.remove(), 220);
+    }, 2400);
   }
 
-  function find(selector) {
-    try { return document.querySelector(selector); } catch (e) { return null; }
+  // -----------------------------
+  // STATE
+  // -----------------------------
+  function readState() {
+    const raw = localStorage.getItem(KEYS.state);
+    const st = raw ? (safeParse(raw) || {}) : {};
+    st.cartByUser = st.cartByUser || {};
+    st.productCache = st.productCache || {};   // { [id]: { id, name, price, image } }
+    st.ordersByUser = st.ordersByUser || {};   // { [email]: [order...] }
+    return st;
   }
 
-  function findAll(selector) {
-    try { return Array.from(document.querySelectorAll(selector)); } catch (e) { return []; }
+  function writeState(st) {
+    localStorage.setItem(KEYS.state, JSON.stringify(st));
   }
 
-  return { toast, find, findAll };
-})();
-
-/* =================== Product Helpers (reads static DOM product-cards) =================== */
-const ProductStore = (function () {
-  // Read product cards present in DOM (shop page static markup)
-  function _readAllFromDOM() {
-    const elems = UI.findAll('.product-card');
-    return elems.map((el) => {
-      const id = el.dataset.id || el.getAttribute('data-id') || uid();
-      const name = el.dataset.name || el.getAttribute('data-name') || (el.querySelector('h3') ? el.querySelector('h3').innerText : 'Product');
-      const priceRaw = el.dataset.price || el.getAttribute('data-price') || (el.querySelector('.price') ? el.querySelector('.price').innerText.replace(/[^\d]/g, '') : '0');
-      const price = Number(priceRaw) || 0;
-      const stockRaw = el.dataset.stock || el.getAttribute('data-stock') || (el.querySelector('.stock-count') ? el.querySelector('.stock-count').innerText : null);
-      const stock = stockRaw == null ? null : Number(String(stockRaw).replace(/[^\d]/g, '')) || 0;
-      return {
-        id: String(id),
-        name: String(name),
-        price,
-        stock,
-        el
-      };
-    });
+  function readSession() {
+    const raw = localStorage.getItem(KEYS.session);
+    return raw ? (safeParse(raw) || null) : null;
   }
 
-  const products = _readAllFromDOM();
-
-  function find(productId) {
-    return products.find(p => String(p.id) === String(productId)) || null;
+  function writeSession(sess) {
+    localStorage.setItem(KEYS.session, JSON.stringify(sess));
   }
 
-  return { all: () => products.slice(), find };
-})();
-
-/* =================== Core App Behavior =================== */
-
-const App = (function () {
-  function updateCartBadge() {
-    const badges = UI.findAll('.cart-count');
-    const count = Cart.itemCount() || 0;
-    badges.forEach(b => { b.textContent = String(count); });
+  function clearSession() {
+    localStorage.removeItem(KEYS.session);
   }
 
-  function updateProductStockUI(product) {
-    if (!product || !product.el) return;
-    const stockSpan = product.el.querySelector('.stock-count');
-    if (stockSpan) {
-      // compute available qty in local cart (guest)
-      const key = Cart.getActiveUserId() || null;
-      // find total qty reserved in cart for this product across active user
-      const items = Cart.listItems();
-      const reserved = items.filter(it => String(it.productId) === String(product.id)).reduce((s, it) => s + Number(it.qty || 0), 0);
-      const displayedStock = (product.stock == null) ? '' : Math.max(0, (product.stock - reserved));
-      stockSpan.textContent = displayedStock;
-      const addBtn = product.el.querySelector('.add-to-cart');
-      if (addBtn) addBtn.disabled = displayedStock <= 0;
-      if (displayedStock <= 0 && addBtn) addBtn.textContent = 'Sold Out';
+  function readUsers() {
+    const raw = localStorage.getItem(KEYS.users);
+    return raw ? (safeParse(raw) || {}) : {};
+  }
+
+  function writeUsers(users) {
+    localStorage.setItem(KEYS.users, JSON.stringify(users || {}));
+  }
+
+  // -----------------------------
+  // DEMO HASH (NOT SECURE)
+  // -----------------------------
+  function demoHash(pwd) {
+    let h = 0;
+    const s = String(pwd || '');
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h) + s.charCodeAt(i);
+      h |= 0;
     }
+    return btoa(`${h}:${s.length}`);
   }
 
-  function refreshAllProductStockUI() {
-    ProductStore.all().forEach(updateProductStockUI);
-  }
+  // -----------------------------
+  // AUTH (LOCAL DEMO)
+  // -----------------------------
+  const Auth = {
+    currentUser() {
+      const sess = readSession();
+      if (!sess || !sess.email) return null;
+      const users = readUsers();
+      return users[sess.email] || null;
+    },
 
-  /* Product page: wire add-to-cart buttons */
-  function initProductInteractions() {
-    // delegated click handler for add-to-cart buttons
-    document.addEventListener('click', (ev) => {
-      const btn = ev.target.closest && ev.target.closest('.add-to-cart');
-      if (!btn) return;
-      ev.preventDefault();
-      const card = btn.closest('.product-card');
-      if (!card) return;
-      const pid = card.dataset.id || card.getAttribute('data-id');
-      const product = ProductStore.find(pid);
-      if (!product) {
-        UI.toast('Product not found', { type: 'error' });
-        return;
+    register({ fullname, email, password, confirmPassword }) {
+      const em = String(email || '').trim().toLowerCase();
+      if (!fullname || !em || !password) throw new Error('Please fill in all required fields.');
+      if (confirmPassword != null && String(password) !== String(confirmPassword)) {
+        throw new Error('Passwords do not match.');
       }
-      // require size if select present
-      const sizeSelect = card.querySelector('.product-size-select');
-      const selectedSize = sizeSelect ? (sizeSelect.value || '') : '';
-      if (sizeSelect && (!selectedSize || selectedSize === '')) {
-        // small UI feedback
-        UI.toast('Please select a size', { type: 'error', duration: 1800 });
-        sizeSelect.classList.add('bs-shake');
-        setTimeout(() => sizeSelect.classList.remove('bs-shake'), 500);
-        return;
+
+      const users = readUsers();
+      if (users[em]) throw new Error('An account already exists for this email.');
+
+      users[em] = {
+        email: em,
+        name: String(fullname),
+        passwordHash: demoHash(password),
+        createdAt: nowISO(),
+        role: 'customer'
+      };
+
+      writeUsers(users);
+      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
+
+      // Merge guest cart into user
+      Cart.mergeGuestIntoUser(em);
+
+      return users[em];
+    },
+
+    login({ email, password }) {
+      const em = String(email || '').trim().toLowerCase();
+      const users = readUsers();
+      const u = users[em];
+      if (!u) throw new Error('No account exists for that email.');
+      if (u.passwordHash !== demoHash(password)) throw new Error('Incorrect password.');
+
+      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
+
+      // Merge guest cart into user
+      Cart.mergeGuestIntoUser(em);
+
+      return u;
+    },
+
+    logout() {
+      clearSession();
+      UI.updateNavAuthState();
+      UI.updateCartBadges();
+      toast('Logged out');
+    }
+  };
+
+  // -----------------------------
+  // PRODUCT CACHE (prevents Unknown)
+  // -----------------------------
+  const ProductCache = {
+    upsert(product) {
+      if (!product || !product.id) return;
+      const st = readState();
+      st.productCache[String(product.id)] = {
+        id: String(product.id),
+        name: product.name || '',
+        price: Number(product.price || 0),
+        image: product.image || ''
+      };
+      writeState(st);
+    },
+
+    fillCartItem(item) {
+      const st = readState();
+      const p = st.productCache[String(item.productId)];
+      if (!p) return item;
+
+      return {
+        ...item,
+        name: (item.name && item.name !== 'Unknown') ? item.name : (p.name || item.name),
+        price: (item.price != null && !Number.isNaN(Number(item.price))) ? Number(item.price) : Number(p.price || 0),
+        image: item.image ? item.image : (p.image || '')
+      };
+    }
+  };
+
+  // -----------------------------
+  // CART (per-user + guest)
+  // Cart item shape:
+  // { productId, name, price, qty, size, image }
+  // -----------------------------
+  const Cart = {
+    userKey() {
+      const sess = readSession();
+      return (sess && sess.email) ? sess.email : USER_GUEST;
+    },
+
+    load() {
+      const st = readState();
+      const key = this.userKey();
+      const raw = st.cartByUser[key];
+      let items = (raw && Array.isArray(raw.items)) ? raw.items : [];
+
+      // Heal items using ProductCache to avoid "Unknown"
+      items = items.map((it) => ProductCache.fillCartItem({
+        productId: String(it.productId ?? it.id ?? ''),
+        name: it.name ?? it.title ?? 'Unknown',
+        price: Number(it.price ?? 0),
+        qty: Number(it.qty ?? it.quantity ?? 1),
+        size: it.size ?? null,
+        image: it.image ?? ''
+      })).filter(it => it.productId);
+
+      // Save normalized form back
+      st.cartByUser[key] = { items, updatedAt: nowISO() };
+      writeState(st);
+
+      return items;
+    },
+
+    save(items) {
+      const st = readState();
+      const key = this.userKey();
+      st.cartByUser[key] = { items: items || [], updatedAt: nowISO() };
+      writeState(st);
+      UI.updateCartBadges();
+    },
+
+    totalQty(items) {
+      return (items || []).reduce((s, it) => s + Number(it.qty || 0), 0);
+    },
+
+    subtotal(items) {
+      return (items || []).reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 0), 0);
+    },
+
+    add({ productId, name, price, image, size, qty = 1 }) {
+      const items = this.load();
+      const id = String(productId);
+      const sz = size || null;
+
+      const idx = items.findIndex(x => x.productId === id && (x.size || null) === (sz || null));
+      if (idx >= 0) items[idx].qty += Number(qty || 1);
+      else items.push({
+        productId: id,
+        name: name || 'Unknown',
+        price: Number(price || 0),
+        qty: Number(qty || 1),
+        size: sz,
+        image: image || ''
+      });
+
+      this.save(items);
+      return items;
+    },
+
+    setQty(productId, size, qty) {
+      const items = this.load();
+      const id = String(productId);
+      const sz = size || null;
+      const q = Number(qty || 0);
+
+      for (const it of items) {
+        if (it.productId === id && (it.size || null) === (sz || null)) {
+          it.qty = q;
+        }
       }
-      // check stock
-      const stockSpan = card.querySelector('.stock-count');
-      const available = (stockSpan ? Number(stockSpan.textContent || 0) : (product.stock == null ? Infinity : product.stock));
-      if (available <= 0) {
-        UI.toast('Item is sold out', { type: 'error' });
-        if (btn) btn.disabled = true;
-        return;
+
+      const cleaned = items.filter(it => Number(it.qty || 0) > 0);
+      this.save(cleaned);
+      return cleaned;
+    },
+
+    remove(productId, size) {
+      const id = String(productId);
+      const sz = size || null;
+      const items = this.load().filter(it => !(it.productId === id && (it.size || null) === (sz || null)));
+      this.save(items);
+      return items;
+    },
+
+    clear() {
+      this.save([]);
+      return [];
+    },
+
+    mergeGuestIntoUser(userEmail) {
+      const st = readState();
+      st.cartByUser = st.cartByUser || {};
+
+      const guest = (st.cartByUser[USER_GUEST] && Array.isArray(st.cartByUser[USER_GUEST].items))
+        ? st.cartByUser[USER_GUEST].items : [];
+
+      const user = (st.cartByUser[userEmail] && Array.isArray(st.cartByUser[userEmail].items))
+        ? st.cartByUser[userEmail].items : [];
+
+      // Merge by productId+size
+      const map = new Map();
+      [...user, ...guest].forEach((it) => {
+        const key = `${String(it.productId)}__${it.size || ''}`;
+        const existing = map.get(key);
+        if (existing) {
+          existing.qty += Number(it.qty || 0);
+        } else {
+          map.set(key, {
+            productId: String(it.productId),
+            name: it.name || 'Unknown',
+            price: Number(it.price || 0),
+            qty: Number(it.qty || 1),
+            size: it.size || null,
+            image: it.image || ''
+          });
+        }
+      });
+
+      st.cartByUser[userEmail] = { items: Array.from(map.values()), updatedAt: nowISO() };
+      delete st.cartByUser[USER_GUEST];
+      writeState(st);
+    }
+  };
+
+  // -----------------------------
+  // ORDERS (local receipts)
+  // order shape:
+  // { id, createdAt, userEmail, items, subtotal, paymentMethod, status }
+  // -----------------------------
+  const Orders = {
+    listFor(email) {
+      const st = readState();
+      const arr = st.ordersByUser[email] || [];
+      return Array.isArray(arr) ? arr : [];
+    },
+
+    addFor(email, order) {
+      const st = readState();
+      st.ordersByUser[email] = st.ordersByUser[email] || [];
+      st.ordersByUser[email].unshift(order);
+      writeState(st);
+    }
+  };
+
+  // -----------------------------
+  // UI HELPERS
+  // -----------------------------
+  const UI = {
+    updateCartBadges() {
+      const items = Cart.load();
+      const total = Cart.totalQty(items);
+      $$('.cart-count').forEach(el => { el.textContent = String(total); });
+    },
+
+    updateNavAuthState() {
+      // Your dropdown varies page-to-page, so we do a simple approach:
+      // - Find ALL links to login/register/orders/account/logout
+      // - Toggle based on user session
+      const user = Auth.currentUser();
+
+      const allLoginLinks = $$('a[href="login.html"]');
+      const allRegisterLinks = $$('a[href="register.html"], a[href="CreateAccount.html"], a[href="create-account.html"]');
+      const allAccountLinks = $$('a[href="account.html"]');
+      const allOrdersLinks = $$('a[href="orders.html"]');
+      const allLogoutLinks = $$('a[href="logout.html"]');
+
+      allLoginLinks.forEach(a => a.style.display = user ? 'none' : '');
+      allRegisterLinks.forEach(a => a.style.display = user ? 'none' : '');
+      allAccountLinks.forEach(a => a.style.display = user ? '' : 'none');
+      allOrdersLinks.forEach(a => a.style.display = user ? '' : 'none');
+      allLogoutLinks.forEach(a => a.style.display = user ? '' : 'none');
+    },
+
+    ensureHeaderFooter() {
+      // checkout.html has empty placeholders
+      const header = $('#site-header');
+      const footer = $('#site-footer');
+
+      if (header && header.childElementCount === 0) {
+        header.innerHTML = `
+          <nav id="main-nav">
+            <h1><a href="./index.html" style="text-decoration:none;color:inherit;">Beyond Silhouette</a></h1>
+            <ul>
+              <li><a class="nav-link" href="About.html">About</a></li>
+              <li><a class="nav-link" href="shop-page.html">Shop</a></li>
+              <li><a class="nav-link" href="orders.html">Orders</a></li>
+              <li><a class="nav-link" href="cart.html">Cart (<span class="cart-count">0</span>)</a></li>
+            </ul>
+            <div class="nav-right">
+              <div class="login-dropdown">
+                <a class="loginIcon" href="#"><img src="./images/user icon.png" alt="Login"/></a>
+                <ul class="login-menu">
+                  <li><a href="login.html">Sign In</a></li>
+                  <li><a href="register.html">Create Account</a></li>
+                  <li><a href="orders.html">My Orders</a></li>
+                  <li><a href="account.html">Account</a></li>
+                  <li><a href="logout.html">Logout</a></li>
+                </ul>
+              </div>
+            </div>
+          </nav>
+        `;
       }
-      // add to cart (active user)
-      Cart.add(product.id, { name: product.name, price: product.price, size: selectedSize, qty: 1 });
-      UI.toast(`${product.name} added to cart`, { type: 'success' });
-      updateCartBadge();
-      refreshAllProductStockUI();
-      // button feedback
-      const original = btn.textContent;
-      btn.textContent = 'Added';
-      btn.disabled = true;
-      setTimeout(() => {
-        btn.textContent = original || 'Add to Cart';
-        // re-evaluate stock
-        updateProductStockUI(product);
-      }, 700);
+
+      if (footer && footer.childElementCount === 0) {
+        footer.innerHTML = `<p>&copy; ${new Date().getFullYear()} Beyond Silhouette</p>`;
+      }
+    },
+
+    bindLoginDropdown() {
+      const icon = $('.loginIcon');
+      const menu = $('.login-menu');
+      if (!icon || !menu) return;
+
+      icon.addEventListener('click', (e) => {
+        e.preventDefault();
+        menu.classList.toggle('show');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !icon.contains(e.target)) {
+          menu.classList.remove('show');
+        }
+      });
+    },
+
+    bindNavActive() {
+      const current = page() || 'index.html';
+      $$('#main-nav .nav-link').forEach(link => {
+        const href = (link.getAttribute('href') || '').split('/').pop().toLowerCase();
+        if (href === current) link.classList.add('active');
+      });
+    }
+  };
+
+  // -----------------------------
+  // PAGE-SPECIFIC LOGIC
+  // -----------------------------
+  function bindLogoutIntercept() {
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href="logout.html"]');
+      if (!a) return;
+      e.preventDefault();
+      Auth.logout();
+      // Send home
+      location.href = 'index.html';
     });
   }
 
-  /* Cart page rendering */
+  // SHOP: Add to Cart (your exact markup)
+  function bindAddToCart() {
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.add-to-cart');
+      if (!btn) return;
+
+      const card = btn.closest('.product-card');
+      if (!card) {
+        toast('Could not add item (product card not found).', { important: true });
+        return;
+      }
+
+      const productId = card.dataset.id;
+      const name = card.dataset.name;
+      const price = Number(card.dataset.price || 0);
+      const stock = Number(card.dataset.stock || card.dataset.qty || 0);
+
+      // Pull image from dataset OR first <img> inside card
+      let image = card.dataset.image || '';
+      if (!image) {
+        const imgEl = card.querySelector('img');
+        if (imgEl && imgEl.getAttribute('src')) image = imgEl.getAttribute('src');
+      }
+
+      // Enforce size selection if select exists
+      const sizeSelect = card.querySelector('.product-size-select');
+      const size = sizeSelect ? String(sizeSelect.value || '').trim() : '';
+
+      if (sizeSelect && (!size || size.toLowerCase().includes('select'))) {
+        toast('Please select a size before adding to cart.', { important: true });
+        return;
+      }
+
+      if (!productId || !name) {
+        toast('Missing product details (data-id / data-name).', { important: true });
+        return;
+      }
+
+      // Save product into cache to prevent "Unknown" later
+      ProductCache.upsert({ id: productId, name, price, image });
+
+      // Stock enforcement if stock set
+      if (stock > 0) {
+        const existing = Cart.load().find(it => it.productId === String(productId) && (it.size || null) === (size || null));
+        const existingQty = existing ? Number(existing.qty || 0) : 0;
+        if (existingQty + 1 > stock) {
+          toast('Not enough stock available for this item.', { important: true });
+          return;
+        }
+      }
+
+      Cart.add({ productId, name, price, image, size: size || null, qty: 1 });
+
+      toast(`Added to cart: ${name}`);
+      renderCartIfOnCartPage();
+    });
+  }
+
+  // CART PAGE RENDER
+  function renderCartIfOnCartPage() {
+    if (!page().includes('cart.html')) return;
+    renderCartPage();
+  }
+
   function renderCartPage() {
-    const container = UI.find('.cart-container');
+    const container = $('.cart-container');
     if (!container) return;
-    const items = Cart.listItems();
+
+    const items = Cart.load();
     container.innerHTML = '';
-    if (!items || items.length === 0) {
-      const emp = document.createElement('div');
-      emp.className = 'cart-empty';
-      emp.innerText = 'Your cart is empty.';
-      container.appendChild(emp);
+
+    if (items.length === 0) {
+      const p = document.createElement('p');
+      p.textContent = 'Your cart is empty.';
+      container.appendChild(p);
       return;
     }
 
-    const table = document.createElement('div');
-    table.className = 'bs-cart-list';
-    items.forEach(it => {
+    const subtotal = Cart.subtotal(items);
+
+    const list = document.createElement('div');
+    list.className = 'cart-items';
+
+    items.forEach((it) => {
       const row = document.createElement('div');
-      row.className = 'bs-cart-row';
-      row.style.display = 'flex';
-      row.style.justifyContent = 'space-between';
-      row.style.alignItems = 'center';
-      row.style.padding = '10px 0';
-      const left = document.createElement('div');
-      left.style.flex = '1';
-      left.innerHTML = `<strong>${it.name}</strong><div style="font-size:0.9rem;color:#666">Size: ${it.size || '—'}</div>`;
-      const mid = document.createElement('div');
-      mid.style.width = '120px';
-      mid.style.display = 'flex';
-      mid.style.alignItems = 'center';
-      mid.style.gap = '6px';
-      const dec = document.createElement('button'); dec.textContent = '-'; dec.className = 'bs-dec';
-      const qty = document.createElement('span'); qty.textContent = String(it.qty);
-      const inc = document.createElement('button'); inc.textContent = '+'; inc.className = 'bs-inc';
-      mid.appendChild(dec); mid.appendChild(qty); mid.appendChild(inc);
-      const right = document.createElement('div');
-      right.style.width = '140px';
-      right.style.textAlign = 'right';
-      right.innerHTML = `<div>${formatJMD(it.price * it.qty)}</div><button class="bs-remove" style="display:block;margin-top:6px">Remove</button>`;
+      row.className = 'cart-item';
 
-      // attach handlers
-      dec.addEventListener('click', () => {
-        Cart.updateQuantity(it.productId, it.size, Math.max(0, Number(it.qty) - 1));
+      const img = document.createElement('img');
+      img.className = 'cart-item-img';
+      img.src = it.image || '';
+      img.alt = it.name || 'Product';
+
+      const info = document.createElement('div');
+      info.className = 'cart-item-info';
+
+      const title = document.createElement('h4');
+      title.textContent = it.name || 'Unknown';
+
+      const meta = document.createElement('p');
+      meta.className = 'cart-item-meta';
+      meta.textContent = it.size ? `Size: ${it.size}` : '';
+
+      const price = document.createElement('p');
+      price.className = 'cart-item-price';
+      price.textContent = money(it.price);
+
+      const qtyWrap = document.createElement('div');
+      qtyWrap.className = 'cart-item-qty';
+
+      const qty = document.createElement('input');
+      qty.type = 'number';
+      qty.min = '0';
+      qty.value = String(it.qty);
+
+      qty.addEventListener('change', () => {
+        Cart.setQty(it.productId, it.size || null, Number(qty.value || 0));
         renderCartPage();
-        updateCartBadge();
-        refreshAllProductStockUI();
-      });
-      inc.addEventListener('click', () => {
-        Cart.updateQuantity(it.productId, it.size, Number(it.qty) + 1);
-        renderCartPage();
-        updateCartBadge();
-        refreshAllProductStockUI();
-      });
-      right.querySelector('.bs-remove').addEventListener('click', () => {
-        Cart.remove(it.productId, it.size);
-        renderCartPage();
-        updateCartBadge();
-        refreshAllProductStockUI();
+        UI.updateCartBadges();
       });
 
-      row.appendChild(left);
-      row.appendChild(mid);
-      row.appendChild(right);
-      table.appendChild(row);
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-from-cart';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => {
+        Cart.remove(it.productId, it.size || null);
+        renderCartPage();
+        UI.updateCartBadges();
+      });
+
+      qtyWrap.appendChild(qty);
+      qtyWrap.appendChild(removeBtn);
+
+      info.appendChild(title);
+      info.appendChild(meta);
+      info.appendChild(price);
+      info.appendChild(qtyWrap);
+
+      row.appendChild(img);
+      row.appendChild(info);
+      list.appendChild(row);
     });
 
-    // subtotal + checkout
-    const subtotal = Cart.subtotal();
-    const footer = document.createElement('div');
-    footer.style.marginTop = '16px';
-    footer.style.display = 'flex';
-    footer.style.justifyContent = 'space-between';
-    const subEl = document.createElement('div'); subEl.innerHTML = `<strong>Subtotal:</strong> ${formatJMD(subtotal)}`;
-    const checkoutBtn = document.createElement('button');
-    checkoutBtn.textContent = Session.isLoggedIn ? 'Checkout' : 'Login to Checkout';
-    checkoutBtn.className = 'bs-checkout-btn';
-    checkoutBtn.style.padding = '8px 12px';
-    checkoutBtn.style.cursor = 'pointer';
-    checkoutBtn.addEventListener('click', async () => {
-      if (!Session.isLoggedIn()) {
-        // simple prompt or redirect flow
-        UI.toast('Please login to checkout', { type: 'error' });
-        return;
-      }
-      // simulate checkout
-      UI.toast('Processing checkout...', { type: 'info' });
-      await new Promise(res => setTimeout(res, 1000));
-      const orderId = 'order_' + uid();
-      UI.toast(`Order ${orderId} placed — thank you!`, { type: 'success' });
+    container.appendChild(list);
+
+    // Summary + checkout button (cart.html does not include one, so we inject it)
+    const summary = document.createElement('div');
+    summary.className = 'cart-summary';
+    summary.innerHTML = `
+      <hr/>
+      <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
+      <button class="btn proceed-checkout-btn">Proceed to Checkout</button>
+      <button class="btn clear-cart-btn" style="margin-left:10px;">Clear Cart</button>
+    `;
+    container.appendChild(summary);
+
+    summary.querySelector('.clear-cart-btn').addEventListener('click', () => {
       Cart.clear();
       renderCartPage();
-      updateCartBadge();
-      refreshAllProductStockUI();
+      UI.updateCartBadges();
+      toast('Cart cleared');
     });
 
-    footer.appendChild(subEl);
-    footer.appendChild(checkoutBtn);
-
-    container.appendChild(table);
-    container.appendChild(footer);
+    summary.querySelector('.proceed-checkout-btn').addEventListener('click', () => {
+      const user = Auth.currentUser();
+      if (!user) {
+        localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
+        toast('Please log in to checkout.', { important: true });
+        location.href = 'login.html';
+        return;
+      }
+      location.href = 'checkout.html';
+    });
   }
 
-  /* Nav login/logout flow (very small/demo) */
-  function initAuthButtons() {
-    // your HTML has a .loginIcon anchor and e.g. logout links — but we will attach to any element with .login-toggle and .logout-toggle
-    const loginEls = UI.findAll('.loginIcon, .login-toggle, .loginBtn');
-    const logoutEls = UI.findAll('.logout-toggle, .logoutBtn');
-    loginEls.forEach(el => {
-      el.addEventListener('click', async (ev) => {
-        ev && ev.preventDefault && ev.preventDefault();
-        const action = prompt('Type "login" to login or "register" to register (demo). Cancel to abort.');
-        if (!action) return;
-        if (action.toLowerCase().startsWith('register')) {
-          const email = prompt('Enter email for registration (demo):');
-          const name = prompt('Enter name (optional):', email ? email.split('@')[0] : '');
-          try {
-            const user = await Session.register({ name, email });
-            UI.toast(`Registered as ${user.name}`, { type: 'success' });
-            // update badge and cart merge handled in Session.register
-            updateCartBadge();
-            refreshAllProductStockUI();
-            refreshAuthUI();
-          } catch (e) {
-            UI.toast('Registration failed', { type: 'error' });
-          }
+  // LOGIN PAGE
+  function bindLoginForm() {
+    const form = $('.login-form');
+    if (!form) return;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+
+      const email = fd.get('email');
+      const password = fd.get('password');
+
+      try {
+        Auth.login({ email, password });
+        toast('Logged in');
+
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+
+        const ret = safeParse(localStorage.getItem(KEYS.returnTo));
+        if (ret && ret.href) {
+          localStorage.removeItem(KEYS.returnTo);
+          location.href = ret.href;
         } else {
-          const email = prompt('Enter email to login (demo):');
-          if (!email) return;
-          try {
-            const user = await Session.login({ email });
-            UI.toast(`Logged in as ${user.name}`, { type: 'success' });
-            updateCartBadge();
-            refreshAllProductStockUI();
-            refreshAuthUI();
-          } catch (e) {
-            UI.toast('Login failed', { type: 'error' });
-          }
+          location.href = 'account.html';
         }
-      });
-    });
-    logoutEls.forEach(el => {
-      el.addEventListener('click', (ev) => {
-        ev && ev.preventDefault && ev.preventDefault();
-        Session.logout();
-        UI.toast('Logged out', { type: 'info' });
-        updateCartBadge();
-        refreshAllProductStockUI();
-        refreshAuthUI();
-      });
-    });
-  }
-
-  function refreshAuthUI() {
-    const user = Session.getUser();
-    // update any element with .login-name or .account-name
-    UI.findAll('.account-name, .login-name, .user-name').forEach(el => {
-      el.textContent = user ? (user.name || user.email || 'Account') : 'Guest';
-    });
-    // change login/logout visibility if needed
-    UI.findAll('.login-required').forEach(el => {
-      el.style.display = user ? 'none' : '';
-    });
-    UI.findAll('.logout-required').forEach(el => {
-      el.style.display = user ? '' : 'none';
-    });
-  }
-
-  /* Cross-tab sync handlers */
-  function bindCrossTab() {
-    window.addEventListener('storage', (ev) => {
-      if (ev.key === S_KEYS.CART) {
-        // cart changed in other tab
-        updateCartBadge();
-        refreshAllProductStockUI();
-        // if on cart page, re-render
-        if (document.body && document.body.id === 'cart-page') {
-          renderCartPage();
-        }
-      }
-      if (ev.key === S_KEYS.SESSION) {
-        refreshAuthUI();
-        updateCartBadge();
+      } catch (err) {
+        toast(err.message || 'Login failed', { important: true });
       }
     });
-    window.addEventListener('bs:cart:updated', () => {
-      updateCartBadge();
-      refreshAllProductStockUI();
+  }
+
+  // REGISTER PAGE
+  function bindRegisterForm() {
+    const form = $('.register-form');
+    if (!form) return;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+
+      const fullname = fd.get('fullname');
+      const email = fd.get('email');
+      const password = fd.get('password');
+      const confirmPassword = fd.get('confirm-password');
+
+      try {
+        Auth.register({ fullname, email, password, confirmPassword });
+        toast('Account created');
+
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+
+        const ret = safeParse(localStorage.getItem(KEYS.returnTo));
+        if (ret && ret.href) {
+          localStorage.removeItem(KEYS.returnTo);
+          location.href = ret.href;
+        } else {
+          location.href = 'account.html';
+        }
+      } catch (err) {
+        toast(err.message || 'Registration failed', { important: true });
+      }
     });
   }
 
-  /* init on DOM ready */
-  function init() {
-    // product interactions only on pages that have product cards
-    initProductInteractions();
-    updateCartBadge();
-    refreshAllProductStockUI();
-    initAuthButtons();
-    refreshAuthUI();
-    bindCrossTab();
-    // if this is cart page, render
-    if (document.body && document.body.id === 'cart-page') {
-      renderCartPage();
+  // FORGOT PASSWORD PAGE (demo)
+  function bindForgotForm() {
+    const form = $('.forgot-form');
+    if (!form) return;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      toast('Password reset will be implemented in the backend phase.', { important: true });
+    });
+  }
+
+  // ACCOUNT PAGE: replace placeholder profile info
+  function renderAccountPage() {
+    if (!page().includes('account.html')) return;
+
+    const user = Auth.currentUser();
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'account.html' }));
+      location.href = 'login.html';
+      return;
     }
-    // small accessibility: update badge aria-live if present
-    UI.findAll('.cart-count').forEach(el => el.setAttribute('aria-live', 'polite'));
+
+    const details = $('.account-details');
+    if (!details) return;
+
+    // Replace inner content while preserving style
+    details.innerHTML = `
+      <h2>Profile Information</h2>
+      <p><strong>Name:</strong> ${escapeHtml(user.name || '')}</p>
+      <p><strong>Email:</strong> ${escapeHtml(user.email || '')}</p>
+      <p><strong>Member Since:</strong> ${formatMemberSince(user.createdAt)}</p>
+      <a class="btn" href="orders.html">View Orders</a>
+      <a class="btn" href="cart.html" style="margin-left:10px;">View Cart</a>
+    `;
   }
 
-  return { init, renderCartPage, updateCartBadge };
+  function escapeHtml(s) {
+    return String(s || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function formatMemberSince(iso) {
+    const d = iso ? new Date(iso) : new Date();
+    return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  // CHECKOUT PAGE: inject UI + place order
+  function renderCheckoutPage() {
+    if (!page().includes('checkout.html')) return;
+
+    const user = Auth.currentUser();
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
+      location.href = 'login.html';
+      return;
+    }
+
+    const items = Cart.load();
+    const subtotal = Cart.subtotal(items);
+
+    const main = $('main') || document.body;
+    main.innerHTML = `
+      <main class="checkout-container" style="padding:20px;">
+        <h1>Checkout</h1>
+        <div class="checkout-content" style="display:grid;gap:16px;grid-template-columns:1fr;max-width:900px;">
+          <section class="checkout-summary" style="border:1px solid #ddd;border-radius:12px;padding:14px;">
+            <h2>Order Summary</h2>
+            <div class="checkout-items"></div>
+            <hr/>
+            <p><strong>Subtotal:</strong> <span class="checkout-subtotal">${money(subtotal)}</span></p>
+          </section>
+
+          <section class="checkout-payment" style="border:1px solid #ddd;border-radius:12px;padding:14px;">
+            <h2>Payment Method</h2>
+            <label style="display:block;margin-bottom:8px;">
+              <select class="payment-method" style="width:100%;padding:10px;">
+                <option value="card">Card (Online)</option>
+                <option value="cash">Cash</option>
+                <option value="paypal">PayPal</option>
+                <option value="cashapp">CashApp</option>
+              </select>
+            </label>
+
+            <div class="payment-note" style="font-size:14px;opacity:.85;margin-top:8px;">
+              Payment processing will be connected when the Node + DB backend is added.
+              For now this simulates an order locally.
+            </div>
+
+            <button class="btn place-order-btn" style="margin-top:14px;">Place Order</button>
+          </section>
+        </div>
+      </main>
+    `;
+
+    const itemsWrap = $('.checkout-items');
+    if (itemsWrap) {
+      if (items.length === 0) {
+        itemsWrap.innerHTML = `<p>Your cart is empty.</p><a class="btn" href="shop-page.html">Shop Now</a>`;
+        $('.place-order-btn')?.setAttribute('disabled', 'disabled');
+      } else {
+        itemsWrap.innerHTML = items.map(it => `
+          <div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;">
+            <div>
+              <strong>${escapeHtml(it.name || 'Unknown')}</strong>
+              ${it.size ? `<span style="opacity:.8;"> (Size ${escapeHtml(it.size)})</span>` : ''}
+              <div style="opacity:.8;font-size:13px;">Qty: ${it.qty}</div>
+            </div>
+            <div><strong>${money(Number(it.price) * Number(it.qty))}</strong></div>
+          </div>
+        `).join('');
+      }
+    }
+
+    $('.place-order-btn')?.addEventListener('click', async () => {
+      const itemsNow = Cart.load();
+      if (itemsNow.length === 0) {
+        toast('Cart is empty.', { important: true });
+        return;
+      }
+
+      const pm = $('.payment-method')?.value || 'card';
+
+      // Simulate processing
+      toast('Placing order...');
+      await new Promise(r => setTimeout(r, 700));
+
+      const order = {
+        id: uid('order_').toUpperCase(),
+        createdAt: nowISO(),
+        userEmail: user.email,
+        items: itemsNow,
+        subtotal: Cart.subtotal(itemsNow),
+        paymentMethod: pm,
+        status: 'Processing'
+      };
+
+      Orders.addFor(user.email, order);
+      Cart.clear();
+      UI.updateCartBadges();
+
+      toast(`Order placed! Ref: ${order.id}`, { important: true });
+      location.href = 'orders.html';
+    });
+  }
+
+  // ORDERS PAGE: replace static sample cards with real orders
+  function renderOrdersPage() {
+    if (!page().includes('orders.html')) return;
+
+    const user = Auth.currentUser();
+    const container = $('.orders-container');
+    if (!container) return;
+
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'orders.html' }));
+      location.href = 'login.html';
+      return;
+    }
+
+    const orders = Orders.listFor(user.email);
+
+    if (orders.length === 0) {
+      container.innerHTML = `
+        <h1>My Orders</h1>
+        <div class="no-orders">
+          <p>You don’t have any orders yet. <a href="shop-page.html">Start shopping</a></p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <h1>My Orders</h1>
+      ${orders.map(o => `
+        <div class="order-card">
+          <div class="order-header">
+            <h2>Order ${escapeHtml(o.id)}</h2>
+            <p><strong>Date:</strong> ${new Date(o.createdAt).toLocaleDateString()}</p>
+          </div>
+          <div class="order-body">
+            <p><strong>Status:</strong> <span class="status shipped">${escapeHtml(o.status)}</span></p>
+            <p><strong>Total:</strong> ${money(o.subtotal)}</p>
+            <p><strong>Payment:</strong> ${escapeHtml(o.paymentMethod)}</p>
+            <p><strong>Items:</strong></p>
+            <ul>
+              ${o.items.map(it => `<li>${escapeHtml(it.name || 'Unknown')} ${it.size ? `- Size ${escapeHtml(it.size)}` : ''} (x${it.qty})</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  }
+
+  // -----------------------------
+  // SERVER-SIDE PLACEHOLDERS (COMMENTED)
+  // -----------------------------
+  /*
+    // Backend plans (Node + DB):
+    // - POST /api/register { name, email, password }
+    // - POST /api/login { email, password }
+    // - POST /api/logout
+    // - GET  /api/me
+    // - GET  /api/products
+    // - POST /api/cart
+    // - POST /api/orders
+    // - GET  /api/orders
+    //
+    // Payments:
+    // - Card: Stripe / PayPal checkout session
+    // - Cash: mark as "Cash on delivery / pickup"
+    // - PayPal: PayPal SDK
+    // - CashApp: can be handled as manual payment instructions or via a provider flow (varies by region)
+  */
+
+  // -----------------------------
+  // INIT
+  // -----------------------------
+  function init() {
+    UI.ensureHeaderFooter();
+    UI.bindNavActive();
+    UI.bindLoginDropdown();
+    bindLogoutIntercept();
+
+    // Always bind add-to-cart (delegated)
+    bindAddToCart();
+
+    // Bind auth forms
+    bindLoginForm();
+    bindRegisterForm();
+    bindForgotForm();
+
+    // Update nav/cart counters
+    UI.updateNavAuthState();
+    UI.updateCartBadges();
+
+    // Page renders
+    renderCartIfOnCartPage();
+    renderCheckoutPage();
+    renderOrdersPage();
+    renderAccountPage();
+
+    // Expose helpers
+    BS.toast = toast;
+    BS.cart = {
+      items: () => Cart.load(),
+      clear: () => Cart.clear(),
+      add: (p) => Cart.add(p)
+    };
+    BS.auth = {
+      user: () => Auth.currentUser(),
+      logout: () => Auth.logout()
+    };
+
+    console.log('✅ Beyond Silhouette main.js initialized');
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+
 })();
-
-/* =================== Boot =================== */
-document.addEventListener('DOMContentLoaded', () => {
-  try {
-    App.init();
-  } catch (e) {
-    console.error('App init error', e);
-  }
-});
