@@ -1,34 +1,138 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
-  <title>Orders</title>
-  <link rel="stylesheet" href="admin.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Orders</title>
+  <link rel="stylesheet" href="./admin.css" />
 </head>
-<body>
-  <nav class="admin-nav">
-    <a href="index.html">Dashboard</a>
-    <a href="products.html">Products</a>
-    <a href="orders.html">Orders</a>
-    <button id="logout">Logout</button>
-  </nav>
 
-  <main>
-    <h1>Orders</h1>
-    <table id="orders-table">
-      <thead>
-        <tr>
-          <th>Order #</th>
-          <th>Email</th>
-          <th>Payment</th>
-          <th>Status</th>
-          <th>Total</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </main>
+<body class="admin">
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+    </div>
 
-  <script src="admin.js"></script>
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item active" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 class="h1">Orders</h1>
+        <p class="muted">Filter, inspect, and track fulfillment (demo data for now).</p>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="input-group">
+          <input class="input input-sm" id="orderSearch" placeholder="Search order # / customer…" />
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Exported (demo).">Export</button>
+        </div>
+        <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="New order action (demo).">New</button>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="card-head row-between">
+        <div>
+          <h2 class="h2">All orders</h2>
+          <p class="muted">This table becomes real once we connect the database.</p>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Filters opened (demo).">Filter</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Bulk actions (demo).">Bulk</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table" aria-label="Orders list">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th class="right">Total</th>
+              <th class="right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="ordersTbody">
+            <tr>
+              <td>#1042</td>
+              <td>Jan 07, 2026</td>
+              <td>J. Carter</td>
+              <td><span class="chip chip-ok">Paid</span></td>
+              <td class="right">J$ 18,900</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened order #1042 (demo).">Open</button></td>
+            </tr>
+            <tr>
+              <td>#1041</td>
+              <td>Jan 07, 2026</td>
+              <td>A. Blake</td>
+              <td><span class="chip chip-warn">Pending</span></td>
+              <td class="right">J$ 7,450</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened order #1041 (demo).">Open</button></td>
+            </tr>
+            <tr>
+              <td>#1040</td>
+              <td>Jan 06, 2026</td>
+              <td>S. Morgan</td>
+              <td><span class="chip chip-ok">Paid</span></td>
+              <td class="right">J$ 24,000</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened order #1040 (demo).">Open</button></td>
+            </tr>
+            <tr>
+              <td>#1039</td>
+              <td>Jan 05, 2026</td>
+              <td>K. Reid</td>
+              <td><span class="chip chip-bad">Refunded</span></td>
+              <td class="right">J$ 5,999</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened order #1039 (demo).">Open</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-foot row-between">
+        <div class="muted">Tip: add status transitions (Processing → Shipped → Delivered) after DB.</div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Prev page (demo).">Prev</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Next page (demo).">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+  </div>
+
+  <script src="./admin.js"></script>
 </body>
 </html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Settings</title>
+  <link rel="stylesheet" href="./admin.css" />
+</head>
+
+<body class="admin">
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item active" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 class="h1">Settings</h1>
+        <p class="muted">Brand, store preferences, and deployment prep.</p>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Toggle theme</button>
+      </div>
+    </header>
+
+    <section class="grid two">
+      <article class="card">
+        <div class="card-head">
+          <h2 class="h2">Brand</h2>
+          <p class="muted">These become editable & stored in DB later.</p>
+        </div>
+
+        <form class="form">
+          <label class="field">
+            <span class="label">Store name</span>
+            <input class="input" value="BeyondSilhouette" />
+          </label>
+
+          <label class="field">
+            <span class="label">Support email</span>
+            <input class="input" value="support@beyondsilhouette.com" />
+          </label>
+
+          <div class="row-between">
+            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Reset (demo).">Reset</button>
+            <button class="btn btn-primary" type="button" data-action="toast" data-toast="Saved (demo).">Save</button>
+          </div>
+
+          <div class="hint">
+            After DB: this becomes real settings storage, with validation + roles.
+          </div>
+        </form>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2 class="h2">Backend setup</h2>
+          <p class="muted">This is the next phase we’ll build in this chat.</p>
+        </div>
+
+        <div class="stack">
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Recommended: Firebase</div>
+                <div class="muted">Auth + Firestore + Storage</div>
+              </div>
+              <span class="badge badge-soft">Fastest</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Alternative: Supabase</div>
+                <div class="muted">Auth + Postgres + Storage</div>
+              </div>
+              <span class="badge badge-soft">Great</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Current mode</div>
+                <div class="muted">UI-only • demo actions</div>
+              </div>
+              <span class="badge">Ready</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-foot row-between">
+          <div class="muted">Next: choose backend + schema mapping.</div>
+          <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="We’ll map the steps next.">Start roadmap</button>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+  </div>
+
+  <script src="./admin.js"></script>
+</body>
+</html>

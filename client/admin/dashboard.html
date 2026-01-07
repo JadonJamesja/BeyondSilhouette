@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Dashboard</title>
+  <link rel="stylesheet" href="./admin.css" />
+</head>
+
+<body class="admin">
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
+
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">
+        ☰
+      </button>
+    </div>
+
+    <nav class="nav" aria-label="Admin navigation">
+      <a class="nav-item active" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 class="h1">Dashboard</h1>
+        <p class="muted">A clean overview that’s ready for real data later.</p>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="pill">
+          <span class="dot" aria-hidden="true"></span>
+          <span>Store healthy</span>
+        </div>
+        <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Quick action done.">Quick action</button>
+      </div>
+    </header>
+
+    <section class="grid stats">
+      <article class="card stat">
+        <div class="stat-head">
+          <div class="muted">Revenue</div>
+          <div class="badge">Today</div>
+        </div>
+        <div class="stat-value">J$ 212,480</div>
+        <div class="stat-sub muted">+8.2% vs yesterday</div>
+      </article>
+
+      <article class="card stat">
+        <div class="stat-head">
+          <div class="muted">Orders</div>
+          <div class="badge badge-soft">24h</div>
+        </div>
+        <div class="stat-value">96</div>
+        <div class="stat-sub muted">12 pending fulfillment</div>
+      </article>
+
+      <article class="card stat">
+        <div class="stat-head">
+          <div class="muted">Customers</div>
+          <div class="badge badge-soft">New</div>
+        </div>
+        <div class="stat-value">38</div>
+        <div class="stat-sub muted">+14 this week</div>
+      </article>
+
+      <article class="card stat">
+        <div class="stat-head">
+          <div class="muted">Low stock</div>
+          <div class="badge badge-soft">Alert</div>
+        </div>
+        <div class="stat-value">3</div>
+        <div class="stat-sub muted">Items below threshold</div>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="card">
+        <div class="card-head row-between">
+          <div>
+            <h2 class="h2">Recent orders</h2>
+            <p class="muted">Latest activity snapshot.</p>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="./orders.html">View all</a>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" aria-label="Recent orders">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Customer</th>
+                <th>Status</th>
+                <th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>#1042</td>
+                <td>J. Carter</td>
+                <td><span class="chip chip-ok">Paid</span></td>
+                <td class="right">J$ 18,900</td>
+              </tr>
+              <tr>
+                <td>#1041</td>
+                <td>A. Blake</td>
+                <td><span class="chip chip-warn">Pending</span></td>
+                <td class="right">J$ 7,450</td>
+              </tr>
+              <tr>
+                <td>#1040</td>
+                <td>S. Morgan</td>
+                <td><span class="chip chip-ok">Paid</span></td>
+                <td class="right">J$ 24,000</td>
+              </tr>
+              <tr>
+                <td>#1039</td>
+                <td>K. Reid</td>
+                <td><span class="chip chip-bad">Refunded</span></td>
+                <td class="right">J$ 5,999</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card-foot row-between">
+          <div class="muted">Next: connect to database to power this table.</div>
+          <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Report generated (demo).">Generate report</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2 class="h2">Ops checklist</h2>
+          <p class="muted">Keep the store sharp and consistent.</p>
+        </div>
+
+        <ul class="list" aria-label="Checklist">
+          <li class="list-item">
+            <div>
+              <div class="list-title">Review low-stock products</div>
+              <div class="muted">3 items need restock</div>
+            </div>
+            <span class="badge">Now</span>
+          </li>
+          <li class="list-item">
+            <div>
+              <div class="list-title">Approve pending orders</div>
+              <div class="muted">12 awaiting processing</div>
+            </div>
+            <span class="badge badge-soft">Today</span>
+          </li>
+          <li class="list-item">
+            <div>
+              <div class="list-title">Update hero banner</div>
+              <div class="muted">New drop this weekend</div>
+            </div>
+            <span class="badge badge-soft">This week</span>
+          </li>
+        </ul>
+
+        <div class="card-foot row-between">
+          <div class="muted">Tip: keep actions minimal, results clean.</div>
+          <a class="btn btn-primary btn-sm" href="./products.html">Manage products</a>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footer muted">
+      © <span data-ui="year"></span> BeyondSilhouette Admin
+    </footer>
+  </div>
+
+  <script src="./admin.js"></script>
+</body>
+</html>

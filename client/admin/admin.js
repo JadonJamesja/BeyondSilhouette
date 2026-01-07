@@ -1,232 +1,306 @@
-(() => {
-  const API_BASE = "http://localhost:3000"; // keep consistent with your server
-  const $ = (sel, root = document) => root.querySelector(sel);
+/* BeyondSilhouette Admin UI (FULL FILE w/ FIXES)
+   - Demo auth guard (front-end only)
+   - Theme toggle (persisted) — FIXED via event delegation + proper init
+   - Sidebar behavior (mobile overlay / desktop collapse)
+   - Toasts
+   - Products page: image preview + live preview + stock total
+*/
 
-  const els = {
-    sidebar: $("#sidebar"),
-    sidebarToggle: $("#sidebarToggle"),
-    logoutBtn: $("#logoutBtn"),
-    refreshBtn: $("#refreshBtn"),
-    themeBtn: $("#themeBtn"),
-    toast: $("#toast"),
-
-    adminName: $("#adminName"),
-    adminEmail: $("#adminEmail"),
-    adminAvatar: $("#adminAvatar"),
-
-    todayLine: $("#todayLine"),
-    apiStatusLine: $("#apiStatusLine"),
-    apiStatusPill: $("#apiStatusPill"),
-
-    kpiRevenue: $("#kpiRevenue"),
-    kpiOrders: $("#kpiOrders"),
-    kpiProducts: $("#kpiProducts"),
-    kpiPending: $("#kpiPending"),
-
-    revDelta: $("#revDelta"),
-    ordDelta: $("#ordDelta"),
-    lowStockPill: $("#lowStockPill"),
-    pendingPill: $("#pendingPill"),
-    lowStockCount: $("#lowStockCount"),
-
-    recentOrdersTable: $("#recentOrdersTable"),
-    recentOrdersEmpty: $("#recentOrdersEmpty"),
+(function () {
+  const DEMO_ADMIN = {
+    email: "admin@beyondsilhouette.com",
+    password: "Admin123!",
+    name: "Admin",
   };
 
-  function moneyJMD(n){
-    const v = Number(n || 0);
-    return "J$" + v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const STORAGE = {
+    theme: "bs_admin_theme",
+    session: "bs_admin_session",
+  };
+
+  const qs = (sel, root = document) => root.querySelector(sel);
+  const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  /* ================= Theme (FIXED) ================= */
+  function getTheme() {
+    const saved = localStorage.getItem(STORAGE.theme);
+    if (saved === "dark" || saved === "light") return saved;
+
+    const attr = document.documentElement.getAttribute("data-theme");
+    if (attr === "dark" || attr === "light") return attr;
+
+    return "dark";
   }
 
-  function toast(msg){
-    if (!els.toast) return;
-    els.toast.textContent = msg;
-    els.toast.classList.add("show");
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => els.toast.classList.remove("show"), 2400);
+  function applyTheme(theme) {
+    const t = theme === "light" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem(STORAGE.theme, t);
   }
 
-  function setTheme(next){
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("bs_admin_theme", next);
+  function toggleTheme() {
+    applyTheme(getTheme() === "dark" ? "light" : "dark");
+    toast(`Theme: ${getTheme()}`);
   }
 
-  function loadTheme(){
-    const t = localStorage.getItem("bs_admin_theme") || "dark";
-    setTheme(t);
+  /* ================= Session ================= */
+  function getSession() {
+    try { return JSON.parse(localStorage.getItem(STORAGE.session) || "null"); }
+    catch { return null; }
+  }
+  function setSession(session) {
+    localStorage.setItem(STORAGE.session, JSON.stringify(session));
+  }
+  function clearSession() {
+    localStorage.removeItem(STORAGE.session);
+  }
+  function isAuthed() {
+    const s = getSession();
+    return !!(s && s.email);
   }
 
-  async function apiFetch(path, options = {}){
-    const res = await fetch(API_BASE + path, {
-      ...options,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {})
+  function requireAuth() {
+    const path = location.pathname.replace(/\\/g, "/");
+    const inAdmin = path.includes("/admin/");
+    const isLogin = path.endsWith("/admin/login.html") || path.endsWith("/admin/login");
+
+    if (!inAdmin) return;
+
+    if (!isLogin && !isAuthed()) {
+      location.href = "./login.html";
+      return;
+    }
+
+    if (isLogin && isAuthed()) {
+      location.href = "./dashboard.html";
+      return;
+    }
+  }
+
+  /* ================= Toast ================= */
+  function toast(message) {
+    let el = qs(".toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "toast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.add("show");
+    window.clearTimeout(toast._t);
+    toast._t = window.setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  function setYear() {
+    const year = new Date().getFullYear();
+    qsa('[data-ui="year"]').forEach(n => (n.textContent = String(year)));
+  }
+
+  function hydrateAdminName() {
+    const s = getSession();
+    const name = (s && s.name) ? s.name : "Admin";
+    qsa('[data-ui="adminName"]').forEach(n => (n.textContent = name));
+  }
+
+  /* ================= Delegated actions (FIXED) ================= */
+  function bindDelegatedActions() {
+    document.addEventListener("click", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest("[data-action]") : null;
+      if (!el) return;
+
+      const action = el.getAttribute("data-action");
+      if (!action) return;
+
+      if (action === "toggle-theme") {
+        e.preventDefault();
+        toggleTheme();
+        return;
+      }
+
+      if (action === "toggle-password") {
+        e.preventDefault();
+        const input = qs('input[name="password"]');
+        if (!input) return;
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        el.textContent = show ? "Hide" : "Show";
+        return;
+      }
+
+      if (action === "toggle-sidebar") {
+        e.preventDefault();
+        if (window.matchMedia && window.matchMedia("(max-width: 920px)").matches) {
+          document.body.classList.toggle("sidebar-open");
+        } else {
+          document.body.classList.toggle("sidebar-collapsed");
+        }
+        return;
+      }
+
+      if (action === "logout") {
+        e.preventDefault();
+        clearSession();
+        location.href = "./login.html";
+        return;
+      }
+
+      if (action === "toast") {
+        e.preventDefault();
+        toast(el.getAttribute("data-toast") || "Done. (demo)");
+        return;
       }
     });
-    const text = await res.text();
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    return { ok: res.ok, status: res.status, data };
   }
 
-  function setApiStatus(ok){
-    if (!els.apiStatusLine || !els.apiStatusPill) return;
-    if (ok){
-      els.apiStatusLine.textContent = "Connected to backend API";
-      els.apiStatusPill.textContent = "OK";
-      els.apiStatusPill.className = "pill pill--good";
-    } else {
-      els.apiStatusLine.textContent = "Backend not reachable (using demo data)";
-      els.apiStatusPill.textContent = "DEMO";
-      els.apiStatusPill.className = "pill pill--warn";
-    }
+  /* ================= Login ================= */
+  function bindLogin() {
+    const form = qs('[data-form="login"]');
+    if (!form) return;
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const err = qs('[data-ui="error"]');
+
+      const fd = new FormData(form);
+      const email = String(fd.get("email") || "").trim().toLowerCase();
+      const password = String(fd.get("password") || "");
+      const remember = !!fd.get("remember");
+
+      const ok = email === DEMO_ADMIN.email && password === DEMO_ADMIN.password;
+
+      if (!ok) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Invalid email or password.";
+        }
+        return;
+      }
+
+      if (err) {
+        err.hidden = true;
+        err.textContent = "";
+      }
+
+      setSession({
+        email: DEMO_ADMIN.email,
+        name: DEMO_ADMIN.name,
+        remember,
+        at: Date.now(),
+      });
+
+      location.href = "./dashboard.html";
+    });
   }
 
-  function badge(status){
-    const s = String(status || "").toLowerCase();
-    if (s.includes("pend")) return `<span class="badge badge--pending">Pending</span>`;
-    if (s.includes("paid")) return `<span class="badge badge--paid">Paid</span>`;
-    if (s.includes("ship")) return `<span class="badge badge--shipped">Shipped</span>`;
-    if (s.includes("fail") || s.includes("cancel")) return `<span class="badge badge--failed">Failed</span>`;
-    return `<span class="badge">${status || "—"}</span>`;
-  }
+  /* ================= Products page live preview ================= */
+  function initProductsPreview() {
+    const form = qs("#productForm");
+    if (!form) return;
 
-  function renderRecentOrders(rows){
-    const tbody = els.recentOrdersTable?.querySelector("tbody");
-    if (!tbody) return;
+    const name = qs('input[name="name"]', form);
+    const desc = qs('textarea[name="description"]', form);
+    const price = qs('input[name="price"]', form);
+    const status = qs('select[name="status"]', form);
+    const sS = qs('input[name="stockS"]', form);
+    const sM = qs('input[name="stockM"]', form);
+    const sL = qs('input[name="stockL"]', form);
+    const sXL = qs('input[name="stockXL"]', form);
 
-    tbody.innerHTML = "";
-    if (!rows || rows.length === 0){
-      els.recentOrdersEmpty.style.display = "";
-      els.recentOrdersTable.style.display = "none";
-      return;
-    }
+    const totalBadge = qs("#stockTotalBadge");
 
-    els.recentOrdersEmpty.style.display = "none";
-    els.recentOrdersTable.style.display = "";
+    const pvStatus = qs("#previewStatus");
+    const pvName = qs("#previewName");
+    const pvDesc = qs("#previewDesc");
+    const pvPrice = qs("#previewPrice");
+    const pvStock = qs("#previewStock");
+    const pvMedia = qs("#previewMedia");
 
-    for (const r of rows){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><strong>#${r.orderNo}</strong><div class="muted" style="font-size:12px;margin-top:2px">${r.date}</div></td>
-        <td>${r.customer || "—"}</td>
-        <td>${badge(r.status)}</td>
-        <td class="right"><strong>${moneyJMD(r.total)}</strong></td>
-      `;
-      tbody.appendChild(tr);
-    }
-  }
+    const fileInput = qs("#productImages");
+    const imageGrid = qs("#imageGrid");
 
-  function setDashboard(data){
-    els.kpiRevenue.textContent = moneyJMD(data.revenueToday);
-    els.kpiOrders.textContent = String(data.ordersToday);
-    els.kpiProducts.textContent = String(data.productsCount);
-    els.kpiPending.textContent = String(data.pendingCount);
+    const toNum = (v) => Math.max(0, Number(String(v || "").replace(/[^\d]/g, "")) || 0);
+    const formatJ = (n) => "J$ " + (Number(n) || 0).toLocaleString("en-JM", { maximumFractionDigits: 0 });
 
-    els.pendingPill.textContent = String(data.pendingCount);
-    els.lowStockPill.textContent = `${data.lowStockCount} low stock`;
-    els.lowStockCount.textContent = String(data.lowStockCount);
-
-    els.revDelta.textContent = `${data.revenueDelta >= 0 ? "+" : ""}${data.revenueDelta}%`;
-    els.revDelta.className = `pill ${data.revenueDelta >= 0 ? "pill--good" : "pill--danger"}`;
-
-    els.ordDelta.textContent = `${data.ordersDelta >= 0 ? "+" : ""}${data.ordersDelta}`;
-    els.ordDelta.className = `pill ${data.ordersDelta >= 0 ? "pill--info" : "pill--danger"}`;
-
-    renderRecentOrders(data.recentOrders);
-  }
-
-  function buildDemo(){
-    const now = new Date();
-    const day = now.toLocaleDateString(undefined, { weekday:"long", month:"short", day:"numeric" });
-    els.todayLine.textContent = `${day} • Overview of today’s performance`;
-
-    const demo = {
-      revenueToday: 84250,
-      ordersToday: 18,
-      productsCount: 64,
-      pendingCount: 6,
-      lowStockCount: 4,
-      revenueDelta: 12,
-      ordersDelta: 5,
-      recentOrders: [
-        { orderNo: "10492", customer: "J. Brown", status: "Paid", total: 6900, date: "10:41 AM" },
-        { orderNo: "10491", customer: "K. Reid", status: "Pending", total: 12500, date: "9:58 AM" },
-        { orderNo: "10490", customer: "A. Smith", status: "Shipped", total: 9800, date: "Yesterday" },
-        { orderNo: "10489", customer: "S. Johnson", status: "Paid", total: 4600, date: "Yesterday" },
-      ]
-    };
-    return demo;
-  }
-
- async function loadMeOrRedirect(){
-  // TEMP LOCAL ADMIN BYPASS (remove when backend auth is ready)
-  return { email:"admin@local", name:"Admin", role:"ADMIN" };
-}
-
-
-  function setAdminIdentity(user){
-    const name = user.name || "Admin";
-    const email = user.email || "admin@site.com";
-    els.adminName.textContent = name;
-    els.adminEmail.textContent = email;
-    els.adminAvatar.textContent = (name.trim()[0] || "A").toUpperCase();
-  }
-
-  async function loadDashboard(){
-    // Try backend dashboard endpoint first (optional)
-    // Recommended future endpoint: GET /api/admin/dashboard
-    const resp = await apiFetch("/api/admin/dashboard").catch(() => ({ ok:false }));
-
-    if (resp.ok && resp.data){
-      setApiStatus(true);
-      const now = new Date();
-      const day = now.toLocaleDateString(undefined, { weekday:"long", month:"short", day:"numeric" });
-      els.todayLine.textContent = `${day} • Live data connected`;
-      setDashboard(resp.data);
-      return;
+    function totalStock() {
+      return toNum(sS?.value) + toNum(sM?.value) + toNum(sL?.value) + toNum(sXL?.value);
     }
 
-    setApiStatus(false);
-    setDashboard(buildDemo());
-  }
+    function renderTextPreview() {
+      if (pvName) pvName.textContent = (name?.value || "—").trim() || "—";
+      if (pvDesc) pvDesc.textContent = (desc?.value || "—").trim() || "—";
+      if (pvPrice) pvPrice.textContent = formatJ(toNum(price?.value));
+      if (pvStatus) pvStatus.textContent = (status?.value === "published") ? "Published" : "Draft";
 
-  async function logout(){
-    await apiFetch("/api/auth/logout", { method:"POST" }).catch(()=>{});
-    location.href = "./login.html";
-  }
+      const t = totalStock();
+      if (pvStock) pvStock.textContent = "Stock: " + t;
+      if (totalBadge) totalBadge.textContent = "Total: " + t;
+    }
 
-  function bindUI(){
-    els.sidebarToggle?.addEventListener("click", () => {
-      els.sidebar?.classList.toggle("is-open");
+    async function readFiles(files) {
+      const arr = Array.from(files || []);
+      return Promise.all(arr.map(f => new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve({ name: f.name, dataUrl: String(r.result || "") });
+        r.onerror = () => reject(new Error("read failed"));
+        r.readAsDataURL(f);
+      })));
+    }
+
+    function renderImages(list) {
+      if (imageGrid) imageGrid.innerHTML = "";
+
+      list.forEach((img, idx) => {
+        const tile = document.createElement("div");
+        tile.className = "image-tile";
+        tile.innerHTML = `
+          <img alt="Product image ${idx + 1}" src="${img.dataUrl}">
+          <div class="meta">${img.name}</div>
+        `;
+        imageGrid && imageGrid.appendChild(tile);
+      });
+
+      if (pvMedia) {
+        pvMedia.innerHTML = "";
+        if (list[0]) {
+          const im = document.createElement("img");
+          im.src = list[0].dataUrl;
+          im.alt = "Preview image";
+          pvMedia.appendChild(im);
+        } else {
+          pvMedia.innerHTML = `<span class="muted">No image</span>`;
+        }
+      }
+    }
+
+    ["input", "change"].forEach(evt => {
+      [name, desc, price, status, sS, sM, sL, sXL].forEach(el => {
+        if (!el) return;
+        el.addEventListener(evt, renderTextPreview);
+      });
     });
 
-    els.refreshBtn?.addEventListener("click", async () => {
-      toast("Refreshing…");
-      await loadDashboard();
-      toast("Up to date.");
-    });
+    if (fileInput) {
+      fileInput.addEventListener("change", async () => {
+        try {
+          const imgs = await readFiles(fileInput.files);
+          renderImages(imgs);
+        } catch {
+          toast("Could not read images. Try smaller files.");
+        }
+      });
+    }
 
-    els.themeBtn?.addEventListener("click", () => {
-      const cur = document.documentElement.getAttribute("data-theme") || "dark";
-      setTheme(cur === "dark" ? "light" : "dark");
-    });
-
-    els.logoutBtn?.addEventListener("click", logout);
+    renderTextPreview();
   }
 
-  async function init(){
-    loadTheme();
-    bindUI();
-
-    const me = await loadMeOrRedirect();
-    if (!me) return;
-
-    setAdminIdentity(me);
-    await loadDashboard();
-  }
-
-  document.addEventListener("DOMContentLoaded", init);
+  /* ================= Init ================= */
+  applyTheme(getTheme());   // IMPORTANT: apply persisted theme on load
+  setYear();
+  requireAuth();
+  hydrateAdminName();
+  bindDelegatedActions();   // IMPORTANT: makes Theme button work everywhere
+  bindLogin();
+  initProductsPreview();
 })();

@@ -21,6 +21,50 @@
   'use strict';
 
   // -----------------------------
+  // THEME (SYNC WITH ADMIN)
+  // -----------------------------
+  const THEME_KEY = 'bs_admin_theme'; // shared with admin side
+
+  function getSavedTheme() {
+    const t = localStorage.getItem(THEME_KEY);
+    if (t === 'dark' || t === 'light') return t;
+
+    // fallback to OS preference
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return prefersDark ? 'dark' : 'light';
+  }
+
+  function applyTheme(theme) {
+    const t = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    localStorage.setItem(THEME_KEY, t);
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || getSavedTheme();
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  }
+
+  // Apply theme ASAP (before DOMContentLoaded work)
+  applyTheme(getSavedTheme());
+
+  // Sync theme if changed in another tab (or admin open elsewhere)
+  window.addEventListener('storage', (e) => {
+    if (e.key !== THEME_KEY) return;
+    applyTheme(getSavedTheme());
+  });
+
+  // Delegated theme button support:
+  // - <button class="theme-toggle">Theme</button>
+  // - OR anything with data-action="toggle-theme"
+  document.addEventListener('click', (e) => {
+    const btn = e.target?.closest?.('[data-action="toggle-theme"], .theme-toggle');
+    if (!btn) return;
+    e.preventDefault();
+    toggleTheme();
+  });
+
+  // -----------------------------
   // GLOBAL NAMESPACE
   // -----------------------------
   window.BeyondSilhouette = window.BeyondSilhouette || {};
@@ -85,7 +129,6 @@
   function toast(msg, { important = false } = {}) {
     ensureToastStyles();
 
-    // Important prompts also use alert so you NEVER miss them
     if (important) {
       try { alert(msg); } catch (_) {}
     }
@@ -109,8 +152,8 @@
     const raw = localStorage.getItem(KEYS.state);
     const st = raw ? (safeParse(raw) || {}) : {};
     st.cartByUser = st.cartByUser || {};
-    st.productCache = st.productCache || {};   // { [id]: { id, name, price, image } }
-    st.ordersByUser = st.ordersByUser || {};   // { [email]: [order...] }
+    st.productCache = st.productCache || {};
+    st.ordersByUser = st.ordersByUser || {};
     return st;
   }
 
@@ -185,9 +228,7 @@
       writeUsers(users);
       writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
 
-      // Merge guest cart into user
       Cart.mergeGuestIntoUser(em);
-
       return users[em];
     },
 
@@ -199,10 +240,7 @@
       if (u.passwordHash !== demoHash(password)) throw new Error('Incorrect password.');
 
       writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
-
-      // Merge guest cart into user
       Cart.mergeGuestIntoUser(em);
-
       return u;
     },
 
@@ -215,7 +253,7 @@
   };
 
   // -----------------------------
-  // PRODUCT CACHE (prevents Unknown)
+  // PRODUCT CACHE
   // -----------------------------
   const ProductCache = {
     upsert(product) {
@@ -245,9 +283,7 @@
   };
 
   // -----------------------------
-  // CART (per-user + guest)
-  // Cart item shape:
-  // { productId, name, price, qty, size, image }
+  // CART
   // -----------------------------
   const Cart = {
     userKey() {
@@ -261,7 +297,6 @@
       const raw = st.cartByUser[key];
       let items = (raw && Array.isArray(raw.items)) ? raw.items : [];
 
-      // Heal items using ProductCache to avoid "Unknown"
       items = items.map((it) => ProductCache.fillCartItem({
         productId: String(it.productId ?? it.id ?? ''),
         name: it.name ?? it.title ?? 'Unknown',
@@ -271,7 +306,6 @@
         image: it.image ?? ''
       })).filter(it => it.productId);
 
-      // Save normalized form back
       st.cartByUser[key] = { items, updatedAt: nowISO() };
       writeState(st);
 
@@ -354,14 +388,12 @@
       const user = (st.cartByUser[userEmail] && Array.isArray(st.cartByUser[userEmail].items))
         ? st.cartByUser[userEmail].items : [];
 
-      // Merge by productId+size
       const map = new Map();
       [...user, ...guest].forEach((it) => {
         const key = `${String(it.productId)}__${it.size || ''}`;
         const existing = map.get(key);
-        if (existing) {
-          existing.qty += Number(it.qty || 0);
-        } else {
+        if (existing) existing.qty += Number(it.qty || 0);
+        else {
           map.set(key, {
             productId: String(it.productId),
             name: it.name || 'Unknown',
@@ -380,9 +412,7 @@
   };
 
   // -----------------------------
-  // ORDERS (local receipts)
-  // order shape:
-  // { id, createdAt, userEmail, items, subtotal, paymentMethod, status }
+  // ORDERS
   // -----------------------------
   const Orders = {
     listFor(email) {
@@ -410,9 +440,6 @@
     },
 
     updateNavAuthState() {
-      // Your dropdown varies page-to-page, so we do a simple approach:
-      // - Find ALL links to login/register/orders/account/logout
-      // - Toggle based on user session
       const user = Auth.currentUser();
 
       const allLoginLinks = $$('a[href="login.html"]');
@@ -429,7 +456,6 @@
     },
 
     ensureHeaderFooter() {
-      // checkout.html has empty placeholders
       const header = $('#site-header');
       const footer = $('#site-footer');
 
@@ -444,6 +470,7 @@
               <li><a class="nav-link" href="cart.html">Cart (<span class="cart-count">0</span>)</a></li>
             </ul>
             <div class="nav-right">
+              <button class="theme-toggle" type="button" data-action="toggle-theme">Theme</button>
               <div class="login-dropdown">
                 <a class="loginIcon" href="#"><img src="./images/user icon.png" alt="Login"/></a>
                 <ul class="login-menu">
@@ -499,12 +526,10 @@
       if (!a) return;
       e.preventDefault();
       Auth.logout();
-      // Send home
       location.href = 'index.html';
     });
   }
 
-  // SHOP: Add to Cart (your exact markup)
   function bindAddToCart() {
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.add-to-cart');
@@ -521,14 +546,12 @@
       const price = Number(card.dataset.price || 0);
       const stock = Number(card.dataset.stock || card.dataset.qty || 0);
 
-      // Pull image from dataset OR first <img> inside card
       let image = card.dataset.image || '';
       if (!image) {
         const imgEl = card.querySelector('img');
         if (imgEl && imgEl.getAttribute('src')) image = imgEl.getAttribute('src');
       }
 
-      // Enforce size selection if select exists
       const sizeSelect = card.querySelector('.product-size-select');
       const size = sizeSelect ? String(sizeSelect.value || '').trim() : '';
 
@@ -542,10 +565,8 @@
         return;
       }
 
-      // Save product into cache to prevent "Unknown" later
       ProductCache.upsert({ id: productId, name, price, image });
 
-      // Stock enforcement if stock set
       if (stock > 0) {
         const existing = Cart.load().find(it => it.productId === String(productId) && (it.size || null) === (size || null));
         const existingQty = existing ? Number(existing.qty || 0) : 0;
@@ -562,7 +583,6 @@
     });
   }
 
-  // CART PAGE RENDER
   function renderCartIfOnCartPage() {
     if (!page().includes('cart.html')) return;
     renderCartPage();
@@ -648,7 +668,6 @@
 
     container.appendChild(list);
 
-    // Summary + checkout button (cart.html does not include one, so we inject it)
     const summary = document.createElement('div');
     summary.className = 'cart-summary';
     summary.innerHTML = `
@@ -678,7 +697,6 @@
     });
   }
 
-  // LOGIN PAGE
   function bindLoginForm() {
     const form = $('.login-form');
     if (!form) return;
@@ -710,7 +728,6 @@
     });
   }
 
-  // REGISTER PAGE
   function bindRegisterForm() {
     const form = $('.register-form');
     if (!form) return;
@@ -744,7 +761,6 @@
     });
   }
 
-  // FORGOT PASSWORD PAGE (demo)
   function bindForgotForm() {
     const form = $('.forgot-form');
     if (!form) return;
@@ -755,7 +771,6 @@
     });
   }
 
-  // ACCOUNT PAGE: replace placeholder profile info
   function renderAccountPage() {
     if (!page().includes('account.html')) return;
 
@@ -769,7 +784,6 @@
     const details = $('.account-details');
     if (!details) return;
 
-    // Replace inner content while preserving style
     details.innerHTML = `
       <h2>Profile Information</h2>
       <p><strong>Name:</strong> ${escapeHtml(user.name || '')}</p>
@@ -794,7 +808,6 @@
     return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
   }
 
-  // CHECKOUT PAGE: inject UI + place order
   function renderCheckoutPage() {
     if (!page().includes('checkout.html')) return;
 
@@ -870,7 +883,6 @@
 
       const pm = $('.payment-method')?.value || 'card';
 
-      // Simulate processing
       toast('Placing order...');
       await new Promise(r => setTimeout(r, 700));
 
@@ -893,7 +905,6 @@
     });
   }
 
-  // ORDERS PAGE: replace static sample cards with real orders
   function renderOrdersPage() {
     if (!page().includes('orders.html')) return;
 
@@ -942,27 +953,6 @@
   }
 
   // -----------------------------
-  // SERVER-SIDE PLACEHOLDERS (COMMENTED)
-  // -----------------------------
-  /*
-    // Backend plans (Node + DB):
-    // - POST /api/register { name, email, password }
-    // - POST /api/login { email, password }
-    // - POST /api/logout
-    // - GET  /api/me
-    // - GET  /api/products
-    // - POST /api/cart
-    // - POST /api/orders
-    // - GET  /api/orders
-    //
-    // Payments:
-    // - Card: Stripe / PayPal checkout session
-    // - Cash: mark as "Cash on delivery / pickup"
-    // - PayPal: PayPal SDK
-    // - CashApp: can be handled as manual payment instructions or via a provider flow (varies by region)
-  */
-
-  // -----------------------------
   // INIT
   // -----------------------------
   function init() {
@@ -971,25 +961,20 @@
     UI.bindLoginDropdown();
     bindLogoutIntercept();
 
-    // Always bind add-to-cart (delegated)
     bindAddToCart();
 
-    // Bind auth forms
     bindLoginForm();
     bindRegisterForm();
     bindForgotForm();
 
-    // Update nav/cart counters
     UI.updateNavAuthState();
     UI.updateCartBadges();
 
-    // Page renders
     renderCartIfOnCartPage();
     renderCheckoutPage();
     renderOrdersPage();
     renderAccountPage();
 
-    // Expose helpers
     BS.toast = toast;
     BS.cart = {
       items: () => Cart.load(),

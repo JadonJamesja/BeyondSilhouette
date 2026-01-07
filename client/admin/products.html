@@ -1,34 +1,219 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
-  <title>Products</title>
-  <link rel="stylesheet" href="admin.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Products</title>
+  <link rel="stylesheet" href="./admin.css" />
 </head>
-<body>
-  <nav class="admin-nav">
-    <a href="index.html">Dashboard</a>
-    <a href="products.html">Products</a>
-    <a href="orders.html">Orders</a>
-    <button id="logout">Logout</button>
-  </nav>
 
-  <main>
-    <h1>Products</h1>
-    <button id="add-product">Add Product</button>
-    <table id="products-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Price</th>
-          <th>Total Stock</th>
-          <th>Active</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </main>
+<body class="admin">
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+    </div>
 
-  <script src="admin.js"></script>
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item active" href="./products.html">Products</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 class="h1">Products</h1>
+        <p class="muted">Draft → Preview → Publish workflow (ready to connect to database).</p>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="New product (demo).">New product</button>
+        <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Opening shop (after DB we’ll render live).">Open shop</button>
+      </div>
+    </header>
+
+    <section class="grid two">
+      <!-- Editor -->
+      <article class="card">
+        <div class="card-head">
+          <h2 class="h2">Upload / Edit</h2>
+          <p class="muted">You’ll be able to save drafts, publish later, edit sizes/stock, and manage images after DB wiring.</p>
+        </div>
+
+        <form class="form" id="productForm" novalidate>
+          <label class="field">
+            <span class="label">Product name</span>
+            <input class="input" name="name" placeholder="e.g., Signature Dress" required />
+          </label>
+
+          <label class="field">
+            <span class="label">Description</span>
+            <textarea class="input" name="description" rows="4" placeholder="Short, clean description…"></textarea>
+          </label>
+
+          <div class="grid two tight">
+            <label class="field">
+              <span class="label">Price</span>
+              <input class="input" name="price" inputmode="numeric" placeholder="9500" required />
+            </label>
+
+            <label class="field">
+              <span class="label">Status</span>
+              <select class="input" name="status">
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Stock by size</div>
+                <div class="muted">Adjust quantities per size (S/M/L/XL).</div>
+              </div>
+              <span class="badge badge-soft" id="stockTotalBadge">Total: 0</span>
+            </div>
+
+            <div class="grid two tight mt-12">
+              <label class="field">
+                <span class="label">S</span>
+                <input class="input" name="stockS" inputmode="numeric" placeholder="0" />
+              </label>
+              <label class="field">
+                <span class="label">M</span>
+                <input class="input" name="stockM" inputmode="numeric" placeholder="0" />
+              </label>
+              <label class="field">
+                <span class="label">L</span>
+                <input class="input" name="stockL" inputmode="numeric" placeholder="0" />
+              </label>
+              <label class="field">
+                <span class="label">XL</span>
+                <input class="input" name="stockXL" inputmode="numeric" placeholder="0" />
+              </label>
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="label">Product images</span>
+            <input class="input" id="productImages" type="file" accept="image/*" multiple />
+            <span class="muted" style="font-size:13px;">For now, preview works. Storage will be wired to DB later.</span>
+          </label>
+
+          <div class="image-grid" id="imageGrid" aria-label="Image previews"></div>
+
+          <div class="row-between">
+            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Saved as draft (demo).">Save draft</button>
+            <div class="row">
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Draft deleted (demo).">Delete</button>
+              <button class="btn btn-primary" type="button" data-action="toast" data-toast="Published (demo).">Publish</button>
+            </div>
+          </div>
+
+          <div class="hint">
+            After database creation, this page will:
+            store uploads + images, allow draft history, publish/unpublish, edit sizes, and update shop instantly.
+          </div>
+        </form>
+      </article>
+
+      <!-- Preview + Lists -->
+      <article class="card">
+        <div class="card-head row-between">
+          <div>
+            <h2 class="h2">Preview</h2>
+            <p class="muted">Exactly what will show on the client shop page later.</p>
+          </div>
+          <span class="badge" id="previewStatus">Draft</span>
+        </div>
+
+        <div class="preview-wrap">
+          <div class="preview-card">
+            <div class="preview-media" id="previewMedia">
+              <span class="muted">No image</span>
+            </div>
+            <div class="preview-body">
+              <div class="preview-title" id="previewName">—</div>
+              <div class="muted" id="previewDesc">—</div>
+              <div class="row-between mt-12">
+                <div class="preview-price" id="previewPrice">J$ 0</div>
+                <span class="badge badge-soft" id="previewStock">Stock: 0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-head" style="padding-top: 8px;">
+          <h2 class="h2">Drafts</h2>
+          <p class="muted">Stored in DB later. For now: demo list.</p>
+        </div>
+
+        <div class="list">
+          <div class="list-item">
+            <div>
+              <div class="list-title">Signature Dress</div>
+              <div class="muted">Draft • Updated 2h ago</div>
+            </div>
+            <div class="row">
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Loaded draft (demo).">Edit</button>
+              <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Published draft (demo).">Publish</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-head" style="padding-top: 8px;">
+          <h2 class="h2">Published</h2>
+          <p class="muted">Visible to customers after DB integration.</p>
+        </div>
+
+        <div class="list">
+          <div class="list-item">
+            <div>
+              <div class="list-title">Classic One-Piece</div>
+              <div class="muted">Published • Stock managed by size</div>
+            </div>
+            <div class="row">
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened product (demo).">Edit</button>
+              <button class="btn btn-danger btn-sm" type="button" data-action="toast" data-toast="Unpublished (demo).">Unpublish</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-foot row-between">
+          <div class="muted">Next step: connect this to database + storage.</div>
+          <a class="btn btn-ghost btn-sm" href="./settings.html">Setup</a>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+  </div>
+
+  <script src="./admin.js"></script>
 </body>
 </html>

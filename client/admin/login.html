@@ -1,20 +1,78 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <title>Admin Login</title>
-  <link rel="stylesheet" href="admin.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Login</title>
+  <link rel="stylesheet" href="./admin.css" />
 </head>
-<body class="admin-auth">
 
-  <form id="admin-login-form" class="card">
-    <h2>Admin Login</h2>
-    <input type="email" name="email" placeholder="Email" required />
-    <input type="password" name="password" placeholder="Password" required />
-    <button type="submit">Login</button>
-    <p class="error" id="login-error"></p>
-  </form>
+<body class="auth">
+  <div class="auth-shell">
+    <header class="auth-header">
+      <a class="brand brand-link" href="../index.html" title="Back to site">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin Portal</div>
+        </div>
+      </a>
 
-  <script src="admin.js"></script>
+      <div class="row">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme" aria-label="Toggle theme">
+          Theme
+        </button>
+      </div>
+    </header>
+
+    <main class="auth-card card">
+      <div class="card-head">
+        <h1 class="h2">Sign in</h1>
+        <p class="muted">Use your admin credentials to access the dashboard.</p>
+      </div>
+
+      <form class="form" data-form="login" novalidate>
+        <div class="grid two tight">
+          <label class="field">
+            <span class="label">Email</span>
+            <input class="input" name="email" type="email" autocomplete="username" placeholder="admin@beyondsilhouette.com" required />
+          </label>
+
+          <label class="field">
+            <span class="label">Password</span>
+            <div class="input-row">
+              <input class="input" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-password">Show</button>
+            </div>
+          </label>
+        </div>
+
+        <div class="row-between">
+          <label class="check">
+            <input type="checkbox" name="remember" />
+            <span>Remember me</span>
+          </label>
+
+          <a class="link" href="../forgot-password.html">Forgot password?</a>
+        </div>
+
+        <button class="btn btn-primary" type="submit">
+          Sign in <span aria-hidden="true">→</span>
+        </button>
+
+        <div class="hint">
+          Demo: <code>admin@beyondsilhouette.com</code> / <code>Admin123!</code>
+        </div>
+
+        <div class="alert" data-ui="error" hidden></div>
+      </form>
+    </main>
+
+    <footer class="auth-footer muted">
+      © <span data-ui="year"></span> BeyondSilhouette • Admin
+    </footer>
+  </div>
+
+  <script src="./admin.js"></script>
 </body>
 </html>

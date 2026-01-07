@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Customers</title>
+  <link rel="stylesheet" href="./admin.css" />
+</head>
+
+<body class="admin">
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item active" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 class="h1">Customers</h1>
+        <p class="muted">Profiles, order counts, and lifetime value (demo until DB).</p>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="input-group">
+          <input class="input input-sm" placeholder="Search name / email…" />
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Filter opened (demo).">Filter</button>
+        </div>
+        <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Customer note added (demo).">Add note</button>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 class="h2">Customer list</h2>
+        <p class="muted">This becomes real once we connect Auth + Orders to the DB.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table" aria-label="Customers list">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Orders</th>
+              <th class="right">Lifetime value</th>
+              <th class="right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>J. Carter</td>
+              <td>jcarter@email.com</td>
+              <td>8</td>
+              <td class="right">J$ 112,000</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened customer (demo).">Open</button></td>
+            </tr>
+            <tr>
+              <td>A. Blake</td>
+              <td>ablake@email.com</td>
+              <td>3</td>
+              <td class="right">J$ 21,000</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened customer (demo).">Open</button></td>
+            </tr>
+            <tr>
+              <td>S. Morgan</td>
+              <td>smorgan@email.com</td>
+              <td>12</td>
+              <td class="right">J$ 198,000</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened customer (demo).">Open</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-foot row-between">
+        <div class="muted">Next: customer profiles + order history after DB.</div>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Exported (demo).">Export</button>
+      </div>
+    </section>
+
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+  </div>
+
+  <script src="./admin.js"></script>
+</body>
+</html>
