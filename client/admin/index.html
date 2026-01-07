@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <nav class="admin-nav">
+    <a href="index.html">Dashboard</a>
+    <a href="products.html">Products</a>
+    <a href="orders.html">Orders</a>
+    <button id="logout">Logout</button>
+  </nav>
+
+  <main>
+    <h1>Dashboard</h1>
+    <div class="stats">
+      <div class="card" id="stat-orders">Orders: --</div>
+      <div class="card" id="stat-revenue">Revenue: --</div>
+      <div class="card" id="stat-unpaid">Unpaid Cash Orders: --</div>
+    </div>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

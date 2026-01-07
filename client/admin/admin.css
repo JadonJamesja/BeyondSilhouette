@@ -1,0 +1,17 @@
+body { font-family: Arial; background:#f6f6f6; margin:0; }
+.admin-nav {
+  background:#111; color:#fff; padding:10px;
+  display:flex; gap:15px;
+}
+.admin-nav a, .admin-nav button {
+  color:#fff; background:none; border:none; cursor:pointer;
+}
+main { padding:20px; }
+.card {
+  background:#fff; padding:20px; margin-bottom:20px;
+  border-radius:6px;
+}
+table { width:100%; border-collapse:collapse; }
+th, td { padding:10px; border-bottom:1px solid #ddd; }
+button { padding:8px 12px; cursor:pointer; }
+.error { color:red; }
