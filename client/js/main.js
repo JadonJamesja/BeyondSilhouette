@@ -198,7 +198,7 @@
       const em = String(email || '').trim().toLowerCase();
       const users = readUsers();
       const u = users[em];
-      if (!u) throw new Error('No account exists for that email.');
+      if (!u) throw new Error('No account found for this email.');
       if (u.passwordHash !== demoHash(password)) throw new Error('Incorrect password.');
 
       writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
@@ -210,36 +210,46 @@
       clearSession();
       UI.updateNavAuthState();
       UI.updateCartBadges();
-      toast('Logged out');
     }
   };
 
   // -----------------------------
-  // PRODUCT CACHE (prevents Unknown)
+  // PRODUCT CACHE (for cart images/names)
   // -----------------------------
   const ProductCache = {
-    upsert(product) {
-      if (!product || !product.id) return;
+    load() {
       const st = readState();
-      st.productCache[String(product.id)] = {
-        id: String(product.id),
-        name: product.name || '',
-        price: Number(product.price || 0),
-        image: product.image || ''
-      };
+      return st.productCache || {};
+    },
+
+    save(cache) {
+      const st = readState();
+      st.productCache = cache || {};
       writeState(st);
     },
 
-    fillCartItem(item) {
-      const st = readState();
-      const p = st.productCache[String(item.productId)];
-      if (!p) return item;
+    upsert({ id, name, price, image }) {
+      if (!id) return;
+      const cache = this.load();
+      cache[String(id)] = {
+        id: String(id),
+        name: String(name || ''),
+        price: Number(price || 0),
+        image: String(image || ''),
+        updatedAt: nowISO()
+      };
+      this.save(cache);
+    },
 
+    fillCartItem(it) {
+      const cache = this.load();
+      const c = cache[String(it.productId)];
+      if (!c) return it;
       return {
-        ...item,
-        name: (item.name && item.name !== 'Unknown') ? item.name : (p.name || item.name),
-        price: (item.price != null && !Number.isNaN(Number(item.price))) ? Number(item.price) : Number(p.price || 0),
-        image: item.image ? item.image : (p.image || '')
+        ...it,
+        name: it.name || c.name,
+        price: it.price || c.price,
+        image: it.image || c.image
       };
     }
   };
@@ -361,20 +371,18 @@
   };
 
   // -----------------------------
-  // UI HELPERS
+  // UI
   // -----------------------------
   const UI = {
     updateCartBadges() {
-      const items = Cart.load();
-      const total = Cart.totalQty(items);
-      $$('.cart-count').forEach(el => { el.textContent = String(total); });
+      const total = Cart.totalQty(Cart.load());
+      $$('.cart-count').forEach(el => el.textContent = String(total));
     },
 
     updateNavAuthState() {
       const user = Auth.currentUser();
-
       const allLoginLinks = $$('a[href="login.html"]');
-      const allRegisterLinks = $$('a[href="register.html"], a[href="CreateAccount.html"], a[href="create-account.html"]');
+      const allRegisterLinks = $$('a[href="register.html"]');
       const allAccountLinks = $$('a[href="account.html"]');
       const allOrdersLinks = $$('a[href="orders.html"]');
       const allLogoutLinks = $$('a[href="logout.html"]');
@@ -437,16 +445,36 @@
     const products = store.listPublished();
     if (status) status.textContent = products.length ? '' : 'No products available yet.';
 
+    // Build a quick lookup of how many of each product+size are already in the cart.
+    // This lets the shop reflect remaining stock immediately after adding to cart.
+    const cartItems = Cart.load();
+    const cartQtyByKey = new Map();
+    for (const it of cartItems) {
+      const pid = String(it.productId || '');
+      const sz = it.size ? String(it.size) : '__nosize__';
+      const key = `${pid}::${sz}`;
+      cartQtyByKey.set(key, (cartQtyByKey.get(key) || 0) + Number(it.qty || 0));
+    }
+
     grid.innerHTML = products.map((p, idx) => {
-      const totalStock = (p.stockBySize && typeof p.stockBySize === 'object')
-        ? Object.values(p.stockBySize).reduce((s, n) => s + Number(n || 0), 0)
-        : 0;
+      const baseStockBySize = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
+
+      // Remaining stock per size = base - qty already in cart for that size
+      const sizes = Array.isArray(p.sizes) && p.sizes.length ? p.sizes : ['S', 'M', 'L', 'XL'];
+      const remainingBySize = {};
+      sizes.forEach((s) => {
+        const base = Number(baseStockBySize?.[s] ?? 0);
+        const inCart = Number(cartQtyByKey.get(`${String(p.id)}::${String(s)}`) || 0);
+        remainingBySize[s] = Math.max(0, base - inCart);
+      });
+
+      const totalRemaining = Object.values(remainingBySize).reduce((sum, n) => sum + Number(n || 0), 0);
 
       const imageUrl = (p.media && p.media.coverUrl) ? p.media.coverUrl : '';
       const sizeSelectId = `size-${p.id}-${idx}`;
 
-      const stockLine = totalStock > 0
-        ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalStock || 0)}</span></p>`
+      const stockLine = totalRemaining > 0
+        ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalRemaining || 0)}</span></p>`
         : `<p class="stock stock-soon"><span class="stock-count">New stock coming soon.</span></p>`;
 
       return `
@@ -454,7 +482,7 @@
           data-id="${escapeHtml(p.id)}"
           data-name="${escapeHtml(p.title)}"
           data-price="${Number(p.priceJMD || 0)}"
-          data-stock="${Number(totalStock || 0)}"
+          data-stock="${Number(totalRemaining || 0)}"
           ${imageUrl ? `data-image="${escapeHtml(imageUrl)}"` : ''}
         >
           <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(p.title)}" />
@@ -462,24 +490,43 @@
           <p class="price">J$${Number(p.priceJMD || 0).toLocaleString('en-JM')}</p>
 
           <label for="${sizeSelectId}" class="size-label">Size:</label>
-          <select id="${sizeSelectId}" class="product-size-select" ${totalStock <= 0 ? 'disabled' : ''}>
+          <select id="${sizeSelectId}" class="product-size-select" ${totalRemaining <= 0 ? 'disabled' : ''}>
             <option value="" selected disabled>Select</option>
-            ${(p.sizes || ['S', 'M', 'L', 'XL']).map(s => {
-              const left = p.stockBySize?.[s] ?? 0;
+            ${sizes.map(s => {
+              const left = remainingBySize?.[s] ?? 0;
               const disabled = Number(left) <= 0 ? 'disabled' : '';
-              const suffix = Number(left) <= 0 ? ' (Sold out)' : '';
+              const suffix = Number(left) <= 0 ? ' (Sold out)' : ` (${Number(left)})`;
               return `<option value="${s}" ${disabled}>${s}${suffix}</option>`;
             }).join('')}
           </select>
 
           ${stockLine}
 
-          <button class="btn add-to-cart" ${totalStock <= 0 ? 'disabled aria-disabled="true"' : ''}>
-            ${totalStock > 0 ? 'Add to Cart' : 'Unavailable'}
+          <button class="btn add-to-cart" ${totalRemaining <= 0 ? 'disabled aria-disabled="true"' : ''}>
+            ${totalRemaining > 0 ? 'Add to Cart' : 'Unavailable'}
           </button>
         </div>
       `;
     }).join('');
+  }
+
+  function remainingStockFor(productId, size) {
+    const store = window.BSProducts;
+    if (!store || typeof store.readAll !== 'function') return 0;
+
+    const pid = String(productId || '');
+    const sz = String(size || '');
+
+    const product = (store.readAll() || []).find(p => String(p?.id) === pid);
+    if (!product) return 0;
+
+    const base = Number(product.stockBySize?.[sz] ?? 0);
+    const inCart = Cart.load().reduce((sum, it) => {
+      if (String(it.productId) === pid && String(it.size || '') === sz) return sum + Number(it.qty || 0);
+      return sum;
+    }, 0);
+
+    return Math.max(0, base - inCart);
   }
 
   // -----------------------------
@@ -514,7 +561,6 @@
       const productId = card.dataset.id;
       const name = card.dataset.name;
       const price = Number(card.dataset.price || 0);
-      const stock = Number(card.dataset.stock || card.dataset.qty || 0);
 
       let image = card.dataset.image || '';
       if (!image) {
@@ -537,15 +583,15 @@
 
       ProductCache.upsert({ id: productId, name, price, image });
 
-      if (stock > 0) {
-        const existing = Cart.load().find(it => it.productId === String(productId) && (it.size || null) === (size || null));
-        const existingQty = existing ? Number(existing.qty || 0) : 0;
-        if (existingQty + 1 > stock) {
-          toast('Not enough stock available for this item.', { important: true });
-          return;
-        }
-      } else {
-        toast('New stock coming soon.', { important: true });
+      // Enforce size-level stock (stockBySize) and reflect cart usage
+      const remaining = size ? remainingStockFor(productId, size) : 0;
+      if (!size || size.toLowerCase().includes('select')) {
+        toast('Please select a size before adding to cart.', { important: true });
+        return;
+      }
+
+      if (remaining <= 0) {
+        toast('Not enough stock available for this size.', { important: true });
         return;
       }
 
@@ -553,6 +599,9 @@
 
       toast(`Added to cart: ${name}`);
       renderCartIfOnCartPage();
+
+      // Refresh the shop UI so the stock count updates immediately.
+      renderShopFromStore();
     });
   }
 
@@ -661,11 +710,10 @@
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-
-      const fullname = form.querySelector('input[name="fullname"], #fullname')?.value || '';
-      const email = form.querySelector('input[type="email"]')?.value || '';
-      const password = form.querySelector('input[type="password"]')?.value || '';
-      const confirmPassword = form.querySelector('input[name="confirmPassword"], #confirmPassword')?.value;
+      const fullname = form.querySelector('input[name="fullname"], input[type="text"]')?.value;
+      const email = form.querySelector('input[type="email"]')?.value;
+      const password = form.querySelector('input[name="password"], input[type="password"]')?.value;
+      const confirmPassword = form.querySelector('input[name="confirmPassword"]')?.value;
 
       try {
         Auth.register({ fullname, email, password, confirmPassword });
@@ -681,43 +729,67 @@
     });
   }
 
-  function bindForgotForm() {
-    if (!page().includes('forgot-password.html')) return;
-    const form = document.querySelector('form');
-    if (!form) return;
-
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      toast('Password reset email would be sent in a real app.', { important: true });
-      location.href = 'login.html';
-    });
-  }
-
   function renderAccountPage() {
     if (!page().includes('account.html')) return;
-    const user = Auth.currentUser();
-    const details = $('.profile-details');
-    if (!details) return;
-
-    if (!user) {
+    const u = Auth.currentUser();
+    if (!u) {
       localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'account.html' }));
+      toast('Please log in to view your account.', { important: true });
       location.href = 'login.html';
       return;
     }
 
-    details.innerHTML = `
-      <h2>Profile Information</h2>
-      <p><strong>Name:</strong> ${escapeHtml(user.name || '')}</p>
-      <p><strong>Email:</strong> ${escapeHtml(user.email || '')}</p>
-      <p><strong>Member Since:</strong> ${formatMemberSince(user.createdAt)}</p>
-      <a class="btn" href="orders.html">View Orders</a>
-      <a class="btn" href="cart.html" style="margin-left:10px;">View Cart</a>
-    `;
+    const nameEl = $('#accountName');
+    const emailEl = $('#accountEmail');
+    const sinceEl = $('#accountSince');
+
+    if (nameEl) nameEl.textContent = u.name || '';
+    if (emailEl) emailEl.textContent = u.email || '';
+    if (sinceEl) sinceEl.textContent = formatMemberSince(u.createdAt);
   }
 
-  // -----------------------------
-  // CHECKOUT (requires login + renders into existing containers ONLY)
-  // -----------------------------
+  function renderOrdersPage() {
+    if (!page().includes('orders.html')) return;
+    const u = Auth.currentUser();
+    if (!u) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'orders.html' }));
+      toast('Please log in to view your orders.', { important: true });
+      location.href = 'login.html';
+      return;
+    }
+
+    const list = $('#ordersList');
+    if (!list) return;
+
+    const orders = Orders.listFor(u.email);
+
+    if (!orders.length) {
+      list.innerHTML = `<p style="opacity:.8;">No orders yet.</p>`;
+      return;
+    }
+
+    list.innerHTML = orders.map(o => {
+      const items = Array.isArray(o.items) ? o.items : [];
+      const lines = items.map(it => {
+        const title = escapeHtml(it.name || 'Item');
+        const size = it.size ? ` (Size: ${escapeHtml(it.size)})` : '';
+        const qty = Number(it.qty || 0);
+        return `<li>${title}${size} × ${qty}</li>`;
+      }).join('');
+
+      return `
+        <div class="order-card">
+          <div class="order-head">
+            <strong>Order #${escapeHtml(o.id || '')}</strong>
+            <span>${new Date(o.createdAt).toLocaleString()}</span>
+          </div>
+          <ul class="order-items">${lines}</ul>
+          <div class="order-total"><strong>Total:</strong> ${money(Number(o.total || 0))}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
   function renderCheckoutPage() {
     if (!page().includes('checkout.html')) return;
 
@@ -729,135 +801,60 @@
       return;
     }
 
-    const itemsWrap = document.getElementById('checkoutItems');
-    const emptyEl = document.getElementById('checkoutEmpty');
-    const subtotalEl = document.getElementById('checkoutSubtotal');
-    const totalEl = document.getElementById('checkoutTotal');
-    const pmEl = document.getElementById('paymentMethod');
-    const btn = document.getElementById('placeOrderBtn');
+    const itemsEl = $('#checkoutItems');
+    const subtotalEl = $('#checkoutSubtotal');
+    const totalEl = $('#checkoutTotal');
+    const emptyEl = $('#checkoutEmpty');
+    const placeBtn = $('#placeOrderBtn');
+    const paySel = $('#paymentMethod');
 
-    if (!itemsWrap || !subtotalEl || !totalEl || !pmEl || !btn) return;
+    if (!itemsEl || !subtotalEl || !totalEl || !emptyEl || !placeBtn) return;
 
     const items = Cart.load();
     const subtotal = Cart.subtotal(items);
 
-    subtotalEl.textContent = money(subtotal);
-    totalEl.textContent = money(subtotal);
+    const isEmpty = items.length === 0;
+    emptyEl.hidden = !isEmpty;
+    placeBtn.disabled = isEmpty;
 
-    itemsWrap.innerHTML = '';
-
-    if (items.length === 0) {
-      if (emptyEl) emptyEl.hidden = false;
-      btn.disabled = true;
-      btn.setAttribute('aria-disabled', 'true');
+    if (isEmpty) {
+      itemsEl.innerHTML = '';
+      subtotalEl.textContent = money(0);
+      totalEl.textContent = money(0);
       return;
     }
 
-    if (emptyEl) emptyEl.hidden = true;
-    btn.disabled = false;
-    btn.removeAttribute('aria-disabled');
+    itemsEl.innerHTML = items.map(it => `
+      <div class="checkout-item">
+        <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
+        <div class="ci-info">
+          <div class="ci-title">${escapeHtml(it.name || 'Item')}</div>
+          <div class="ci-meta">${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Qty: ${Number(it.qty || 0)}</div>
+        </div>
+        <div class="ci-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</div>
+      </div>
+    `).join('');
 
-    items.forEach((it) => {
-      const row = document.createElement('div');
-      row.className = 'checkout-item';
+    subtotalEl.textContent = money(subtotal);
+    totalEl.textContent = money(subtotal);
 
-      const img = document.createElement('img');
-      img.className = 'checkout-item-img';
-      img.src = it.image || '';
-      img.alt = it.name || 'Product';
-
-      const info = document.createElement('div');
-      info.className = 'checkout-item-info';
-      info.innerHTML = `
-        <h3>${escapeHtml(it.name || 'Unknown')}</h3>
-        <p>${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Qty: ${Number(it.qty || 0)}</p>
-      `;
-
-      const price = document.createElement('div');
-      price.className = 'checkout-item-price';
-      price.textContent = money(Number(it.price || 0) * Number(it.qty || 0));
-
-      row.appendChild(img);
-      row.appendChild(info);
-      row.appendChild(price);
-
-      itemsWrap.appendChild(row);
-    });
-
-    btn.onclick = async () => {
-      const itemsNow = Cart.load();
-      if (itemsNow.length === 0) {
-        toast('Cart is empty.', { important: true });
-        return;
-      }
-
-      const pm = pmEl.value || 'card';
-
-      toast('Placing order...');
-      await new Promise(r => setTimeout(r, 700));
-
+    placeBtn.addEventListener('click', () => {
+      const method = paySel ? String(paySel.value || 'cash') : 'cash';
       const order = {
-        id: uid('order_').toUpperCase(),
+        id: uid('ord_'),
         createdAt: nowISO(),
-        userEmail: user.email,
-        items: itemsNow,
-        subtotal: Cart.subtotal(itemsNow),
-        paymentMethod: pm,
-        status: 'Processing'
+        paymentMethod: method,
+        items: items.map(it => ({ ...it })),
+        subtotal,
+        total: subtotal
       };
 
       Orders.addFor(user.email, order);
       Cart.clear();
       UI.updateCartBadges();
-
-      toast(`Order placed! Ref: ${order.id}`, { important: true });
-      location.href = 'orders.html';
-    };
-  }
-
-  function renderOrdersPage() {
-    if (!page().includes('orders.html')) return;
-
-    const user = Auth.currentUser();
-    const container = $('.orders-container');
-    if (!container) return;
-
-    if (!user) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'orders.html' }));
-      location.href = 'login.html';
-      return;
-    }
-
-    const orders = Orders.listFor(user.email);
-
-    if (orders.length === 0) {
-      container.innerHTML = `
-        <div class="empty-orders">
-          You don't have any orders yet. <a href="shop-page.html">Start Shopping</a>
-        </div>
-      `;
-      return;
-    }
-
-    container.innerHTML = `
-      ${orders.map(o => `
-        <div class="order-card">
-          <div class="order-header">
-            <h2>Order ${escapeHtml(o.id)}</h2>
-            <p><strong>Date:</strong> ${new Date(o.createdAt).toLocaleDateString()}</p>
-          </div>
-          <div class="order-body">
-            <p><strong>Status:</strong> <span class="status shipped">${escapeHtml(o.status)}</span></p>
-            <p><strong>Total:</strong> ${money(o.subtotal)}</p>
-            <p><strong>Payment:</strong> ${escapeHtml(o.paymentMethod)}</p>
-            <p><strong>Items:</strong></p>
-            <ul>
-              ${o.items.map(it => `<li>${escapeHtml(it.name || 'Unknown')} ${it.size ? `- Size ${escapeHtml(it.size)}` : ''} (x${it.qty})</li>`).join('')}
-            </ul>
-          </div>
-        </div>
-      `).join('')}
-    `;
+      toast('Order placed successfully!');
+      renderCheckoutPage();
+    }, { once: true });
   }
 
   // -----------------------------
@@ -865,41 +862,23 @@
   // -----------------------------
   function init() {
     UI.ensureHeaderFooter();
-    UI.bindNavActive();
-    UI.bindLoginDropdown();
-    bindLogoutIntercept();
-
-    renderShopFromStore();
-    bindAddToCart();
-
-    bindLoginForm();
-    bindRegisterForm();
-    bindForgotForm();
-
     UI.updateNavAuthState();
     UI.updateCartBadges();
+    UI.bindLoginDropdown();
+    UI.bindNavActive();
 
+    bindLogoutIntercept();
+    bindAddToCart();
+
+    renderShopFromStore();
     renderCartIfOnCartPage();
-    renderCheckoutPage();
-    renderOrdersPage();
+    bindLoginForm();
+    bindRegisterForm();
     renderAccountPage();
-
-    // Expose helpers
-    BS.toast = toast;
-    BS.cart = {
-      items: () => Cart.load(),
-      clear: () => Cart.clear(),
-      add: (p) => Cart.add(p)
-    };
-    BS.auth = {
-      user: () => Auth.currentUser(),
-      logout: () => Auth.logout()
-    };
-
-    console.log('✅ Beyond Silhouette main.js initialized');
+    renderOrdersPage();
+    renderCheckoutPage();
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  document.addEventListener('DOMContentLoaded', init);
 
 })();

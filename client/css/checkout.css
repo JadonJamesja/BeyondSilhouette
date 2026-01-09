@@ -128,6 +128,45 @@ body#checkout-page {
   background: #fff;
 }
 
+/* -----------------------------------------------------------------
+   COMPAT: main.js currently renders checkout items without the
+   `.checkout-item-img` class. It outputs:
+     <div class="checkout-item"><img ...> ...</div>
+   These rules ensure the image sizing stays correct.
+------------------------------------------------------------------ */
+
+.checkout-item > img {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(242, 242, 248, 1);
+  display: block;
+}
+
+.checkout-item .ci-info {
+  display: grid;
+  gap: 4px;
+}
+
+.checkout-item .ci-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #111;
+}
+
+.checkout-item .ci-meta {
+  margin: 0;
+  font-size: 0.92rem;
+  opacity: 0.78;
+}
+
+.checkout-item .ci-price {
+  font-weight: 900;
+  color: #111;
+  white-space: nowrap;
+}
+
 .checkout-item-img {
   width: 72px;
   height: 72px;
@@ -300,6 +339,12 @@ body#checkout-page {
   }
 
   .checkout-item-img {
+    width: 60px;
+    height: 60px;
+  }
+
+  /* compat for main.js markup */
+  .checkout-item > img {
     width: 60px;
     height: 60px;
   }

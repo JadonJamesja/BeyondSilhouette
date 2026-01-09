@@ -416,3 +416,51 @@ body {
   display: flex;
   justify-content: center;
 }
+
+/* Home page CTA polish (Featured section) */
+#featured .featured-cta .btn-primary{
+  width: 16rem;
+  box-shadow: var(--shadow-soft);
+}
+
+#featured .featured-cta .btn-primary:hover{
+  box-shadow: var(--shadow-med);
+}
+
+/* ==============================
+   NAV ICONS (GLOBAL)
+   Ensures cart + user icons are consistent across all pages.
+============================== */
+.nav-icons{
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.cartIcon{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.cart-img{
+  width: 1.7rem;
+  height: auto;
+  vertical-align: middle;
+}
+
+.cart-count{
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  background: hsl(var(--accent));
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 18px;
+  text-align: center;
+}

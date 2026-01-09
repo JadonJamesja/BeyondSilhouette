@@ -11,7 +11,7 @@
 
 <body id="shop-page">
 
-  <!-- HEADER -->
+    <!-- HEADER -->
   <header id="site-header">
     <div class="container header-container">
       <nav id="main-nav">
@@ -20,6 +20,7 @@
         <ul class="nav-list">
           <li><a href="index.html" class="nav-link">Home</a></li>
           <li><a href="shop-page.html" class="nav-link">Shop</a></li>
+          <li><a href="About.html" class="nav-link">About</a></li>
 
           <li class="nav-right">
             <div class="nav-icons">
@@ -29,7 +30,7 @@
               </a>
 
               <div class="login-dropdown">
-                <a href="#" class="loginIcon">
+                <a href="#" class="loginIcon" aria-label="User menu">
                   <img src="./images/user icon.png" alt="Login">
                 </a>
                 <ul class="login-menu">
@@ -47,36 +48,22 @@
     </div>
   </header>
 
-  <!-- HERO -->
-  <section id="hero-shop">
-    <div class="hero-overlay"></div>
-    <div class="hero-content">
-      <h2 class="hero-title">Shop Our Collection</h2>
-      <p class="hero-subtitle">Elegant, timeless swimwear for every silhouette</p>
+  <!-- SHOP SECTION -->
+  <main class="shop-container">
+    <h2 class="section-title">Shop Collection</h2>
+
+    <div id="productsGrid" class="products-grid">
+      <!-- products rendered by JS -->
     </div>
-  </section>
-
-  <!-- PRODUCTS GRID -->
-  <section id="products">
-    <div class="container">
-
-      <!-- Optional: status message (loading/empty) -->
-      <p id="shopStatus" style="text-align:center; margin: 10px 0 18px; opacity:.75;"></p>
-
-      <!-- This is where products will be injected -->
-      <div class="products-grid" id="productsGrid"></div>
-
-    </div>
-  </section>
+  </main>
 
   <!-- FOOTER -->
   <footer id="site-footer">
     <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
   </footer>
 
-  <!-- JS -->
-  <script src="js/products-store.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/products-store.js"></script>
 </body>
 
 </html>
