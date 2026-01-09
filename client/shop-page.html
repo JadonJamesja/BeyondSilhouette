@@ -2,209 +2,81 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shop | Beyond Silhouette</title>
-    <link rel="stylesheet" href="./css/style.css" />
-    <link rel="stylesheet" href="./css/shop-page.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shop | Beyond Silhouette</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="stylesheet" href="./css/shop-page.css" />
 </head>
 
 <body id="shop-page">
 
-    <!-- HEADER -->
-    <header id="site-header">
-        <div class="container header-container">
-            <nav id="main-nav">
-                <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
-                <ul class="nav-list">
-                    <li><a href="index.html" class="nav-link">Home</a></li>
-                    <li><a href="shop-page.html" class="nav-link">Shop</a></li>
-                    <li class="nav-right">
-                        <div class="nav-icons">
-                            <a href="cart.html" class="cartIcon" aria-label="Cart">
-                                <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
-                                <span class="cart-count" aria-live="polite">0</span>
-                            </a>
-                            <div class="login-dropdown">
-                                <a href="#" class="loginIcon">
-                                    <img src="./images/user icon.png" alt="Login">
-                                </a>
-                                <ul class="login-menu">
-                                    <li><a href="login.html">Sign In</a></li>
-                                    <li><a href="register.html">Create Account</a></li>
-                                    <li><a href="orders.html">My Orders</a></li>
-                                    <li><a href="logout.html">Logout</a></li>
-                                </ul>
-                            </div>
-                        </div>
-                    </li>
+  <!-- HEADER -->
+  <header id="site-header">
+    <div class="container header-container">
+      <nav id="main-nav">
+        <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
+
+        <ul class="nav-list">
+          <li><a href="index.html" class="nav-link">Home</a></li>
+          <li><a href="shop-page.html" class="nav-link">Shop</a></li>
+
+          <li class="nav-right">
+            <div class="nav-icons">
+              <a href="cart.html" class="cartIcon" aria-label="Cart">
+                <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
+                <span class="cart-count" aria-live="polite">0</span>
+              </a>
+
+              <div class="login-dropdown">
+                <a href="#" class="loginIcon">
+                  <img src="./images/user icon.png" alt="Login">
+                </a>
+                <ul class="login-menu">
+                  <li><a href="login.html">Sign In</a></li>
+                  <li><a href="register.html">Create Account</a></li>
+                  <li><a href="orders.html">My Orders</a></li>
+                  <li><a href="logout.html">Logout</a></li>
                 </ul>
-            </nav>
-        </div>
-    </header>
-
-    <!-- HERO -->
-    <section id="hero-shop">
-        <div class="hero-overlay"></div>
-        <div class="hero-content">
-            <h2 class="hero-title">Shop Our Collection</h2>
-            <p class="hero-subtitle">Elegant, timeless swimwear for every silhouette</p>
-        </div>
-    </section>
-
-    <!-- PRODUCTS GRID -->
-    <section id="products">
-        <div class="container">
-            <div class="products-grid">
-
-                <!-- Product Card 1 -->
-                <div class="product-card" data-id="p1" data-name="Classic One-Piece" data-price="8500" data-stock="12">
-                    <img src="images/test image 2.jpg" alt="Classic One-Piece" />
-                    <h3>Classic One-Piece</h3>
-                    <p class="price">J$8,500</p>
-                    <label for="size-p1" class="size-label">Size:</label>
-                    <select id="size-p1" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">12</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 2 -->
-                <div class="product-card" data-id="p2" data-name="High-Waist Bikini" data-price="9500" data-stock="8">
-                    <img src="images/test image 1.jpg" alt="High-Waist Bikini" />
-                    <h3>High-Waist Bikini</h3>
-                    <p class="price">J$9,500</p>
-                    <label for="size-p2" class="size-label">Size:</label>
-                    <select id="size-p2" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">8</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 3 -->
-                <div class="product-card" data-id="p3" data-name="Strappy Monokini" data-price="11000" data-stock="5">
-                    <img src="images/test image 6.jpg" alt="Strappy Monokini" />
-                    <h3>Strappy Monokini</h3>
-                    <p class="price">J$11,000</p>
-                    <label for="size-p3" class="size-label">Size:</label>
-                    <select id="size-p3" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">5</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 4 -->
-                <div class="product-card" data-id="p4" data-name="Ruffled Bikini" data-price="9000" data-stock="10">
-                    <img src="images/test image 3.jpg" alt="Ruffled Bikini" />
-                    <h3>Ruffled Bikini</h3>
-                    <p class="price">J$9,000</p>
-                    <label for="size-p4" class="size-label">Size:</label>
-                    <select id="size-p4" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">10</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 5 -->
-                <div class="product-card" data-id="p5" data-name="Sporty Two-Piece" data-price="8700" data-stock="7">
-                    <img src="images/test image 5.jpg" alt="Sporty Two-Piece" />
-                    <h3>Sporty Two-Piece</h3>
-                    <p class="price">J$8,700</p>
-                    <label for="size-p5" class="size-label">Size:</label>
-                    <select id="size-p5" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">7</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 6 -->
-                <div class="product-card" data-id="p6" data-name="Cut-Out Monokini" data-price="10500" data-stock="6">
-                    <img src="images/test image 4.jpg" alt="Cut-Out Monokini" />
-                    <h3>Cut-Out Monokini</h3>
-                    <p class="price">J$10,500</p>
-                    <label for="size-p6" class="size-label">Size:</label>
-                    <select id="size-p6" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">6</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 7 -->
-                <div class="product-card" data-id="p7" data-name="Fringe Bikini" data-price="9200" data-stock="9">
-                    <img src="images/test image 7.jpg" alt="Fringe Bikini" />
-                    <h3>Fringe Bikini</h3>
-                    <p class="price">J$9,200</p>
-                    <label for="size-p7" class="size-label">Size:</label>
-                    <select id="size-p7" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">9</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
-                <!-- Product Card 8 -->
-                <div class="product-card" data-id="p8" data-name="Classic Bandeau" data-price="8800" data-stock="11">
-                    <img src="images/test image 8.jpg" alt="Classic Bandeau" />
-                    <h3>Classic Bandeau</h3>
-                    <p class="price">J$8,800</p>
-                    <label for="size-p8" class="size-label">Size:</label>
-                    <select id="size-p8" class="product-size-select">
-                        <option value="" selected disabled>Select</option>
-                        <option value="S">S</option>
-                        <option value="M">M</option>
-                        <option value="L">L</option>
-                        <option value="XL">XL</option>
-                    </select>
-                    <p class="stock">In Stock: <span class="stock-count">11</span></p>
-                    <button class="btn add-to-cart">Add to Cart</button>
-                </div>
-
+              </div>
             </div>
-        </div>
-    </section>
+          </li>
+        </ul>
 
-    <!-- FOOTER -->
-    <footer id="site-footer">
-        <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
-    </footer>
+      </nav>
+    </div>
+  </header>
 
-    <!-- JS -->
-    <script src="js/main.js"></script>
+  <!-- HERO -->
+  <section id="hero-shop">
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+      <h2 class="hero-title">Shop Our Collection</h2>
+      <p class="hero-subtitle">Elegant, timeless swimwear for every silhouette</p>
+    </div>
+  </section>
 
+  <!-- PRODUCTS GRID -->
+  <section id="products">
+    <div class="container">
+
+      <!-- Optional: status message (loading/empty) -->
+      <p id="shopStatus" style="text-align:center; margin: 10px 0 18px; opacity:.75;"></p>
+
+      <!-- This is where products will be injected -->
+      <div class="products-grid" id="productsGrid"></div>
+
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer id="site-footer">
+    <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
+  </footer>
+
+  <!-- JS -->
+  <script src="js/products-store.js"></script>
+  <script src="js/main.js"></script>
 </body>
 
 </html>

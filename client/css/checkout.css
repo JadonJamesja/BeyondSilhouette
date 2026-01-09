@@ -1,10 +1,346 @@
-/* ------------------------------
-   Checkout Page Styles
------------------------------- */
-#checkout-page {
-    background-color: #fffefe;
-    color: #000;
-    font-family: 'Arial', sans-serif;
+/* Checkout page — styled like cart page (tight, clean, card-based) */
+
+/* ==============================
+   CHECKOUT NAV ICONS (match other pages)
+   ============================== */
+
+/* keep header aligned like other pages */
+#checkout-page #site-header .header-container {
+  padding: 15px 40px;
 }
 
-/* Placeholder for future checkout-page specific styles */
+/* right side icon row */
+#checkout-page .nav-right .nav-icons {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* cart icon */
+#checkout-page .cartIcon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+#checkout-page .cart-img {
+  width: 28px;     /* same “simple” size */
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+/* cart badge */
+#checkout-page .cart-count {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+
+  color: #fff;
+  background: #31313d;
+  border: 2px solid #fff;
+  border-radius: 999px;
+}
+
+/* user icon */
+#checkout-page .loginIcon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+  cursor: pointer;
+}
+
+/* dropdown spacing */
+#checkout-page .login-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* dropdown menu stays consistent */
+#checkout-page .login-menu {
+  right: 0;
+  top: 120%;
+}
+
+/* Page background */
+body#checkout-page {
+  background: #f2f2f8;
+}
+
+/* Push content below fixed header + avoid footer looking like a giant block */
+.checkout-page {
+  padding-top: 120px;
+  padding-bottom: 40px;
+}
+
+/* Title */
+.page-title {
+  margin: 0 0 18px;
+  font-size: 2rem;
+  text-align: center;
+  color: #111;
+}
+
+/* Two-column layout (items + payment summary) */
+.checkout-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 18px;
+  align-items: start;
+}
+
+/* Card panels */
+.checkout-panel {
+  background: #fff;
+  border: 1px solid rgba(210, 210, 230, 0.95);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.06);
+}
+
+/* Panel headers */
+.panel-title {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #111;
+}
+
+/* Items list */
+.checkout-items {
+  display: grid;
+  gap: 12px;
+}
+
+.checkout-item {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(230, 230, 240, 0.9);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.checkout-item-img {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(242, 242, 248, 1);
+}
+
+.checkout-item-info h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #111;
+}
+
+.checkout-item-info p {
+  margin: 0;
+  font-size: 0.92rem;
+  opacity: 0.78;
+}
+
+.checkout-item-price {
+  font-weight: 900;
+  color: #111;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.checkout-empty {
+  margin-top: 10px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.checkout-empty a {
+  color: #324ABD;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.checkout-empty a:hover {
+  text-decoration: underline;
+}
+
+/* Continue shopping link — FIXED */
+.continue-shopping {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  margin-top: 14px;
+  padding: 10px 12px;
+
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1f2e8a;
+  text-decoration: none;
+
+  border-radius: 12px;
+  border: 1px solid rgba(50, 74, 189, 0.18);
+  background: rgba(50, 74, 189, 0.06);
+
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.continue-shopping:hover {
+  background: rgba(50, 74, 189, 0.10);
+  border-color: rgba(50, 74, 189, 0.28);
+  transform: translateX(-2px);
+}
+
+.continue-shopping:active {
+  transform: translateX(0);
+}
+
+/* Payment fields */
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field label {
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: #111;
+  opacity: 0.9;
+}
+
+.select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(205, 205, 225, 0.98);
+  background: #fff;
+  outline: none;
+}
+
+.select:focus {
+  border-color: rgba(50, 74, 189, 0.65);
+  box-shadow: 0 0 0 4px rgba(50, 74, 189, 0.12);
+}
+
+/* Totals */
+.totals {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(230, 230, 240, 0.95);
+  display: grid;
+  gap: 8px;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.98rem;
+}
+
+.total-row.total {
+  font-size: 1.05rem;
+}
+
+/* Note */
+.checkout-note {
+  margin-top: 12px;
+  font-size: 0.92rem;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+
+/* ✅ Place Order button — FIXED (looks like a proper primary CTA) */
+.checkout-btn {
+  margin-top: 14px;
+  width: 100%;
+  border-radius: 14px;
+  padding: 12px 14px;
+
+  font-weight: 900;
+  letter-spacing: 0.2px;
+
+  background: #31313d; /* matches your site button vibe */
+  color: #fff;
+  border: none;
+
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.checkout-btn:hover {
+  background: #20202f;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+}
+
+.checkout-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.checkout-btn:disabled,
+.checkout-btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Responsive */
+@media (max-width: 920px) {
+  .checkout-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .page-title {
+    font-size: 1.8rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .checkout-page {
+    padding-top: 105px;
+  }
+
+  .checkout-item {
+    grid-template-columns: 64px 1fr;
+    grid-template-rows: auto auto;
+    gap: 10px;
+  }
+
+  .checkout-item-price {
+    grid-column: 2;
+    justify-self: start;
+    opacity: 0.9;
+  }
+
+  .checkout-item-img {
+    width: 64px;
+    height: 64px;
+  }
+
+  .continue-shopping {
+    width: 100%;
+    justify-content: center;
+  }
+}

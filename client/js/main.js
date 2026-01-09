@@ -1,68 +1,16 @@
 /**
  * Beyond Silhouette — main.js (FULL SITE)
- * Single JS file for ALL pages in the BeyondSilhouette-main.zip
- *
- * Supports:
- * - Products (from shop-page.html .product-card data attributes)
- * - Size selection enforcement
- * - Cart: persistent, renders on cart.html into .cart-container
- * - Auth: local demo (login/register/forgot) using your exact form structure
- * - Checkout: requires login, injects checkout UI into checkout.html
- * - Orders: saves receipts locally and renders dynamic orders on orders.html
- * - Header/footer placeholders (#site-header/#site-footer) get populated if empty
- * - Logout link (logout.html) intercepted since file doesn't exist
+ * - Shop renders from Products Store (window.BSProducts) if present
+ * - If total stock = 0 => prints "New stock coming soon."
+ * - Cart + auth + checkout + orders remain local demo (localStorage)
  *
  * IMPORTANT:
- * - This is a LOCAL/DEMO client-side auth/cart/orders system.
- * - Server-side placeholders are included and commented for Node + DB later.
+ * - Checkout will ONLY render into an existing <main> element (to avoid wiping the header/nav).
+ * - Put your checkout layout CSS in css/checkout.css (no inline styles here).
  */
 
 (() => {
   'use strict';
-
-  // -----------------------------
-  // THEME (SYNC WITH ADMIN)
-  // -----------------------------
-  const THEME_KEY = 'bs_admin_theme'; // shared with admin side
-
-  function getSavedTheme() {
-    const t = localStorage.getItem(THEME_KEY);
-    if (t === 'dark' || t === 'light') return t;
-
-    // fallback to OS preference
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    return prefersDark ? 'dark' : 'light';
-  }
-
-  function applyTheme(theme) {
-    const t = theme === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', t);
-    localStorage.setItem(THEME_KEY, t);
-  }
-
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme') || getSavedTheme();
-    applyTheme(current === 'dark' ? 'light' : 'dark');
-  }
-
-  // Apply theme ASAP (before DOMContentLoaded work)
-  applyTheme(getSavedTheme());
-
-  // Sync theme if changed in another tab (or admin open elsewhere)
-  window.addEventListener('storage', (e) => {
-    if (e.key !== THEME_KEY) return;
-    applyTheme(getSavedTheme());
-  });
-
-  // Delegated theme button support:
-  // - <button class="theme-toggle">Theme</button>
-  // - OR anything with data-action="toggle-theme"
-  document.addEventListener('click', (e) => {
-    const btn = e.target?.closest?.('[data-action="toggle-theme"], .theme-toggle');
-    if (!btn) return;
-    e.preventDefault();
-    toggleTheme();
-  });
 
   // -----------------------------
   // GLOBAL NAMESPACE
@@ -93,8 +41,22 @@
   const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
   const page = () => (location.pathname.split('/').pop() || '').toLowerCase();
 
+  function escapeHtml(s) {
+    return String(s || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function formatMemberSince(iso) {
+    const d = iso ? new Date(iso) : new Date();
+    return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  }
+
   // -----------------------------
-  // TOAST (VISIBLE + FALLBACK)
+  // TOAST
   // -----------------------------
   function ensureToastStyles() {
     if (document.getElementById('bs-toast-style')) return;
@@ -253,7 +215,7 @@
   };
 
   // -----------------------------
-  // PRODUCT CACHE
+  // PRODUCT CACHE (prevents Unknown)
   // -----------------------------
   const ProductCache = {
     upsert(product) {
@@ -470,7 +432,6 @@
               <li><a class="nav-link" href="cart.html">Cart (<span class="cart-count">0</span>)</a></li>
             </ul>
             <div class="nav-right">
-              <button class="theme-toggle" type="button" data-action="toggle-theme">Theme</button>
               <div class="login-dropdown">
                 <a class="loginIcon" href="#"><img src="./images/user icon.png" alt="Login"/></a>
                 <ul class="login-menu">
@@ -518,6 +479,70 @@
   };
 
   // -----------------------------
+  // SHOP: RENDER FROM STORE
+  // -----------------------------
+  function renderShopFromStore() {
+    if (!page().includes('shop-page.html')) return;
+
+    const grid = document.getElementById('productsGrid');
+    const status = document.getElementById('shopStatus');
+    if (!grid) return;
+
+    const store = window.BSProducts;
+    if (!store || typeof store.listPublished !== 'function') {
+      if (status) status.textContent = '';
+      return;
+    }
+
+    const products = store.listPublished();
+    if (status) status.textContent = products.length ? '' : 'No products available yet.';
+
+    grid.innerHTML = products.map((p, idx) => {
+      const totalStock = (p.stockBySize && typeof p.stockBySize === 'object')
+        ? Object.values(p.stockBySize).reduce((s, n) => s + Number(n || 0), 0)
+        : 0;
+
+      const imageUrl = (p.media && p.media.coverUrl) ? p.media.coverUrl : '';
+      const sizeSelectId = `size-${p.id}-${idx}`;
+
+      const stockLine = totalStock > 0
+        ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalStock || 0)}</span></p>`
+        : `<p class="stock stock-soon"><span class="stock-count">New stock coming soon.</span></p>`;
+
+      return `
+        <div class="product-card"
+          data-id="${escapeHtml(p.id)}"
+          data-name="${escapeHtml(p.title)}"
+          data-price="${Number(p.priceJMD || 0)}"
+          data-stock="${Number(totalStock || 0)}"
+          ${imageUrl ? `data-image="${escapeHtml(imageUrl)}"` : ''}
+        >
+          <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(p.title)}" />
+          <h3>${escapeHtml(p.title)}</h3>
+          <p class="price">J$${Number(p.priceJMD || 0).toLocaleString('en-JM')}</p>
+
+          <label for="${sizeSelectId}" class="size-label">Size:</label>
+          <select id="${sizeSelectId}" class="product-size-select" ${totalStock <= 0 ? 'disabled' : ''}>
+            <option value="" selected disabled>Select</option>
+            ${(p.sizes || ['S', 'M', 'L', 'XL']).map(s => {
+              const left = p.stockBySize?.[s] ?? 0;
+              const disabled = Number(left) <= 0 ? 'disabled' : '';
+              const suffix = Number(left) <= 0 ? ' (Sold out)' : '';
+              return `<option value="${s}" ${disabled}>${s}${suffix}</option>`;
+            }).join('')}
+          </select>
+
+          ${stockLine}
+
+          <button class="btn add-to-cart" ${totalStock <= 0 ? 'disabled aria-disabled="true"' : ''}>
+            ${totalStock > 0 ? 'Add to Cart' : 'Unavailable'}
+          </button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // -----------------------------
   // PAGE-SPECIFIC LOGIC
   // -----------------------------
   function bindLogoutIntercept() {
@@ -534,6 +559,11 @@
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.add-to-cart');
       if (!btn) return;
+
+      if (btn.hasAttribute('disabled')) {
+        toast('New stock coming soon.', { important: true });
+        return;
+      }
 
       const card = btn.closest('.product-card');
       if (!card) {
@@ -574,6 +604,9 @@
           toast('Not enough stock available for this item.', { important: true });
           return;
         }
+      } else {
+        toast('New stock coming soon.', { important: true });
+        return;
       }
 
       Cart.add({ productId, name, price, image, size: size || null, qty: 1 });
@@ -646,6 +679,7 @@
 
       const removeBtn = document.createElement('button');
       removeBtn.className = 'remove-from-cart';
+      removeBtn.type = 'button';
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
         Cart.remove(it.productId, it.size || null);
@@ -673,8 +707,8 @@
     summary.innerHTML = `
       <hr/>
       <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
-      <button class="btn proceed-checkout-btn">Proceed to Checkout</button>
-      <button class="btn clear-cart-btn" style="margin-left:10px;">Clear Cart</button>
+      <button class="btn proceed-checkout-btn" type="button">Proceed to Checkout</button>
+      <button class="btn clear-cart-btn" type="button" style="margin-left:10px;">Clear Cart</button>
     `;
     container.appendChild(summary);
 
@@ -794,116 +828,105 @@
     `;
   }
 
-  function escapeHtml(s) {
-    return String(s || '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+  // -----------------------------
+  // CHECKOUT (renders into <main> ONLY)
+  // -----------------------------
+ function renderCheckoutPage() {
+  if (!page().includes('checkout.html')) return;
+
+  const user = Auth.currentUser();
+  if (!user) {
+    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
+    location.href = 'login.html';
+    return;
   }
 
-  function formatMemberSince(iso) {
-    const d = iso ? new Date(iso) : new Date();
-    return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  const itemsWrap = document.getElementById('checkoutItems');
+  const emptyEl = document.getElementById('checkoutEmpty');
+  const subtotalEl = document.getElementById('checkoutSubtotal');
+  const totalEl = document.getElementById('checkoutTotal');
+  const pmEl = document.getElementById('paymentMethod');
+  const btn = document.getElementById('placeOrderBtn');
+
+  if (!itemsWrap || !subtotalEl || !totalEl || !pmEl || !btn) return;
+
+  const items = Cart.load();
+  const subtotal = Cart.subtotal(items);
+
+  subtotalEl.textContent = money(subtotal);
+  totalEl.textContent = money(subtotal);
+
+  itemsWrap.innerHTML = '';
+
+  if (items.length === 0) {
+    if (emptyEl) emptyEl.hidden = false;
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    return;
   }
 
-  function renderCheckoutPage() {
-    if (!page().includes('checkout.html')) return;
+  if (emptyEl) emptyEl.hidden = true;
+  btn.disabled = false;
+  btn.removeAttribute('aria-disabled');
 
-    const user = Auth.currentUser();
-    if (!user) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
-      location.href = 'login.html';
+  items.forEach((it) => {
+    const row = document.createElement('div');
+    row.className = 'checkout-item';
+
+    const img = document.createElement('img');
+    img.className = 'checkout-item-img';
+    img.src = it.image || '';
+    img.alt = it.name || 'Product';
+
+    const info = document.createElement('div');
+    info.className = 'checkout-item-info';
+    info.innerHTML = `
+      <h3>${escapeHtml(it.name || 'Unknown')}</h3>
+      <p>${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Qty: ${Number(it.qty || 0)}</p>
+    `;
+
+    const price = document.createElement('div');
+    price.className = 'checkout-item-price';
+    price.textContent = money(Number(it.price || 0) * Number(it.qty || 0));
+
+    row.appendChild(img);
+    row.appendChild(info);
+    row.appendChild(price);
+
+    itemsWrap.appendChild(row);
+  });
+
+  btn.onclick = async () => {
+    const itemsNow = Cart.load();
+    if (itemsNow.length === 0) {
+      toast('Cart is empty.', { important: true });
       return;
     }
 
-    const items = Cart.load();
-    const subtotal = Cart.subtotal(items);
+    const pm = pmEl.value || 'card';
 
-    const main = $('main') || document.body;
-    main.innerHTML = `
-      <main class="checkout-container" style="padding:20px;">
-        <h1>Checkout</h1>
-        <div class="checkout-content" style="display:grid;gap:16px;grid-template-columns:1fr;max-width:900px;">
-          <section class="checkout-summary" style="border:1px solid #ddd;border-radius:12px;padding:14px;">
-            <h2>Order Summary</h2>
-            <div class="checkout-items"></div>
-            <hr/>
-            <p><strong>Subtotal:</strong> <span class="checkout-subtotal">${money(subtotal)}</span></p>
-          </section>
+    toast('Placing order...');
+    await new Promise(r => setTimeout(r, 700));
 
-          <section class="checkout-payment" style="border:1px solid #ddd;border-radius:12px;padding:14px;">
-            <h2>Payment Method</h2>
-            <label style="display:block;margin-bottom:8px;">
-              <select class="payment-method" style="width:100%;padding:10px;">
-                <option value="card">Card (Online)</option>
-                <option value="cash">Cash</option>
-                <option value="paypal">PayPal</option>
-                <option value="cashapp">CashApp</option>
-              </select>
-            </label>
+    const order = {
+      id: uid('order_').toUpperCase(),
+      createdAt: nowISO(),
+      userEmail: user.email,
+      items: itemsNow,
+      subtotal: Cart.subtotal(itemsNow),
+      paymentMethod: pm,
+      status: 'Processing'
+    };
 
-            <div class="payment-note" style="font-size:14px;opacity:.85;margin-top:8px;">
-              Payment processing will be connected when the Node + DB backend is added.
-              For now this simulates an order locally.
-            </div>
+    Orders.addFor(user.email, order);
+    Cart.clear();
+    UI.updateCartBadges();
 
-            <button class="btn place-order-btn" style="margin-top:14px;">Place Order</button>
-          </section>
-        </div>
-      </main>
-    `;
+    toast(`Order placed! Ref: ${order.id}`, { important: true });
+    location.href = 'orders.html';
+  };
+}
 
-    const itemsWrap = $('.checkout-items');
-    if (itemsWrap) {
-      if (items.length === 0) {
-        itemsWrap.innerHTML = `<p>Your cart is empty.</p><a class="btn" href="shop-page.html">Shop Now</a>`;
-        $('.place-order-btn')?.setAttribute('disabled', 'disabled');
-      } else {
-        itemsWrap.innerHTML = items.map(it => `
-          <div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;">
-            <div>
-              <strong>${escapeHtml(it.name || 'Unknown')}</strong>
-              ${it.size ? `<span style="opacity:.8;"> (Size ${escapeHtml(it.size)})</span>` : ''}
-              <div style="opacity:.8;font-size:13px;">Qty: ${it.qty}</div>
-            </div>
-            <div><strong>${money(Number(it.price) * Number(it.qty))}</strong></div>
-          </div>
-        `).join('');
-      }
-    }
-
-    $('.place-order-btn')?.addEventListener('click', async () => {
-      const itemsNow = Cart.load();
-      if (itemsNow.length === 0) {
-        toast('Cart is empty.', { important: true });
-        return;
-      }
-
-      const pm = $('.payment-method')?.value || 'card';
-
-      toast('Placing order...');
-      await new Promise(r => setTimeout(r, 700));
-
-      const order = {
-        id: uid('order_').toUpperCase(),
-        createdAt: nowISO(),
-        userEmail: user.email,
-        items: itemsNow,
-        subtotal: Cart.subtotal(itemsNow),
-        paymentMethod: pm,
-        status: 'Processing'
-      };
-
-      Orders.addFor(user.email, order);
-      Cart.clear();
-      UI.updateCartBadges();
-
-      toast(`Order placed! Ref: ${order.id}`, { important: true });
-      location.href = 'orders.html';
-    });
-  }
 
   function renderOrdersPage() {
     if (!page().includes('orders.html')) return;
@@ -961,6 +984,7 @@
     UI.bindLoginDropdown();
     bindLogoutIntercept();
 
+    renderShopFromStore();
     bindAddToCart();
 
     bindLoginForm();
@@ -975,6 +999,7 @@
     renderOrdersPage();
     renderAccountPage();
 
+    // Expose helpers
     BS.toast = toast;
     BS.cart = {
       items: () => Cart.load(),

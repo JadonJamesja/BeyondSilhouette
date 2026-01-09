@@ -2,25 +2,114 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Checkout | Beyond Silhouette</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="./css/checkout.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Checkout | Beyond Silhouette</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="stylesheet" href="./css/checkout.css" />
 </head>
 
 <body id="checkout-page">
 
-    <header id="site-header"></header>
+  <!-- HEADER (same structure as shop/cart pages) -->
+  <header id="site-header">
+    <div class="container header-container">
+      <nav id="main-nav">
+        <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
 
-    <main id="page-content">
-        <h1>Checkout</h1>
-        <p>Checkout process will be implemented here.</p>
-    </main>
+        <ul class="nav-list">
+          <li><a href="index.html" class="nav-link">Home</a></li>
+          <li><a href="shop-page.html" class="nav-link">Shop</a></li>
+        </ul>
 
-    <footer id="site-footer"></footer>
+        <div class="nav-right">
+          <div class="nav-icons">
+            <a href="cart.html" class="cartIcon" aria-label="Cart">
+              <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
+              <span class="cart-count" aria-live="polite">0</span>
+            </a>
 
-    <script src="js/main.js"></script>
+            <div class="login-dropdown">
+              <a href="#" class="loginIcon">
+                <img src="./images/user icon.png" alt="Login">
+              </a>
+              <ul class="login-menu">
+                <li><a href="login.html">Sign In</a></li>
+                <li><a href="register.html">Create Account</a></li>
+                <li><a href="orders.html">My Orders</a></li>
+                <li><a href="logout.html">Logout</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN (cart-like layout) -->
+  <main class="container checkout-page">
+    <h1 class="page-title">Checkout</h1>
+
+    <div class="checkout-layout">
+      <!-- LEFT: items (like cart list) -->
+      <section class="checkout-panel">
+        <h2 class="panel-title">Order Summary</h2>
+
+        <div id="checkoutItems" class="checkout-items"></div>
+
+        <a href="shop-page.html" class="continue-shopping">
+          ← Continue Shopping
+        </a>
+
+        <div id="checkoutEmpty" class="checkout-empty" hidden>
+          Your cart is empty. <a href="shop-page.html">Shop Now</a>
+        </div>
+      </section>
+
+
+      <!-- RIGHT: payment + totals (like cart summary card) -->
+      <aside class="checkout-panel checkout-summary">
+        <h2 class="panel-title">Payment</h2>
+
+        <div class="field">
+          <label for="paymentMethod">Payment Method</label>
+          <select id="paymentMethod" class="select">
+            <option value="card">Card (Online)</option>
+            <option value="cash">Cash</option>
+            <option value="paypal">PayPal</option>
+            <option value="cashapp">CashApp</option>
+          </select>
+        </div>
+
+        <div class="totals">
+          <div class="total-row">
+            <span>Subtotal</span>
+            <strong id="checkoutSubtotal">J$0.00</strong>
+          </div>
+          <div class="total-row total">
+            <span>Total</span>
+            <strong id="checkoutTotal">J$0.00</strong>
+          </div>
+        </div>
+
+        <p class="checkout-note">
+          Payments will be connected when the backend is added. For now this simulates an order locally.
+        </p>
+
+        <button id="placeOrderBtn" class="btn checkout-btn" type="button">
+          Place Order
+        </button>
+      </aside>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer id="site-footer">
+    <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
+  </footer>
+
+  <script src="js/main.js"></script>
 </body>
 
 </html>
