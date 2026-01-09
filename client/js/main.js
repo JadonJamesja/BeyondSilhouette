@@ -258,28 +258,19 @@
       const key = this.userKey();
       const raw = st.cartByUser[key];
       let items = (raw && Array.isArray(raw.items)) ? raw.items : [];
-
-      items = items.map((it) => ProductCache.fillCartItem({
-        productId: String(it.productId ?? it.id ?? ''),
-        name: it.name ?? it.title ?? 'Unknown',
-        price: Number(it.price ?? 0),
-        qty: Number(it.qty ?? it.quantity ?? 1),
-        size: it.size ?? null,
-        image: it.image ?? ''
-      })).filter(it => it.productId);
-
-      st.cartByUser[key] = { items, updatedAt: nowISO() };
-      writeState(st);
-
+      items = items.map(it => ProductCache.fillCartItem(it));
       return items;
     },
 
     save(items) {
       const st = readState();
       const key = this.userKey();
-      st.cartByUser[key] = { items: items || [], updatedAt: nowISO() };
+      st.cartByUser[key] = { items: Array.isArray(items) ? items : [] };
       writeState(st);
-      UI.updateCartBadges();
+    },
+
+    clear() {
+      this.save([]);
     },
 
     totalQty(items) {
@@ -287,88 +278,66 @@
     },
 
     subtotal(items) {
-      return (items || []).reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 0), 0);
+      return (items || []).reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || 0)), 0);
     },
 
-    add({ productId, name, price, image, size, qty = 1 }) {
+    add({ productId, name, price, image, size = null, qty = 1 }) {
       const items = this.load();
       const id = String(productId);
-      const sz = size || null;
 
-      const idx = items.findIndex(x => x.productId === id && (x.size || null) === (sz || null));
-      if (idx >= 0) items[idx].qty += Number(qty || 1);
-      else items.push({
-        productId: id,
-        name: name || 'Unknown',
-        price: Number(price || 0),
-        qty: Number(qty || 1),
-        size: sz,
-        image: image || ''
-      });
-
+      const idx = items.findIndex(it => String(it.productId) === id && (it.size || null) === (size || null));
+      if (idx >= 0) {
+        items[idx].qty = Number(items[idx].qty || 0) + Number(qty || 1);
+      } else {
+        items.push({
+          productId: id,
+          name: String(name || 'Unknown'),
+          price: Number(price || 0),
+          image: String(image || ''),
+          size: size ? String(size) : null,
+          qty: Number(qty || 1)
+        });
+      }
       this.save(items);
+      UI.updateCartBadges();
+    },
+
+    remove(productId, size = null) {
+      const items = this.load().filter(it => !(String(it.productId) === String(productId) && (it.size || null) === (size || null)));
+      this.save(items);
+      UI.updateCartBadges();
       return items;
     },
 
     setQty(productId, size, qty) {
       const items = this.load();
       const id = String(productId);
-      const sz = size || null;
-      const q = Number(qty || 0);
+      const q = Math.max(1, Number(qty || 1));
 
-      for (const it of items) {
-        if (it.productId === id && (it.size || null) === (sz || null)) {
-          it.qty = q;
-        }
-      }
+      const idx = items.findIndex(it => String(it.productId) === id && (it.size || null) === (size || null));
+      if (idx >= 0) items[idx].qty = q;
 
-      const cleaned = items.filter(it => Number(it.qty || 0) > 0);
-      this.save(cleaned);
-      return cleaned;
-    },
-
-    remove(productId, size) {
-      const id = String(productId);
-      const sz = size || null;
-      const items = this.load().filter(it => !(it.productId === id && (it.size || null) === (sz || null)));
       this.save(items);
+      UI.updateCartBadges();
       return items;
     },
 
-    clear() {
-      this.save([]);
-      return [];
-    },
-
-    mergeGuestIntoUser(userEmail) {
+    mergeGuestIntoUser(email) {
       const st = readState();
-      st.cartByUser = st.cartByUser || {};
+      const guest = st.cartByUser[USER_GUEST]?.items || [];
+      const user = st.cartByUser[email]?.items || [];
 
-      const guest = (st.cartByUser[USER_GUEST] && Array.isArray(st.cartByUser[USER_GUEST].items))
-        ? st.cartByUser[USER_GUEST].items : [];
+      if (!guest.length) return;
 
-      const user = (st.cartByUser[userEmail] && Array.isArray(st.cartByUser[userEmail].items))
-        ? st.cartByUser[userEmail].items : [];
-
-      const map = new Map();
-      [...user, ...guest].forEach((it) => {
-        const key = `${String(it.productId)}__${it.size || ''}`;
-        const existing = map.get(key);
-        if (existing) existing.qty += Number(it.qty || 0);
-        else {
-          map.set(key, {
-            productId: String(it.productId),
-            name: it.name || 'Unknown',
-            price: Number(it.price || 0),
-            qty: Number(it.qty || 1),
-            size: it.size || null,
-            image: it.image || ''
-          });
-        }
+      const merged = [...user];
+      guest.forEach(g => {
+        const idx = merged.findIndex(it => String(it.productId) === String(g.productId) && (it.size || null) === (g.size || null));
+        if (idx >= 0) merged[idx].qty = Number(merged[idx].qty || 0) + Number(g.qty || 0);
+        else merged.push(g);
       });
 
-      st.cartByUser[userEmail] = { items: Array.from(map.values()), updatedAt: nowISO() };
-      delete st.cartByUser[USER_GUEST];
+      st.cartByUser[email] = { items: merged };
+      st.cartByUser[USER_GUEST] = { items: [] };
       writeState(st);
     }
   };
@@ -418,38 +387,9 @@
     },
 
     ensureHeaderFooter() {
-      const header = $('#site-header');
-      const footer = $('#site-footer');
-
-      if (header && header.childElementCount === 0) {
-        header.innerHTML = `
-          <nav id="main-nav">
-            <h1><a href="./index.html" style="text-decoration:none;color:inherit;">Beyond Silhouette</a></h1>
-            <ul>
-              <li><a class="nav-link" href="About.html">About</a></li>
-              <li><a class="nav-link" href="shop-page.html">Shop</a></li>
-              <li><a class="nav-link" href="orders.html">Orders</a></li>
-              <li><a class="nav-link" href="cart.html">Cart (<span class="cart-count">0</span>)</a></li>
-            </ul>
-            <div class="nav-right">
-              <div class="login-dropdown">
-                <a class="loginIcon" href="#"><img src="./images/user icon.png" alt="Login"/></a>
-                <ul class="login-menu">
-                  <li><a href="login.html">Sign In</a></li>
-                  <li><a href="register.html">Create Account</a></li>
-                  <li><a href="orders.html">My Orders</a></li>
-                  <li><a href="account.html">Account</a></li>
-                  <li><a href="logout.html">Logout</a></li>
-                </ul>
-              </div>
-            </div>
-          </nav>
-        `;
-      }
-
-      if (footer && footer.childElementCount === 0) {
-        footer.innerHTML = `<p>&copy; ${new Date().getFullYear()} Beyond Silhouette</p>`;
-      }
+      // Non-negotiable: do not inject full HTML layouts from JS.
+      // Each page must include its own real header/footer markup.
+      return;
     },
 
     bindLoginDropdown() {
@@ -618,106 +558,65 @@
 
   function renderCartIfOnCartPage() {
     if (!page().includes('cart.html')) return;
-    renderCartPage();
-  }
 
-  function renderCartPage() {
     const container = $('.cart-container');
     if (!container) return;
 
     const items = Cart.load();
+
     container.innerHTML = '';
 
     if (items.length === 0) {
-      const p = document.createElement('p');
-      p.textContent = 'Your cart is empty.';
-      container.appendChild(p);
+      container.innerHTML = `
+        <div class="empty-cart">
+          Your cart is empty. <a href="shop-page.html">Shop Now</a>
+        </div>
+      `;
       return;
     }
 
-    const subtotal = Cart.subtotal(items);
-
-    const list = document.createElement('div');
-    list.className = 'cart-items';
-
-    items.forEach((it) => {
+    items.forEach(it => {
       const row = document.createElement('div');
       row.className = 'cart-item';
 
-      const img = document.createElement('img');
-      img.className = 'cart-item-img';
-      img.src = it.image || '';
-      img.alt = it.name || 'Product';
+      row.innerHTML = `
+        <img class="cart-item-img" src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
+        <div class="cart-item-info">
+          <h4>${escapeHtml(it.name || 'Unknown')}</h4>
+          <p class="cart-item-meta">${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Item</p>
+          <div class="cart-item-price">${money(Number(it.price || 0))}</div>
+        </div>
+        <div class="cart-item-qty">
+          <input type="number" min="1" value="${Number(it.qty || 1)}" />
+          <button class="remove-from-cart" type="button">Remove</button>
+        </div>
+      `;
 
-      const info = document.createElement('div');
-      info.className = 'cart-item-info';
+      const qtyInput = row.querySelector('input[type="number"]');
+      const removeBtn = row.querySelector('.remove-from-cart');
 
-      const title = document.createElement('h4');
-      title.textContent = it.name || 'Unknown';
-
-      const meta = document.createElement('p');
-      meta.className = 'cart-item-meta';
-      meta.textContent = it.size ? `Size: ${it.size}` : '';
-
-      const price = document.createElement('p');
-      price.className = 'cart-item-price';
-      price.textContent = money(it.price);
-
-      const qtyWrap = document.createElement('div');
-      qtyWrap.className = 'cart-item-qty';
-
-      const qty = document.createElement('input');
-      qty.type = 'number';
-      qty.min = '0';
-      qty.value = String(it.qty);
-
-      qty.addEventListener('change', () => {
-        Cart.setQty(it.productId, it.size || null, Number(qty.value || 0));
-        renderCartPage();
-        UI.updateCartBadges();
+      qtyInput.addEventListener('change', () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        Cart.setQty(it.productId, it.size || null, q);
+        renderCartIfOnCartPage();
       });
 
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-from-cart';
-      removeBtn.type = 'button';
-      removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
         Cart.remove(it.productId, it.size || null);
-        renderCartPage();
-        UI.updateCartBadges();
+        renderCartIfOnCartPage();
       });
 
-      qtyWrap.appendChild(qty);
-      qtyWrap.appendChild(removeBtn);
-
-      info.appendChild(title);
-      info.appendChild(meta);
-      info.appendChild(price);
-      info.appendChild(qtyWrap);
-
-      row.appendChild(img);
-      row.appendChild(info);
-      list.appendChild(row);
+      container.appendChild(row);
     });
-
-    container.appendChild(list);
 
     const summary = document.createElement('div');
     summary.className = 'cart-summary';
     summary.innerHTML = `
       <hr/>
-      <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
+      <div><strong>Subtotal:</strong> ${money(Cart.subtotal(items))}</div>
       <button class="btn proceed-checkout-btn" type="button">Proceed to Checkout</button>
-      <button class="btn clear-cart-btn" type="button" style="margin-left:10px;">Clear Cart</button>
     `;
     container.appendChild(summary);
-
-    summary.querySelector('.clear-cart-btn').addEventListener('click', () => {
-      Cart.clear();
-      renderCartPage();
-      UI.updateCartBadges();
-      toast('Cart cleared');
-    });
 
     summary.querySelector('.proceed-checkout-btn').addEventListener('click', () => {
       const user = Auth.currentUser();
@@ -732,91 +631,79 @@
   }
 
   function bindLoginForm() {
-    const form = $('.login-form');
+    if (!page().includes('login.html')) return;
+    const form = document.querySelector('form');
     if (!form) return;
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const fd = new FormData(form);
-
-      const email = fd.get('email');
-      const password = fd.get('password');
+      const email = form.querySelector('input[type="email"]')?.value;
+      const password = form.querySelector('input[type="password"]')?.value;
 
       try {
         Auth.login({ email, password });
-        toast('Logged in');
-
         UI.updateNavAuthState();
         UI.updateCartBadges();
 
-        const ret = safeParse(localStorage.getItem(KEYS.returnTo));
-        if (ret && ret.href) {
-          localStorage.removeItem(KEYS.returnTo);
-          location.href = ret.href;
-        } else {
-          location.href = 'account.html';
-        }
+        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
+        localStorage.removeItem(KEYS.returnTo);
+        location.href = rt?.href || 'index.html';
       } catch (err) {
-        toast(err.message || 'Login failed', { important: true });
+        toast(err.message || 'Login failed.', { important: true });
       }
     });
   }
 
   function bindRegisterForm() {
-    const form = $('.register-form');
+    if (!page().includes('register.html')) return;
+    const form = document.querySelector('form');
     if (!form) return;
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const fd = new FormData(form);
 
-      const fullname = fd.get('fullname');
-      const email = fd.get('email');
-      const password = fd.get('password');
-      const confirmPassword = fd.get('confirm-password');
+      const fullname = form.querySelector('input[name="fullname"], #fullname')?.value || '';
+      const email = form.querySelector('input[type="email"]')?.value || '';
+      const password = form.querySelector('input[type="password"]')?.value || '';
+      const confirmPassword = form.querySelector('input[name="confirmPassword"], #confirmPassword')?.value;
 
       try {
         Auth.register({ fullname, email, password, confirmPassword });
-        toast('Account created');
-
         UI.updateNavAuthState();
         UI.updateCartBadges();
 
-        const ret = safeParse(localStorage.getItem(KEYS.returnTo));
-        if (ret && ret.href) {
-          localStorage.removeItem(KEYS.returnTo);
-          location.href = ret.href;
-        } else {
-          location.href = 'account.html';
-        }
+        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
+        localStorage.removeItem(KEYS.returnTo);
+        location.href = rt?.href || 'index.html';
       } catch (err) {
-        toast(err.message || 'Registration failed', { important: true });
+        toast(err.message || 'Registration failed.', { important: true });
       }
     });
   }
 
   function bindForgotForm() {
-    const form = $('.forgot-form');
+    if (!page().includes('forgot-password.html')) return;
+    const form = document.querySelector('form');
     if (!form) return;
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      toast('Password reset will be implemented in the backend phase.', { important: true });
+      toast('Password reset email would be sent in a real app.', { important: true });
+      location.href = 'login.html';
     });
   }
 
   function renderAccountPage() {
     if (!page().includes('account.html')) return;
-
     const user = Auth.currentUser();
+    const details = $('.profile-details');
+    if (!details) return;
+
     if (!user) {
       localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'account.html' }));
       location.href = 'login.html';
       return;
     }
-
-    const details = $('.account-details');
-    if (!details) return;
 
     details.innerHTML = `
       <h2>Profile Information</h2>
@@ -829,104 +716,104 @@
   }
 
   // -----------------------------
-  // CHECKOUT (renders into <main> ONLY)
+  // CHECKOUT (requires login + renders into existing containers ONLY)
   // -----------------------------
- function renderCheckoutPage() {
-  if (!page().includes('checkout.html')) return;
+  function renderCheckoutPage() {
+    if (!page().includes('checkout.html')) return;
 
-  const user = Auth.currentUser();
-  if (!user) {
-    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
-    location.href = 'login.html';
-    return;
-  }
-
-  const itemsWrap = document.getElementById('checkoutItems');
-  const emptyEl = document.getElementById('checkoutEmpty');
-  const subtotalEl = document.getElementById('checkoutSubtotal');
-  const totalEl = document.getElementById('checkoutTotal');
-  const pmEl = document.getElementById('paymentMethod');
-  const btn = document.getElementById('placeOrderBtn');
-
-  if (!itemsWrap || !subtotalEl || !totalEl || !pmEl || !btn) return;
-
-  const items = Cart.load();
-  const subtotal = Cart.subtotal(items);
-
-  subtotalEl.textContent = money(subtotal);
-  totalEl.textContent = money(subtotal);
-
-  itemsWrap.innerHTML = '';
-
-  if (items.length === 0) {
-    if (emptyEl) emptyEl.hidden = false;
-    btn.disabled = true;
-    btn.setAttribute('aria-disabled', 'true');
-    return;
-  }
-
-  if (emptyEl) emptyEl.hidden = true;
-  btn.disabled = false;
-  btn.removeAttribute('aria-disabled');
-
-  items.forEach((it) => {
-    const row = document.createElement('div');
-    row.className = 'checkout-item';
-
-    const img = document.createElement('img');
-    img.className = 'checkout-item-img';
-    img.src = it.image || '';
-    img.alt = it.name || 'Product';
-
-    const info = document.createElement('div');
-    info.className = 'checkout-item-info';
-    info.innerHTML = `
-      <h3>${escapeHtml(it.name || 'Unknown')}</h3>
-      <p>${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Qty: ${Number(it.qty || 0)}</p>
-    `;
-
-    const price = document.createElement('div');
-    price.className = 'checkout-item-price';
-    price.textContent = money(Number(it.price || 0) * Number(it.qty || 0));
-
-    row.appendChild(img);
-    row.appendChild(info);
-    row.appendChild(price);
-
-    itemsWrap.appendChild(row);
-  });
-
-  btn.onclick = async () => {
-    const itemsNow = Cart.load();
-    if (itemsNow.length === 0) {
-      toast('Cart is empty.', { important: true });
+    const user = Auth.currentUser();
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
+      toast('Please log in to checkout.', { important: true });
+      location.href = 'login.html';
       return;
     }
 
-    const pm = pmEl.value || 'card';
+    const itemsWrap = document.getElementById('checkoutItems');
+    const emptyEl = document.getElementById('checkoutEmpty');
+    const subtotalEl = document.getElementById('checkoutSubtotal');
+    const totalEl = document.getElementById('checkoutTotal');
+    const pmEl = document.getElementById('paymentMethod');
+    const btn = document.getElementById('placeOrderBtn');
 
-    toast('Placing order...');
-    await new Promise(r => setTimeout(r, 700));
+    if (!itemsWrap || !subtotalEl || !totalEl || !pmEl || !btn) return;
 
-    const order = {
-      id: uid('order_').toUpperCase(),
-      createdAt: nowISO(),
-      userEmail: user.email,
-      items: itemsNow,
-      subtotal: Cart.subtotal(itemsNow),
-      paymentMethod: pm,
-      status: 'Processing'
+    const items = Cart.load();
+    const subtotal = Cart.subtotal(items);
+
+    subtotalEl.textContent = money(subtotal);
+    totalEl.textContent = money(subtotal);
+
+    itemsWrap.innerHTML = '';
+
+    if (items.length === 0) {
+      if (emptyEl) emptyEl.hidden = false;
+      btn.disabled = true;
+      btn.setAttribute('aria-disabled', 'true');
+      return;
+    }
+
+    if (emptyEl) emptyEl.hidden = true;
+    btn.disabled = false;
+    btn.removeAttribute('aria-disabled');
+
+    items.forEach((it) => {
+      const row = document.createElement('div');
+      row.className = 'checkout-item';
+
+      const img = document.createElement('img');
+      img.className = 'checkout-item-img';
+      img.src = it.image || '';
+      img.alt = it.name || 'Product';
+
+      const info = document.createElement('div');
+      info.className = 'checkout-item-info';
+      info.innerHTML = `
+        <h3>${escapeHtml(it.name || 'Unknown')}</h3>
+        <p>${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Qty: ${Number(it.qty || 0)}</p>
+      `;
+
+      const price = document.createElement('div');
+      price.className = 'checkout-item-price';
+      price.textContent = money(Number(it.price || 0) * Number(it.qty || 0));
+
+      row.appendChild(img);
+      row.appendChild(info);
+      row.appendChild(price);
+
+      itemsWrap.appendChild(row);
+    });
+
+    btn.onclick = async () => {
+      const itemsNow = Cart.load();
+      if (itemsNow.length === 0) {
+        toast('Cart is empty.', { important: true });
+        return;
+      }
+
+      const pm = pmEl.value || 'card';
+
+      toast('Placing order...');
+      await new Promise(r => setTimeout(r, 700));
+
+      const order = {
+        id: uid('order_').toUpperCase(),
+        createdAt: nowISO(),
+        userEmail: user.email,
+        items: itemsNow,
+        subtotal: Cart.subtotal(itemsNow),
+        paymentMethod: pm,
+        status: 'Processing'
+      };
+
+      Orders.addFor(user.email, order);
+      Cart.clear();
+      UI.updateCartBadges();
+
+      toast(`Order placed! Ref: ${order.id}`, { important: true });
+      location.href = 'orders.html';
     };
-
-    Orders.addFor(user.email, order);
-    Cart.clear();
-    UI.updateCartBadges();
-
-    toast(`Order placed! Ref: ${order.id}`, { important: true });
-    location.href = 'orders.html';
-  };
-}
-
+  }
 
   function renderOrdersPage() {
     if (!page().includes('orders.html')) return;
@@ -945,16 +832,14 @@
 
     if (orders.length === 0) {
       container.innerHTML = `
-        <h1>My Orders</h1>
-        <div class="no-orders">
-          <p>You don’t have any orders yet. <a href="shop-page.html">Start shopping</a></p>
+        <div class="empty-orders">
+          You don't have any orders yet. <a href="shop-page.html">Start Shopping</a>
         </div>
       `;
       return;
     }
 
     container.innerHTML = `
-      <h1>My Orders</h1>
       ${orders.map(o => `
         <div class="order-card">
           <div class="order-header">

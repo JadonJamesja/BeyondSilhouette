@@ -405,3 +405,14 @@ body {
   z-index: 3;
   border-top: 1px solid hsla(var(--border), 0.85);
 }
+
+.redefine-btn{
+  width: auto;
+  min-width: 14rem;
+}
+
+#featured .featured-cta{
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+}

@@ -162,6 +162,14 @@
     border-color: #5A3CC4;
 }
 
+/* ✅ ADDED: Disabled size select should look intentionally disabled */
+#shop-page .product-card .product-size-select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    background: #f2f2f6;
+    border-color: #c9cbe8;
+}
+
 /* Little feedback when size isn't selected */
 .product-size-select.shake {
     animation: shake 0.35s linear;
@@ -189,6 +197,12 @@
 #shop-page .product-card .stock {
     font-size: 0.85rem;
     margin-bottom: 15px;
+}
+
+/* ✅ ADDED: “New stock coming soon.” message style */
+#shop-page .product-card .stock.stock-soon {
+    color: #6a6a78;
+    font-weight: 700;
 }
 
 /* Stock levels */
