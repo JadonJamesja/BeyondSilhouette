@@ -273,6 +273,53 @@ main h1 {
   transform: translateY(0);
 }
 
+/* Cart action buttons row */
+.cart-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.cart-actions .btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Minimal variants for cart actions (light theme) */
+.btn.btn--primary {
+  background: #141826;
+}
+
+.btn.btn--primary:hover {
+  background: #2b324a;
+}
+
+.btn.btn--secondary {
+  background: rgba(255, 255, 255, 0.92);
+  color: #141826;
+  border: 1px solid rgba(170, 182, 210, 0.75);
+}
+
+.btn.btn--secondary:hover {
+  background: rgba(47, 92, 255, 0.08);
+}
+
+.btn.btn--danger {
+  background: rgba(255, 255, 255, 0.92);
+  color: rgb(165, 35, 35);
+  border: 1px solid rgba(220, 60, 60, 0.55);
+}
+
+.btn.btn--danger:hover {
+  background: rgba(220, 60, 60, 0.10);
+  border-color: rgba(220, 60, 60, 0.90);
+}
+
 /* Summary */
 .cart-summary {
   margin-top: 12px;

@@ -1,6 +1,6 @@
 /**
  * Beyond Silhouette — main.js (FULL SITE)
- * - Shop renders from Products Store (window.BSProducts)
+ * - Shop renders from Products Store (window.BSProducts) if present
  * - If total stock = 0 => prints "New stock coming soon."
  * - Cart + auth + checkout + orders remain local demo (localStorage)
  *
@@ -15,13 +15,14 @@
   // -----------------------------
   // GLOBAL NAMESPACE
   // -----------------------------
-  window.BS = window.BS || {};
+  window.BeyondSilhouette = window.BeyondSilhouette || {};
+  const BS = window.BeyondSilhouette;
 
   // -----------------------------
   // KEYS / STORAGE
   // -----------------------------
   const KEYS = {
-    state: 'bs_state_v1',          // { cartByUser, productCache, ordersByUser, soldBySize }
+    state: 'bs_state_v1',          // { cartByUser, productCache, ordersByUser }
     session: 'bs_session_v1',      // { email, token, createdAt, provider }
     users: 'bs_users_v1',          // { [email]: { email, name, passwordHash, createdAt, role } }
     returnTo: 'bs_return_to_v1'    // { href }
@@ -34,18 +35,14 @@
   // -----------------------------
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
+  const nowISO = () => new Date().toISOString();
+  const uid = (p = '') => p + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
   const page = () => (location.pathname.split('/').pop() || '').toLowerCase();
 
-  const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
-  const nowISO = () => new Date().toISOString();
-  const uid = (p = '') => p + Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-  function safeParse(s) {
-    try { return JSON.parse(s); } catch { return null; }
-  }
-
-  function escapeHtml(str) {
-    return String(str || '')
+  function escapeHtml(s) {
+    return String(s || '')
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;')
@@ -63,46 +60,51 @@
   // -----------------------------
   function ensureToastStyles() {
     if (document.getElementById('bs-toast-style')) return;
-    const s = document.createElement('style');
-    s.id = 'bs-toast-style';
-    s.textContent = `
-      .bs-toast {
-        position: fixed;
-        z-index: 9999;
-        left: 50%;
-        bottom: 24px;
-        transform: translateX(-50%);
-        background: rgba(0,0,0,.85);
-        color: #fff;
-        padding: 10px 14px;
-        border-radius: 10px;
-        font-size: 14px;
-        max-width: 90vw;
-        box-shadow: 0 10px 22px rgba(0,0,0,.25);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity .15s ease, transform .15s ease;
+    const style = document.createElement('style');
+    style.id = 'bs-toast-style';
+    style.textContent = `
+      .bs-toast{
+        position:fixed;
+        left:50%;
+        bottom:24px;
+        transform:translateX(-50%);
+        background:rgba(0,0,0,.88);
+        color:#fff;
+        padding:10px 14px;
+        border-radius:12px;
+        font-size:14px;
+        z-index:999999;
+        opacity:0;
+        transition:opacity .2s ease, transform .2s ease;
+        pointer-events:none;
+        max-width:min(92vw,520px);
+        text-align:center;
       }
-      .bs-toast.show {
-        opacity: 1;
-        transform: translateX(-50%) translateY(-4px);
+      .bs-toast.show{
+        opacity:1;
+        transform:translateX(-50%) translateY(-6px);
       }
     `;
-    document.head.appendChild(s);
+    document.head.appendChild(style);
   }
 
-  function toast(message, opts = {}) {
+  function toast(msg, { important = false } = {}) {
     ensureToastStyles();
-    const t = document.createElement('div');
-    t.className = 'bs-toast';
-    t.textContent = message || '';
-    document.body.appendChild(t);
-    requestAnimationFrame(() => t.classList.add('show'));
-    const ms = opts.important ? 1800 : 1200;
+
+    if (important) {
+      try { alert(msg); } catch (_) {}
+    }
+
+    const el = document.createElement('div');
+    el.className = 'bs-toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+
+    requestAnimationFrame(() => el.classList.add('show'));
     setTimeout(() => {
-      t.classList.remove('show');
-      setTimeout(() => t.remove(), 250);
-    }, ms);
+      el.classList.remove('show');
+      setTimeout(() => el.remove(), 220);
+    }, 2400);
   }
 
   // -----------------------------
@@ -114,7 +116,6 @@
     st.cartByUser = st.cartByUser || {};
     st.productCache = st.productCache || {};
     st.ordersByUser = st.ordersByUser || {};
-    st.soldBySize = st.soldBySize || {};
     return st;
   }
 
@@ -144,11 +145,16 @@
     localStorage.setItem(KEYS.users, JSON.stringify(users || {}));
   }
 
-  function hashPassword(pw) {
-    const s = String(pw || '');
-    // simple local demo hash (NOT for production)
+  // -----------------------------
+  // DEMO HASH (NOT SECURE)
+  // -----------------------------
+  function demoHash(pwd) {
     let h = 0;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i);
+    const s = String(pwd || '');
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h) + s.charCodeAt(i);
+      h |= 0;
+    }
     return btoa(`${h}:${s.length}`);
   }
 
@@ -171,34 +177,33 @@
       }
 
       const users = readUsers();
-      if (users[em]) throw new Error('An account with that email already exists.');
+      if (users[em]) throw new Error('An account already exists for this email.');
 
-      const user = {
+      users[em] = {
         email: em,
-        name: String(fullname || '').trim(),
-        passwordHash: hashPassword(password),
+        name: String(fullname),
+        passwordHash: demoHash(password),
         createdAt: nowISO(),
         role: 'customer'
       };
 
-      users[em] = user;
       writeUsers(users);
+      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
 
-      writeSession({ email: em, token: uid('tok_'), createdAt: nowISO(), provider: 'local' });
-      return user;
+      Cart.mergeGuestIntoUser(em);
+      return users[em];
     },
 
     login({ email, password }) {
       const em = String(email || '').trim().toLowerCase();
-      if (!em || !password) throw new Error('Please enter your email and password.');
-
       const users = readUsers();
-      const user = users[em];
-      if (!user) throw new Error('No account found for that email.');
-      if (user.passwordHash !== hashPassword(password)) throw new Error('Incorrect password.');
+      const u = users[em];
+      if (!u) throw new Error('No account found for this email.');
+      if (u.passwordHash !== demoHash(password)) throw new Error('Incorrect password.');
 
-      writeSession({ email: em, token: uid('tok_'), createdAt: nowISO(), provider: 'local' });
-      return user;
+      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
+      Cart.mergeGuestIntoUser(em);
+      return u;
     },
 
     logout() {
@@ -207,65 +212,19 @@
   };
 
   // -----------------------------
-  // PRODUCT CACHE (fill cart items from store)
-  // -----------------------------
-  const ProductCache = {
-    cacheFromStore() {
-      const st = readState();
-      const store = window.BSProducts;
-      if (!store || typeof store.readAll !== 'function') return;
-
-      (store.readAll() || []).forEach(p => {
-        if (!p || !p.id) return;
-        st.productCache[p.id] = {
-          id: p.id,
-          name: p.name || '',
-          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : '',
-          price: Number(p.priceJMD || 0),
-          sizes: Array.isArray(p.sizes) ? p.sizes : []
-        };
-      });
-
-      writeState(st);
-    },
-
-    get(id) {
-      const st = readState();
-      return st.productCache[id] || null;
-    },
-
-    fillCartItem(item) {
-      if (!item) return item;
-      const id = item.id || item.productId;
-      const cached = id ? this.get(id) : null;
-      if (!cached) return item;
-
-      return {
-        ...item,
-        productId: item.productId || cached.id,
-        name: item.name || cached.name,
-        image: item.image || cached.image,
-        price: Number(item.price || cached.price || 0),
-      };
-    }
-  };
-
-  // -----------------------------
-  // CART (local, per user)
+  // CART
   // -----------------------------
   const Cart = {
     userKey() {
       const u = Auth.currentUser();
-      return u?.email || USER_GUEST;
+      return u ? u.email : USER_GUEST;
     },
 
     load() {
       const st = readState();
       const key = this.userKey();
-      const raw = st.cartByUser[key];
-      let items = (raw && Array.isArray(raw.items)) ? raw.items : [];
-      items = items.map(it => ProductCache.fillCartItem(it));
-      return items;
+      const items = st.cartByUser[key]?.items || [];
+      return Array.isArray(items) ? items : [];
     },
 
     save(items) {
@@ -275,181 +234,224 @@
       writeState(st);
     },
 
-    clear() {
-      this.save([]);
-    },
-
-    add(item) {
+    add(productId, size, qty = 1) {
       const items = this.load();
-      const idx = items.findIndex(x => (x.productId === item.productId) && (String(x.size || '') === String(item.size || '')));
-      if (idx >= 0) {
-        items[idx].qty = Number(items[idx].qty || 0) + Number(item.qty || 1);
+      const pid = String(productId);
+      const sz = String(size || '');
+      const existing = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
+
+      if (existing) {
+        existing.qty = Number(existing.qty || 0) + Number(qty || 0);
       } else {
-        items.push({ ...item, qty: Number(item.qty || 1) });
+        items.push({ productId: pid, size: sz, qty: Number(qty || 1) });
       }
+
       this.save(items);
     },
 
     remove(productId, size) {
-      const items = this.load().filter(x => !(x.productId === productId && String(x.size || '') === String(size || '')));
+      const pid = String(productId);
+      const sz = String(size || '');
+      const items = this.load().filter(i => !(String(i.productId) === pid && String(i.size || '') === sz));
       this.save(items);
     },
 
     setQty(productId, size, qty) {
+      const pid = String(productId);
+      const sz = String(size || '');
       const items = this.load();
-      const it = items.find(x => x.productId === productId && String(x.size || '') === String(size || ''));
+      const it = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
       if (!it) return;
+
       it.qty = Math.max(1, Number(qty || 1));
       this.save(items);
     },
 
-    subtotal(items) {
-      return (items || []).reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
-    }
-  };
-
-  // -----------------------------
-  // ORDERS (local, per user)
-  // -----------------------------
-  const Orders = {
-    _key(email) {
-      return String(email || '').trim().toLowerCase();
+    clear() {
+      this.save([]);
     },
 
-    listFor(email) {
-      const st = readState();
-      const key = this._key(email);
-      const arr = st.ordersByUser[key] || [];
-      return Array.isArray(arr) ? arr : [];
+    totalQty(items) {
+      return (items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
     },
 
-    addFor(email, order) {
+    mergeGuestIntoUser(email) {
       const st = readState();
-      const key = this._key(email);
-      st.ordersByUser[key] = st.ordersByUser[key] || [];
-      st.ordersByUser[key].unshift(order);
+      const guest = st.cartByUser[USER_GUEST]?.items || [];
+      if (!guest.length) return;
+
+      const userItems = st.cartByUser[email]?.items || [];
+      const merged = Array.isArray(userItems) ? userItems.slice() : [];
+
+      guest.forEach(g => {
+        const pid = String(g.productId);
+        const sz = String(g.size || '');
+        const existing = merged.find(i => String(i.productId) === pid && String(i.size || '') === sz);
+        if (existing) existing.qty = Number(existing.qty || 0) + Number(g.qty || 0);
+        else merged.push({ productId: pid, size: sz, qty: Number(g.qty || 0) });
+      });
+
+      st.cartByUser[email] = { items: merged };
+      st.cartByUser[USER_GUEST] = { items: [] };
       writeState(st);
     }
   };
 
   // -----------------------------
-  // STOCK HELPERS (includes SOLD ledger)
+  // PRODUCTS STORE ADAPTER
   // -----------------------------
-  function remainingStockFor(productId, size) {
-    const store = window.BSProducts;
-    if (!store || typeof store.readAll !== 'function') return 0;
+  const Products = {
+    readAll() {
+      if (window.BSProducts && typeof window.BSProducts.readAll === 'function') {
+        return window.BSProducts.readAll();
+      }
+      return [];
+    },
 
-    const pid = String(productId || '');
-    const sz = String(size || '');
+    listPublished() {
+      if (window.BSProducts && typeof window.BSProducts.listPublished === 'function') {
+        return window.BSProducts.listPublished();
+      }
+      return this.readAll().filter(p => p?.isPublished);
+    },
 
-    const product = (store.readAll() || []).find(p => String(p?.id) === pid);
-    if (!product) return 0;
-
-    const base = Number(product.stockBySize?.[sz] ?? 0);
-    const st = readState();
-    const sold = Number(st.soldBySize?.[pid]?.[sz] ?? 0);
-
-    const inCart = Cart.load().reduce((sum, it) => {
-      if (String(it.productId) === pid && String(it.size || '') === sz) return sum + Number(it.qty || 0);
-      return sum;
-    }, 0);
-
-    return Math.max(0, base - sold - inCart);
-  }
-
-  // -----------------------------
-  // PAGE-SPECIFIC LOGIC
-  // -----------------------------
-  function bindLogoutIntercept() {
-    document.addEventListener('click', (e) => {
-      const link = e.target.closest('.logout-link');
-      if (!link) return;
-      e.preventDefault();
-      Auth.logout();
-      toast('Logged out.');
-      location.href = 'index.html';
-    });
-  }
+    findById(id) {
+      const pid = String(id || '');
+      return this.readAll().find(p => String(p?.id) === pid) || null;
+    }
+  };
 
   // -----------------------------
-  // SHOP PAGE
+  // ORDERS (LOCAL DEMO)
+  // -----------------------------
+  const Orders = {
+    listFor(email) {
+      const st = readState();
+      const arr = st.ordersByUser[email] || [];
+      return Array.isArray(arr) ? arr : [];
+    },
+
+    addFor(email, order) {
+      const st = readState();
+      st.ordersByUser[email] = st.ordersByUser[email] || [];
+      st.ordersByUser[email].unshift(order);
+      writeState(st);
+    }
+  };
+
+  // -----------------------------
+  // UI
+  // -----------------------------
+  const UI = {
+    updateCartBadges() {
+      const total = Cart.totalQty(Cart.load());
+      $$('.cart-count').forEach(el => el.textContent = String(total));
+    },
+
+    updateNavAuthState() {
+      const user = Auth.currentUser();
+      const allLoginLinks = $$('a[href="login.html"]');
+      const allRegisterLinks = $$('a[href="register.html"]');
+      const allAccountLinks = $$('a[href="account.html"]');
+      const allOrdersLinks = $$('a[href="orders.html"]');
+      const allLogoutLinks = $$('a[href="logout.html"]');
+
+      allLoginLinks.forEach(a => a.style.display = user ? 'none' : '');
+      allRegisterLinks.forEach(a => a.style.display = user ? 'none' : '');
+      allAccountLinks.forEach(a => a.style.display = user ? '' : 'none');
+      allOrdersLinks.forEach(a => a.style.display = user ? '' : 'none');
+      allLogoutLinks.forEach(a => a.style.display = user ? '' : 'none');
+    },
+
+    ensureHeaderFooter() {
+      // Non-negotiable: do not inject full HTML layouts from JS.
+      // Each page must include its own real header/footer markup.
+      return;
+    },
+
+    bindLoginDropdown() {
+      const icon = $('.loginIcon');
+      const menu = $('.login-menu');
+      if (!icon || !menu) return;
+
+      icon.addEventListener('click', (e) => {
+        e.preventDefault();
+        menu.classList.toggle('show');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !icon.contains(e.target)) {
+          menu.classList.remove('show');
+        }
+      });
+    },
+
+    bindNavActive() {
+      const current = page() || 'index.html';
+      $$('#main-nav .nav-link').forEach(link => {
+        const href = (link.getAttribute('href') || '').split('/').pop().toLowerCase();
+        if (href === current) link.classList.add('active');
+      });
+    }
+  };
+
+  // -----------------------------
+  // SHOP: RENDER FROM STORE
   // -----------------------------
   function renderShopFromStore() {
-    if (!page().includes('shop-page.html')) return;
+    if (page() !== 'shop-page.html' && page() !== 'shop-page') return;
 
-    const grid = document.getElementById('productsGrid');
-    const status = document.getElementById('shopStatus');
+    const grid = $('#productsGrid');
     if (!grid) return;
 
-    const store = window.BSProducts;
-    if (!store || typeof store.listPublished !== 'function') {
-      if (status) status.textContent = '';
-      return;
-    }
-
-    const products = store.listPublished();
-    if (status) status.textContent = products.length ? '' : 'No products available yet.';
-
-    // Keep cache fresh for cart fill
-    ProductCache.cacheFromStore();
-
-    // Create a quick lookup of how many of each product+size are already in cart
+    const products = Products.listPublished();
     const cartItems = Cart.load();
     const cartQtyByKey = new Map();
-    for (const it of cartItems) {
-      const pid = String(it.productId || '');
-      const sz = it.size ? String(it.size) : '__nosize__';
-      const key = `${pid}::${sz}`;
+    cartItems.forEach(it => {
+      const key = `${String(it.productId)}::${String(it.size || '')}`;
       cartQtyByKey.set(key, (cartQtyByKey.get(key) || 0) + Number(it.qty || 0));
-    }
-
-    const soldBySize = readState().soldBySize || {};
+    });
 
     grid.innerHTML = products.map((p, idx) => {
-      const baseStockBySize = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
       const sizes = Array.isArray(p.sizes) && p.sizes.length ? p.sizes : ['S', 'M', 'L', 'XL'];
+      const baseStockBySize = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
 
       const remainingBySize = {};
-      sizes.forEach((s) => {
+      sizes.forEach(s => {
         const base = Number(baseStockBySize?.[s] ?? 0);
         const inCart = Number(cartQtyByKey.get(`${String(p.id)}::${String(s)}`) || 0);
-        const sold = Number(soldBySize?.[String(p.id)]?.[String(s)] ?? 0);
-        remainingBySize[s] = Math.max(0, base - sold - inCart);
+        remainingBySize[s] = Math.max(0, base - inCart);
       });
 
       const totalRemaining = Object.values(remainingBySize).reduce((sum, n) => sum + Number(n || 0), 0);
-
-      const imageUrl = (p.media && p.media.coverUrl) ? p.media.coverUrl : '';
+      const cover = p.media?.coverUrl || '';
       const sizeSelectId = `size-${p.id}-${idx}`;
 
-      const stockLine = totalRemaining > 0
-        ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalRemaining || 0)
-          }</span></p>`
-        : `<p class="stock">New stock coming soon.</p>`;
-
-      const sizeOptions = sizes.map((s) => {
+      const sizeOptions = sizes.map(s => {
         const r = Number(remainingBySize[s] || 0);
         const disabled = r <= 0 ? 'disabled' : '';
         const label = r <= 0 ? `${escapeHtml(s)} (Out)` : escapeHtml(s);
         return `<option value="${escapeHtml(s)}" ${disabled}>${label}</option>`;
       }).join('');
 
-      const disabledBtn = totalRemaining <= 0 ? 'disabled' : '';
+      const stockLine = totalRemaining > 0
+        ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalRemaining || 0)}</span></p>`
+        : `<p class="stock">New stock coming soon.</p>`;
 
       return `
         <div class="product-card" data-product-id="${escapeHtml(p.id)}">
-          <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(p.name || 'Product')}" />
+          <img src="${escapeHtml(cover)}" alt="${escapeHtml(p.name || 'Product')}" />
           <h3>${escapeHtml(p.name || '')}</h3>
           <p class="price">${money(p.priceJMD || 0)}</p>
 
           <div class="row">
-            <select id="${escapeHtml(sizeSelectId)}" class="size-select" ${disabledBtn}>
+            <select id="${escapeHtml(sizeSelectId)}" class="product-size-select" ${totalRemaining <= 0 ? 'disabled' : ''}>
               <option value="">Select size</option>
               ${sizeOptions}
             </select>
           </div>
 
-          <button class="add-to-cart ${disabledBtn ? 'disabled' : ''}" ${disabledBtn}>
+          <button class="btn add-to-cart" ${totalRemaining <= 0 ? 'disabled aria-disabled="true"' : ''}>
             Add to Cart
           </button>
 
@@ -464,140 +466,278 @@
       const btn = e.target.closest('.add-to-cart');
       if (!btn) return;
 
-      if (btn.hasAttribute('disabled')) {
-        toast('New stock coming soon.', { important: true });
-        return;
-      }
-
       const card = btn.closest('.product-card');
-      if (!card) {
-        toast('Could not add item (product card not found).', { important: true });
-        return;
-      }
+      if (!card) return;
 
       const productId = String(card.getAttribute('data-product-id') || '');
-      if (!productId) {
-        toast('Could not add item (missing product id).', { important: true });
+      const product = Products.findById(productId);
+      if (!product) {
+        toast('This product is unavailable right now.', { important: true });
         return;
       }
 
-      const name = card.querySelector('h3')?.textContent?.trim() || 'Item';
-      const priceText = card.querySelector('.price')?.textContent || '';
-      const price = Number(String(priceText).replace(/[^0-9.]/g, '')) || 0;
-      const image = card.querySelector('img')?.getAttribute('src') || '';
-
-      const size = card.querySelector('.size-select')?.value || '';
+      const size = card.querySelector('.product-size-select')?.value || '';
       if (!size) {
         toast('Please select a size before adding to cart.', { important: true });
         return;
       }
 
-      const remaining = remainingStockFor(productId, size);
+      const stockBySize = product.stockBySize || {};
+      const base = Number(stockBySize?.[size] ?? 0);
+
+      const inCart = Cart.load().reduce((sum, it) => {
+        if (String(it.productId) === String(productId) && String(it.size || '') === String(size)) {
+          return sum + Number(it.qty || 0);
+        }
+        return sum;
+      }, 0);
+
+      const remaining = Math.max(0, base - inCart);
       if (remaining <= 0) {
         toast('Not enough stock available for this size.', { important: true });
         return;
       }
 
-      Cart.add({ productId, name, price, image, size: size || null, qty: 1 });
+      Cart.add(productId, size, 1);
+      UI.updateCartBadges();
+      toast(`Added to cart: ${product.name}`);
 
-      toast(`Added to cart: ${name}`);
-      renderCartIfOnCartPage();
-
-      // Refresh the shop UI so the stock count updates immediately
+      // re-render so stock counts update live
       renderShopFromStore();
     });
   }
 
   // -----------------------------
-  // CART PAGE
+  // CART PAGE (supports current IDs and legacy markup)
   // -----------------------------
   function renderCartIfOnCartPage() {
     if (!page().includes('cart.html')) return;
 
-    const list = document.getElementById('cartItems');
-    const subtotalEl = document.getElementById('cartSubtotal');
-    const totalEl = document.getElementById('cartTotal');
-    const emptyEl = document.getElementById('cartEmpty');
+    // Preferred (current) cart DOM targets
+    const itemsEl = $('#cartItems');
+    const emptyEl = $('#cartEmpty');
+    const subtotalEl = $('#cartSubtotal');
+    const totalEl = $('#cartTotal');
 
-    if (!list || !subtotalEl || !totalEl || !emptyEl) return;
+    // Legacy fallback (older markup)
+    const legacyContainer = $('.cart-container');
 
     const items = Cart.load();
-    const subtotal = Cart.subtotal(items);
 
-    const isEmpty = items.length === 0;
-    emptyEl.hidden = !isEmpty;
+    // Helper: resolve product details without guessing
+    const st = readState();
+    const cache = st.productCache || {};
 
-    if (isEmpty) {
-      list.innerHTML = '';
-      subtotalEl.textContent = money(0);
-      totalEl.textContent = money(0);
-      return;
+    function resolveProduct(it) {
+      const pid = String(it.productId || '');
+      const p = Products.findById(pid);
+
+      // Prefer products store
+      if (p) {
+        return {
+          name: p.name || it.name || 'Item',
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
+          price: Number(p.priceJMD || it.price || 0)
+        };
+      }
+
+      // Fallback: cached product info (older flows)
+      const c = cache[pid];
+      if (c) {
+        return {
+          name: c.name || it.name || 'Item',
+          image: c.image || it.image || '',
+          price: Number(c.price || it.price || 0)
+        };
+      }
+
+      // Last resort: whatever is stored on the cart item
+      return {
+        name: it.name || 'Item',
+        image: it.image || '',
+        price: Number(it.price || 0)
+      };
     }
 
-    list.innerHTML = items.map(it => `
-      <div class="cart-item" data-id="${escapeHtml(it.productId)}" data-size="${escapeHtml(it.size || '')}">
-        <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
-        <div class="ci-info">
-          <div class="ci-title">${escapeHtml(it.name || 'Item')}</div>
-          <div class="ci-meta">Size: ${escapeHtml(it.size || '')}</div>
-          <div class="ci-actions">
-            <button class="qty-btn minus">−</button>
-            <span class="qty">${Number(it.qty || 0)}</span>
-            <button class="qty-btn plus">+</button>
-            <button class="remove-btn">Remove</button>
-          </div>
-        </div>
-        <div class="ci-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</div>
-      </div>
-    `).join('');
+    // -----------------------------
+    // CURRENT MARKUP PATH
+    // -----------------------------
+    if (itemsEl && emptyEl && subtotalEl && totalEl) {
+      const isEmpty = items.length === 0;
+      emptyEl.hidden = !isEmpty;
 
-    subtotalEl.textContent = money(subtotal);
-    totalEl.textContent = money(subtotal);
-
-    list.addEventListener('click', (e) => {
-      const row = e.target.closest('.cart-item');
-      if (!row) return;
-      const id = row.getAttribute('data-id');
-      const size = row.getAttribute('data-size');
-
-      if (e.target.classList.contains('remove-btn')) {
-        Cart.remove(id, size);
-        renderCartIfOnCartPage();
-        renderShopFromStore();
+      if (isEmpty) {
+        itemsEl.innerHTML = '';
+        subtotalEl.textContent = money(0);
+        totalEl.textContent = money(0);
         return;
       }
 
-      if (e.target.classList.contains('plus') || e.target.classList.contains('minus')) {
-        const items = Cart.load();
-        const it = items.find(x => x.productId === id && String(x.size || '') === String(size || ''));
-        if (!it) return;
-        const next = Number(it.qty || 0) + (e.target.classList.contains('plus') ? 1 : -1);
-        if (next <= 0) {
-          Cart.remove(id, size);
-        } else {
-          Cart.setQty(id, size, next);
-        }
+      const filled = items.map((it) => {
+        const meta = resolveProduct(it);
+        return { ...it, ...meta };
+      });
+
+      const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+
+      itemsEl.innerHTML = filled.map((it) => `
+        <div class="cart-item" data-id="${escapeHtml(it.productId)}" data-size="${escapeHtml(it.size || '')}">
+          <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
+          <div class="cart-item-info">
+            <h4>${escapeHtml(it.name || 'Item')}</h4>
+            <p class="cart-item-meta">Size: ${escapeHtml(it.size || '')}</p>
+            <p class="cart-item-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</p>
+          </div>
+
+          <div class="cart-item-qty">
+            <input type="number" min="1" value="${Number(it.qty || 1)}" />
+            <button class="remove-from-cart" type="button">Remove</button>
+          </div>
+        </div>
+      `).join('');
+
+      subtotalEl.textContent = money(subtotal);
+      totalEl.textContent = money(subtotal);
+
+      // Bind qty/remove (event delegation)
+      itemsEl.addEventListener('change', (e) => {
+        const input = e.target.closest('input[type="number"]');
+        if (!input) return;
+
+        const row = input.closest('.cart-item');
+        if (!row) return;
+
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
+
+        Cart.setQty(pid, size, q);
+        UI.updateCartBadges();
         renderCartIfOnCartPage();
-        renderShopFromStore();
-      }
-    }, { once: true });
+      }, { once: true });
+
+      itemsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-from-cart');
+        if (!btn) return;
+
+        const row = btn.closest('.cart-item');
+        if (!row) return;
+
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+
+        Cart.remove(pid, size);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      }, { once: true });
+
+      return;
+    }
+
+    // -----------------------------
+    // LEGACY FALLBACK PATH
+    // -----------------------------
+    if (!legacyContainer) return;
+
+    legacyContainer.innerHTML = '';
+
+    if (items.length === 0) {
+      legacyContainer.innerHTML = `
+        <div class="empty-cart">
+          Your cart is empty. <a href="shop-page.html">Shop Now</a>
+        </div>
+      `;
+      return;
+    }
+
+    let subtotal = 0;
+
+    items.forEach((it) => {
+      const meta = resolveProduct(it);
+      const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
+      subtotal += lineTotal;
+
+      const row = document.createElement('div');
+      row.className = 'cart-item';
+      row.innerHTML = `
+        <img src="${escapeHtml(meta.image || '')}" alt="${escapeHtml(meta.name || 'Product')}" class="cart-item-img" />
+        <div class="cart-item-info">
+          <h4>${escapeHtml(meta.name || 'Item')}</h4>
+          <p class="cart-item-meta">Size: ${escapeHtml(it.size || '')}</p>
+          <p class="cart-item-price">${money(lineTotal)}</p>
+        </div>
+        <div class="cart-item-qty">
+          <input type="number" min="1" value="${Number(it.qty || 1)}" />
+          <button class="remove-from-cart" type="button">Remove</button>
+        </div>
+      `;
+
+      const qtyInput = row.querySelector('input[type="number"]');
+      const removeBtn = row.querySelector('.remove-from-cart');
+
+      qtyInput.addEventListener('change', () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        Cart.setQty(it.productId, it.size || null, q);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
+
+      removeBtn.addEventListener('click', () => {
+        Cart.remove(it.productId, it.size || null);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
+
+      legacyContainer.appendChild(row);
+    });
+
+    const summary = document.createElement('div');
+    summary.className = 'cart-summary';
+    summary.innerHTML = `
+      <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
+      <p><strong>Total:</strong> ${money(subtotal)}</p>
+      <a href="shop-page.html" class="btn continue-shopping-btn">Continue Shopping</a>
+      <a href="checkout.html" class="btn checkout-btn proceed-checkout-btn">Proceed to Checkout</a>
+    `;
+
+    legacyContainer.appendChild(summary);
   }
 
   // -----------------------------
-  // LOGIN / REGISTER
+  // AUTH GATE (LOCAL DEMO)
+  // -----------------------------
+  function gateCheckoutAndOrders() {
+    const p = page();
+    const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html');
+    if (!needsAuth) return;
+
+    const user = Auth.currentUser();
+    if (user) return;
+
+    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
+    toast('Please log in to continue.', { important: true });
+    location.href = 'login.html';
+  }
+
+  // -----------------------------
+  // LOGIN / REGISTER FORMS
   // -----------------------------
   function bindLoginForm() {
-    if (!page().includes('login.html')) return;
+    if (page() !== 'login.html' && page() !== 'login') return;
+
     const form = document.querySelector('form');
     if (!form) return;
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const email = form.querySelector('input[type="email"]')?.value;
-      const password = form.querySelector('input[type="password"]')?.value;
+
+      const email = form.querySelector('input[type="email"]')?.value || '';
+      const password = form.querySelector('input[type="password"]')?.value || '';
 
       try {
         Auth.login({ email, password });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
 
         const rt = safeParse(localStorage.getItem(KEYS.returnTo));
         localStorage.removeItem(KEYS.returnTo);
@@ -609,19 +749,23 @@
   }
 
   function bindRegisterForm() {
-    if (!page().includes('register.html')) return;
+    if (page() !== 'register.html' && page() !== 'register') return;
+
     const form = document.querySelector('form');
     if (!form) return;
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const fullname = form.querySelector('input[name="fullname"], input[type="text"]')?.value;
-      const email = form.querySelector('input[type="email"]')?.value;
-      const password = form.querySelector('input[name="password"], input[type="password"]')?.value;
-      const confirmPassword = form.querySelector('input[name="confirmPassword"]')?.value;
+
+      const fullname = form.querySelector('input[name="fullname"], input[type="text"]')?.value || '';
+      const email = form.querySelector('input[type="email"]')?.value || '';
+      const password = form.querySelector('input[name="password"], input[type="password"]')?.value || '';
+      const confirmPassword = form.querySelector('input[name="confirmPassword"]')?.value || '';
 
       try {
         Auth.register({ fullname, email, password, confirmPassword });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
 
         const rt = safeParse(localStorage.getItem(KEYS.returnTo));
         localStorage.removeItem(KEYS.returnTo);
@@ -636,14 +780,10 @@
   // ACCOUNT PAGE
   // -----------------------------
   function renderAccountPage() {
-    if (!page().includes('account.html')) return;
+    if (page() !== 'account.html' && page() !== 'account') return;
+
     const u = Auth.currentUser();
-    if (!u) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'account.html' }));
-      toast('Please log in to view your account.', { important: true });
-      location.href = 'login.html';
-      return;
-    }
+    if (!u) return;
 
     const nameEl = $('#accountName');
     const emailEl = $('#accountEmail');
@@ -658,14 +798,10 @@
   // ORDERS PAGE
   // -----------------------------
   function renderOrdersPage() {
-    if (!page().includes('orders.html')) return;
+    if (page() !== 'orders.html' && page() !== 'orders') return;
+
     const u = Auth.currentUser();
-    if (!u) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'orders.html' }));
-      toast('Please log in to view your orders.', { important: true });
-      location.href = 'login.html';
-      return;
-    }
+    if (!u) return;
 
     const container = document.querySelector('main.orders-container');
     if (!container) return;
@@ -687,7 +823,6 @@
       const orderId = o.id || '—';
       const createdAt = o.createdAt || '';
       const dateTxt = createdAt ? new Date(createdAt).toLocaleDateString() : '';
-
       const items = Array.isArray(o.items) ? o.items : [];
       const total = Number(o.total ?? o.subtotal ?? 0);
 
@@ -704,7 +839,8 @@
           <p><strong>Items:</strong></p>
           <ul>
             ${items.map((it) => {
-              const name = escapeHtml(it.name || 'Item');
+              const p = Products.findById(it.productId);
+              const name = escapeHtml(p?.name || 'Item');
               const size = it.size ? ` - Size ${escapeHtml(String(it.size))}` : '';
               const qty = Number(it.qty || 0);
               const qtyTxt = qty > 1 ? ` (x${qty})` : '';
@@ -728,6 +864,7 @@
 
     function openModal(order) {
       if (!modal || !modalBody) return;
+
       const orderId = order.id || '—';
       const createdAt = order.createdAt || '';
       const dateTxt = createdAt ? new Date(createdAt).toLocaleString() : '';
@@ -743,14 +880,17 @@
         <hr />
         <ul>
           ${items.map(it => {
-            const name = escapeHtml(it.name || 'Item');
+            const p = Products.findById(it.productId);
+            const name = escapeHtml(p?.name || 'Item');
             const size = it.size ? ` - Size ${escapeHtml(String(it.size))}` : '';
             const qty = Number(it.qty || 0);
-            const lineTotal = money(Number(it.price || 0) * qty);
+            const unitPrice = Number(p?.priceJMD || 0);
+            const lineTotal = money(unitPrice * qty);
             return `<li>${name}${size} (x${qty}) — ${lineTotal}</li>`;
           }).join('')}
         </ul>
       `;
+
       modal.style.display = 'flex';
     }
 
@@ -771,32 +911,36 @@
   }
 
   // -----------------------------
-  // CHECKOUT PAGE
+  // CHECKOUT PAGE (LOCAL DEMO)
   // -----------------------------
   function renderCheckoutPage() {
-    if (!page().includes('checkout.html')) return;
+    if (page() !== 'checkout.html' && page() !== 'checkout') return;
 
-    const user = Auth.currentUser();
-    if (!user) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
-      toast('Please log in to checkout.', { important: true });
-      location.href = 'login.html';
-      return;
-    }
+    const u = Auth.currentUser();
+    if (!u) return;
 
     const itemsEl = $('#checkoutItems');
     const subtotalEl = $('#checkoutSubtotal');
     const totalEl = $('#checkoutTotal');
     const emptyEl = $('#checkoutEmpty');
     const placeBtn = $('#placeOrderBtn');
-    const paySel = $('#paymentMethod');
 
     if (!itemsEl || !subtotalEl || !totalEl || !emptyEl || !placeBtn) return;
 
-    const items = Cart.load();
-    const subtotal = Cart.subtotal(items);
+    const raw = Cart.load();
+    const filled = raw.map(it => {
+      const p = Products.findById(it.productId);
+      return {
+        ...it,
+        name: p?.name || 'Item',
+        image: p?.media?.coverUrl || '',
+        price: Number(p?.priceJMD || 0)
+      };
+    });
 
-    const isEmpty = items.length === 0;
+    const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+    const isEmpty = filled.length === 0;
+
     emptyEl.hidden = !isEmpty;
     placeBtn.disabled = isEmpty;
 
@@ -807,7 +951,7 @@
       return;
     }
 
-    itemsEl.innerHTML = items.map(it => `
+    itemsEl.innerHTML = filled.map(it => `
       <div class="checkout-item">
         <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
         <div class="ci-info">
@@ -822,90 +966,59 @@
     totalEl.textContent = money(subtotal);
 
     placeBtn.addEventListener('click', () => {
-      // Validate inventory against SOLD ledger before placing order
-      const store = window.BSProducts;
-      if (!store || typeof store.readAll !== 'function') {
-        toast('Products store is unavailable. Please try again.', { important: true });
-        return;
-      }
-
-      const all = store.readAll() || [];
-      const st = readState();
-      const soldBySize = st.soldBySize || {};
-      const reqByKey = new Map();
-
-      items.forEach((it) => {
-        const pid = String(it.productId || '');
-        const sz = String(it.size || '');
-        const key = `${pid}::${sz}`;
-        reqByKey.set(key, (Number(reqByKey.get(key) || 0) + Number(it.qty || 0)));
-      });
-
-      let ok = true;
-      for (const [key, reqQty] of reqByKey.entries()) {
-        const [pid, sz] = key.split('::');
-        const product = all.find(p => String(p?.id) === pid);
-        const base = Number(product?.stockBySize?.[sz] ?? 0);
-        const sold = Number(soldBySize?.[pid]?.[sz] ?? 0);
-
-        if (!product) {
-          ok = false;
-          toast('One or more items are no longer available. Please update your cart.', { important: true });
-          break;
-        }
-
-        if ((base - sold) < Number(reqQty || 0)) {
-          ok = false;
-          toast('Not enough stock for one or more items. Please update your cart.', { important: true });
-          break;
-        }
-      }
-
-      if (!ok) return;
-
-      const method = paySel ? String(paySel.value || 'cash') : 'cash';
       const order = {
         id: uid('ord_'),
         createdAt: nowISO(),
-        paymentMethod: method,
-        items: items.map(it => ({ ...it })),
+        items: raw.map(it => ({ ...it })),
         subtotal,
         total: subtotal
       };
 
-      Orders.addFor(user.email, order);
-
-      // Reduce inventory locally by recording SOLD quantities (backend-ready sales ledger)
-      const st2 = readState();
-      st2.soldBySize = st2.soldBySize || {};
-      items.forEach((it) => {
-        const pid = String(it.productId || '');
-        const sz = String(it.size || '');
-        const qty = Number(it.qty || 0);
-        if (!pid || !sz || qty <= 0) return;
-
-        st2.soldBySize[pid] = st2.soldBySize[pid] || {};
-        st2.soldBySize[pid][sz] = Number(st2.soldBySize[pid][sz] || 0) + qty;
-      });
-      writeState(st2);
-
+      Orders.addFor(u.email, order);
       Cart.clear();
+      UI.updateCartBadges();
       toast('Order placed successfully!');
       renderCheckoutPage();
     }, { once: true });
   }
 
   // -----------------------------
+  // NAV BINDINGS
+  // -----------------------------
+  function bindLogoutLink() {
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href="logout.html"]');
+      if (!a) return;
+
+      e.preventDefault();
+      Auth.logout();
+      UI.updateNavAuthState();
+      UI.updateCartBadges();
+      toast('Logged out.');
+      location.href = 'index.html';
+    });
+  }
+
+  // -----------------------------
   // INIT
   // -----------------------------
   function init() {
-    bindLogoutIntercept();
+    UI.ensureHeaderFooter();
+    UI.bindLoginDropdown();
+    UI.bindNavActive();
+
+    gateCheckoutAndOrders();
+
+    bindLogoutLink();
     bindAddToCart();
+    bindLoginForm();
+    bindRegisterForm();
+
+    UI.updateNavAuthState();
+    UI.updateCartBadges();
 
     renderShopFromStore();
     renderCartIfOnCartPage();
-    bindLoginForm();
-    bindRegisterForm();
     renderAccountPage();
     renderOrdersPage();
     renderCheckoutPage();
@@ -913,4 +1026,10 @@
 
   document.addEventListener('DOMContentLoaded', init);
 
+  // expose (optional)
+  BS.Auth = Auth;
+  BS.Cart = Cart;
+  BS.UI = UI;
+  BS.Products = Products;
+  BS.Orders = Orders;
 })();

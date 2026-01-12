@@ -42,8 +42,28 @@
   <!-- CART SECTION -->
   <main class="container">
     <h1>Your Shopping Cart</h1>
+
     <div class="cart-container">
-      <!-- Cart items will be dynamically injected here by cart.js -->
+      <!-- Empty state -->
+      <div id="cartEmpty" class="empty-cart" hidden>
+        <p>Your cart is empty. <a href="shop-page.html">Continue shopping</a></p>
+      </div>
+
+      <!-- Items list (rendered by js/main.js) -->
+      <div id="cartItems"></div>
+
+      <!-- Summary / actions -->
+      <div class="cart-summary">
+        <p><strong>Subtotal:</strong> <span id="cartSubtotal">J$0.00</span></p>
+        <p><strong>Total:</strong> <span id="cartTotal">J$0.00</span></p>
+        <hr />
+
+        <div class="cart-actions">
+          <a href="shop-page.html" class="btn btn--secondary">Continue Shopping</a>
+          <button id="clearCartBtn" class="btn btn--danger" type="button">Clear Cart</button>
+          <a href="checkout.html" class="btn btn--primary">Proceed to Checkout</a>
+        </div>
+      </div>
     </div>
   </main>
 
