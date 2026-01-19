@@ -599,37 +599,55 @@
       subtotalEl.textContent = money(subtotal);
       totalEl.textContent = money(subtotal);
 
+      // Toggle + bind Clear Cart button
+      const clearBtn = $('#clearCartBtn');
+      if (clearBtn) {
+        clearBtn.hidden = items.length === 0;
+        if (clearBtn.dataset.bsBound !== '1') {
+          clearBtn.dataset.bsBound = '1';
+          clearBtn.addEventListener('click', () => {
+            Cart.clear();
+            UI.updateCartBadges();
+            renderCartIfOnCartPage();
+          });
+        }
+      }
+
       // Bind qty/remove (event delegation)
-      itemsEl.addEventListener('change', (e) => {
-        const input = e.target.closest('input[type="number"]');
-        if (!input) return;
+      if (itemsEl.dataset.bsBound !== '1') {
+        itemsEl.dataset.bsBound = '1';
 
-        const row = input.closest('.cart-item');
-        if (!row) return;
+        itemsEl.addEventListener('change', (e) => {
+          const input = e.target.closest('input[type="number"]');
+          if (!input) return;
 
-        const pid = row.getAttribute('data-id');
-        const size = row.getAttribute('data-size') || null;
-        const q = Math.max(1, Number(input.value || 1));
+          const row = input.closest('.cart-item');
+          if (!row) return;
 
-        Cart.setQty(pid, size, q);
-        UI.updateCartBadges();
-        renderCartIfOnCartPage();
-      }, { once: true });
+          const pid = row.getAttribute('data-id');
+          const size = row.getAttribute('data-size') || '';
+          const q = Math.max(1, Number(input.value || 1));
 
-      itemsEl.addEventListener('click', (e) => {
-        const btn = e.target.closest('.remove-from-cart');
-        if (!btn) return;
+          Cart.setQty(pid, size, q);
+          UI.updateCartBadges();
+          renderCartIfOnCartPage();
+        });
 
-        const row = btn.closest('.cart-item');
-        if (!row) return;
+        itemsEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('.remove-from-cart');
+          if (!btn) return;
 
-        const pid = row.getAttribute('data-id');
-        const size = row.getAttribute('data-size') || null;
+          const row = btn.closest('.cart-item');
+          if (!row) return;
 
-        Cart.remove(pid, size);
-        UI.updateCartBadges();
-        renderCartIfOnCartPage();
-      }, { once: true });
+          const pid = row.getAttribute('data-id');
+          const size = row.getAttribute('data-size') || '';
+
+          Cart.remove(pid, size);
+          UI.updateCartBadges();
+          renderCartIfOnCartPage();
+        });
+      }
 
       return;
     }
@@ -759,8 +777,13 @@
 
       const fullname = form.querySelector('input[name="fullname"], input[type="text"]')?.value || '';
       const email = form.querySelector('input[type="email"]')?.value || '';
-      const password = form.querySelector('input[name="password"], input[type="password"]')?.value || '';
-      const confirmPassword = form.querySelector('input[name="confirmPassword"]')?.value || '';
+      const pwInputs = Array.from(form.querySelectorAll('input[type="password"]'));
+      const password = (pwInputs[0]?.value || form.querySelector('input[name="password"], input#password')?.value || '');
+      const confirmPassword = (
+        pwInputs[1]?.value ||
+        form.querySelector('input[name="confirmPassword"], input[name="confirm-password"], input#confirm-password, input#confirmPassword')?.value ||
+        ''
+      );
 
       try {
         Auth.register({ fullname, email, password, confirmPassword });
