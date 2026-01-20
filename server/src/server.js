@@ -146,8 +146,11 @@ app.post("/api/auth/logout", (req, res) => {
 // -----------------------------
 // FRONTEND (same-domain hosting)
 // -----------------------------
-// Serve the existing approved UI from /client
-const clientDir = path.resolve(__dirname, "..", "..", "client");
+// Repo layout: /client and /server (this file is /server/src/server.js)
+// So project root is 3 levels up from __dirname
+const projectRoot = path.resolve(__dirname, "..", "..", "..");
+const clientDir = path.join(projectRoot, "client");
+
 app.use(express.static(clientDir));
 
 // Make direct navigation work for known static pages
