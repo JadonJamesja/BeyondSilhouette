@@ -1,8 +1,8 @@
 {
-    "name": "beyond-silhouette-monorepo",
-    "private": true,
-    "scripts": {
-        "build": "npm --prefix server install && npx --prefix server prisma generate && npx --prefix server prisma migrate deploy",
-        "start": "npm --prefix server start"
-    }
+  "name": "beyond-silhouette-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix server install && cd server && npx prisma generate && npx prisma migrate deploy",
+    "start": "npm --prefix server start"
+  }
 }
