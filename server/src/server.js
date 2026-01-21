@@ -5,6 +5,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+
 import prisma from "./prisma.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { readSession, setSession, clearSession } from "./session.js";
@@ -139,15 +140,12 @@ app.post("/api/auth/logout", (req, res) => {
   return res.json({ ok: true });
 });
 
-// TODO (next milestone):
-// - /api/products (read-only first)
-// - /api/orders (create + list, auth required)
-
 // -----------------------------
 // FRONTEND (same-domain hosting)
 // -----------------------------
+// Serve the existing approved UI from /client
 // Repo layout: /client and /server (this file is /server/src/server.js)
-// So project root is 3 levels up from __dirname
+// Project root is three levels up from this directory.
 const projectRoot = path.resolve(__dirname, "..", "..", "..");
 const clientDir = path.join(projectRoot, "client");
 
