@@ -198,6 +198,7 @@
       const em = String(email || '').trim().toLowerCase();
       const users = readUsers();
       const u = users[em];
+
       if (!u) throw new Error('No account found for this email.');
       if (u.passwordHash !== demoHash(password)) throw new Error('Incorrect password.');
 
@@ -238,12 +239,41 @@
       const items = this.load();
       const pid = String(productId);
       const sz = String(size || '');
+      const qAdd = Math.max(1, Number(qty || 1));
+
+      const product = Products.findById(pid);
+      const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
+      const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
+
       const existing = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
 
+      // If we can resolve stock for this size, clamp adds to available stock.
+      if (base !== null && Number.isFinite(base)) {
+        const otherQty = items.reduce((sum, row) => {
+          if (row !== existing && String(row.productId) === pid && String(row.size || '') === sz) {
+            return sum + Number(row.qty || 0);
+          }
+          return sum;
+        }, 0);
+
+        const maxAllowed = Math.max(0, base - otherQty);
+        if (maxAllowed <= 0) return;
+
+        const current = existing ? Number(existing.qty || 0) : 0;
+        const next = Math.min(maxAllowed, current + qAdd);
+
+        if (existing) existing.qty = next;
+        else items.push({ productId: pid, size: sz, qty: next });
+
+        this.save(items);
+        return;
+      }
+
+      // Fallback: no stock info available, allow add.
       if (existing) {
-        existing.qty = Number(existing.qty || 0) + Number(qty || 0);
+        existing.qty = Number(existing.qty || 0) + qAdd;
       } else {
-        items.push({ productId: pid, size: sz, qty: Number(qty || 1) });
+        items.push({ productId: pid, size: sz, qty: qAdd });
       }
 
       this.save(items);
@@ -261,10 +291,42 @@
       const sz = String(size || '');
       const items = this.load();
       const it = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-      if (!it) return;
+      if (!it) return null;
 
-      it.qty = Math.max(1, Number(qty || 1));
+      const desired = Math.max(1, Number(qty || 1));
+
+      const product = Products.findById(pid);
+      const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
+      const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
+
+      // If we can resolve stock for this size, enforce per-size limits.
+      if (base !== null && Number.isFinite(base)) {
+        const otherQty = items.reduce((sum, row) => {
+          if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
+            return sum + Number(row.qty || 0);
+          }
+          return sum;
+        }, 0);
+
+        const maxAllowed = Math.max(0, base - otherQty);
+
+        if (maxAllowed <= 0) {
+          // No stock available for this size => remove line from cart.
+          const nextItems = items.filter(row => row !== it);
+          this.save(nextItems);
+          return 0;
+        }
+
+        const applied = Math.min(maxAllowed, desired);
+        it.qty = applied;
+        this.save(items);
+        return applied;
+      }
+
+      // Fallback: no stock info available, allow.
+      it.qty = desired;
       this.save(items);
+      return desired;
     },
 
     clear() {
@@ -559,6 +621,27 @@
       };
     }
 
+    function maxAllowedForItem(it) {
+      const pid = String(it.productId || '');
+      const sz = String(it.size || '');
+      if (!sz) return null;
+
+      const p = Products.findById(pid);
+      if (!p || !p.stockBySize || typeof p.stockBySize !== 'object') return null;
+
+      const base = Number(p.stockBySize?.[sz] ?? 0);
+      if (!Number.isFinite(base)) return null;
+
+      const otherQty = items.reduce((sum, row) => {
+        if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
+          return sum + Number(row.qty || 0);
+        }
+        return sum;
+      }, 0);
+
+      return Math.max(0, base - otherQty);
+    }
+
     // -----------------------------
     // CURRENT MARKUP PATH
     // -----------------------------
@@ -590,7 +673,7 @@
           </div>
 
           <div class="cart-item-qty">
-            <input type="number" min="1" value="${Number(it.qty || 1)}" />
+            <input type="number" min="1" ${(() => { const m = maxAllowedForItem(it); return (typeof m === "number" && Number.isFinite(m)) ? `max="${Number(m || 0)}"` : ""; })()} value="${Number(it.qty || 1)}" />
             <button class="remove-from-cart" type="button">Remove</button>
           </div>
         </div>
@@ -599,55 +682,45 @@
       subtotalEl.textContent = money(subtotal);
       totalEl.textContent = money(subtotal);
 
-      // Toggle + bind Clear Cart button
-      const clearBtn = $('#clearCartBtn');
-      if (clearBtn) {
-        clearBtn.hidden = items.length === 0;
-        if (clearBtn.dataset.bsBound !== '1') {
-          clearBtn.dataset.bsBound = '1';
-          clearBtn.addEventListener('click', () => {
-            Cart.clear();
-            UI.updateCartBadges();
-            renderCartIfOnCartPage();
-          });
-        }
-      }
-
       // Bind qty/remove (event delegation)
-      if (itemsEl.dataset.bsBound !== '1') {
-        itemsEl.dataset.bsBound = '1';
+      itemsEl.addEventListener('change', (e) => {
+        const input = e.target.closest('input[type="number"]');
+        if (!input) return;
 
-        itemsEl.addEventListener('change', (e) => {
-          const input = e.target.closest('input[type="number"]');
-          if (!input) return;
+        const row = input.closest('.cart-item');
+        if (!row) return;
 
-          const row = input.closest('.cart-item');
-          if (!row) return;
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
 
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || '';
-          const q = Math.max(1, Number(input.value || 1));
+        const applied = Cart.setQty(pid, size, q);
 
-          Cart.setQty(pid, size, q);
-          UI.updateCartBadges();
-          renderCartIfOnCartPage();
-        });
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          input.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
 
-        itemsEl.addEventListener('click', (e) => {
-          const btn = e.target.closest('.remove-from-cart');
-          if (!btn) return;
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      }, { once: true });
 
-          const row = btn.closest('.cart-item');
-          if (!row) return;
+      itemsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-from-cart');
+        if (!btn) return;
 
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || '';
+        const row = btn.closest('.cart-item');
+        if (!row) return;
 
-          Cart.remove(pid, size);
-          UI.updateCartBadges();
-          renderCartIfOnCartPage();
-        });
-      }
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+
+        Cart.remove(pid, size);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      }, { once: true });
 
       return;
     }
@@ -685,7 +758,7 @@
           <p class="cart-item-price">${money(lineTotal)}</p>
         </div>
         <div class="cart-item-qty">
-          <input type="number" min="1" value="${Number(it.qty || 1)}" />
+          <input type="number" min="1" ${(() => { const m = maxAllowedForItem(it); return (typeof m === "number" && Number.isFinite(m)) ? `max="${Number(m || 0)}"` : ""; })()} value="${Number(it.qty || 1)}" />
           <button class="remove-from-cart" type="button">Remove</button>
         </div>
       `;
@@ -695,7 +768,15 @@
 
       qtyInput.addEventListener('change', () => {
         const q = Math.max(1, Number(qtyInput.value || 1));
-        Cart.setQty(it.productId, it.size || null, q);
+        const applied = Cart.setQty(it.productId, it.size || null, q);
+
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          qtyInput.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
+
         UI.updateCartBadges();
         renderCartIfOnCartPage();
       });
@@ -759,9 +840,9 @@
 
         const rt = safeParse(localStorage.getItem(KEYS.returnTo));
         localStorage.removeItem(KEYS.returnTo);
-        location.href = rt?.href || 'index.html';
+        location.href = (rt && rt.href) ? rt.href : 'account.html';
       } catch (err) {
-        toast(err.message || 'Login failed.', { important: true });
+        toast(err?.message || 'Login failed.', { important: true });
       }
     });
   }
@@ -775,244 +856,30 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
 
-      const fullname = form.querySelector('input[name="fullname"], input[type="text"]')?.value || '';
+      const fullname = form.querySelector('input[name="fullname"]')?.value || '';
       const email = form.querySelector('input[type="email"]')?.value || '';
-      const pwInputs = Array.from(form.querySelectorAll('input[type="password"]'));
-      const password = (pwInputs[0]?.value || form.querySelector('input[name="password"], input#password')?.value || '');
-      const confirmPassword = (
-        pwInputs[1]?.value ||
-        form.querySelector('input[name="confirmPassword"], input[name="confirm-password"], input#confirm-password, input#confirmPassword')?.value ||
-        ''
-      );
+      const password = form.querySelector('#password')?.value || '';
+      const confirmPassword = form.querySelector('#confirmPassword')?.value || '';
 
       try {
         Auth.register({ fullname, email, password, confirmPassword });
         UI.updateNavAuthState();
         UI.updateCartBadges();
-
-        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-        localStorage.removeItem(KEYS.returnTo);
-        location.href = rt?.href || 'index.html';
+        toast('Account created.');
+        location.href = 'account.html';
       } catch (err) {
-        toast(err.message || 'Registration failed.', { important: true });
+        toast(err?.message || 'Registration failed.', { important: true });
       }
     });
   }
 
   // -----------------------------
-  // ACCOUNT PAGE
+  // LOGOUT + ACCOUNT
   // -----------------------------
-  function renderAccountPage() {
-    if (page() !== 'account.html' && page() !== 'account') return;
-
-    const u = Auth.currentUser();
-    if (!u) return;
-
-    const nameEl = $('#accountName');
-    const emailEl = $('#accountEmail');
-    const sinceEl = $('#accountSince');
-
-    if (nameEl) nameEl.textContent = u.name || '';
-    if (emailEl) emailEl.textContent = u.email || '';
-    if (sinceEl) sinceEl.textContent = formatMemberSince(u.createdAt);
-  }
-
-  // -----------------------------
-  // ORDERS PAGE
-  // -----------------------------
-  function renderOrdersPage() {
-    if (page() !== 'orders.html' && page() !== 'orders') return;
-
-    const u = Auth.currentUser();
-    if (!u) return;
-
-    const container = document.querySelector('main.orders-container');
-    if (!container) return;
-
-    container.querySelectorAll('.order-card').forEach(el => el.remove());
-    container.querySelectorAll('.no-orders').forEach(el => el.remove());
-
-    const orders = Orders.listFor(u.email);
-
-    if (!orders.length) {
-      const msg = document.createElement('p');
-      msg.className = 'no-orders';
-      msg.innerHTML = `No orders yet. <a href="shop-page.html">Shop now</a>`;
-      container.appendChild(msg);
-      return;
-    }
-
-    orders.forEach((o) => {
-      const orderId = o.id || '—';
-      const createdAt = o.createdAt || '';
-      const dateTxt = createdAt ? new Date(createdAt).toLocaleDateString() : '';
-      const items = Array.isArray(o.items) ? o.items : [];
-      const total = Number(o.total ?? o.subtotal ?? 0);
-
-      const card = document.createElement('div');
-      card.className = 'order-card';
-      card.innerHTML = `
-        <div class="order-header">
-          <h2>Order #${escapeHtml(String(orderId))}</h2>
-          <p><strong>Date:</strong> ${escapeHtml(dateTxt)}</p>
-        </div>
-        <div class="order-body">
-          <p><strong>Status:</strong> <span class="status processing">Processing</span></p>
-          <p><strong>Total:</strong> ${money(total)}</p>
-          <p><strong>Items:</strong></p>
-          <ul>
-            ${items.map((it) => {
-              const p = Products.findById(it.productId);
-              const name = escapeHtml(p?.name || 'Item');
-              const size = it.size ? ` - Size ${escapeHtml(String(it.size))}` : '';
-              const qty = Number(it.qty || 0);
-              const qtyTxt = qty > 1 ? ` (x${qty})` : '';
-              return `<li>${name}${size}${qtyTxt}</li>`;
-            }).join('')}
-          </ul>
-          <button class="btn order-details-btn" data-order="${escapeHtml(String(orderId))}">View Details</button>
-        </div>
-      `;
-      container.appendChild(card);
-    });
-
-    const modal = document.getElementById('order-modal');
-    const modalBody = document.getElementById('modal-body');
-    const closeBtn = modal ? modal.querySelector('.close-btn') : null;
-
-    function closeModal() {
-      if (!modal) return;
-      modal.style.display = 'none';
-    }
-
-    function openModal(order) {
-      if (!modal || !modalBody) return;
-
-      const orderId = order.id || '—';
-      const createdAt = order.createdAt || '';
-      const dateTxt = createdAt ? new Date(createdAt).toLocaleString() : '';
-      const items = Array.isArray(order.items) ? order.items : [];
-      const subtotal = Number(order.subtotal ?? 0);
-      const total = Number(order.total ?? subtotal);
-
-      modalBody.innerHTML = `
-        <p><strong>Order:</strong> #${escapeHtml(String(orderId))}</p>
-        <p><strong>Date:</strong> ${escapeHtml(dateTxt)}</p>
-        <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
-        <p><strong>Total:</strong> ${money(total)}</p>
-        <hr />
-        <ul>
-          ${items.map(it => {
-            const p = Products.findById(it.productId);
-            const name = escapeHtml(p?.name || 'Item');
-            const size = it.size ? ` - Size ${escapeHtml(String(it.size))}` : '';
-            const qty = Number(it.qty || 0);
-            const unitPrice = Number(p?.priceJMD || 0);
-            const lineTotal = money(unitPrice * qty);
-            return `<li>${name}${size} (x${qty}) — ${lineTotal}</li>`;
-          }).join('')}
-        </ul>
-      `;
-
-      modal.style.display = 'flex';
-    }
-
-    container.querySelectorAll('.order-details-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-order');
-        const order = orders.find(x => String(x.id) === String(id));
-        if (order) openModal(order);
-      });
-    });
-
-    if (closeBtn) closeBtn.addEventListener('click', closeModal);
-    if (modal) {
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeModal();
-      });
-    }
-  }
-
-  // -----------------------------
-  // CHECKOUT PAGE (LOCAL DEMO)
-  // -----------------------------
-  function renderCheckoutPage() {
-    if (page() !== 'checkout.html' && page() !== 'checkout') return;
-
-    const u = Auth.currentUser();
-    if (!u) return;
-
-    const itemsEl = $('#checkoutItems');
-    const subtotalEl = $('#checkoutSubtotal');
-    const totalEl = $('#checkoutTotal');
-    const emptyEl = $('#checkoutEmpty');
-    const placeBtn = $('#placeOrderBtn');
-
-    if (!itemsEl || !subtotalEl || !totalEl || !emptyEl || !placeBtn) return;
-
-    const raw = Cart.load();
-    const filled = raw.map(it => {
-      const p = Products.findById(it.productId);
-      return {
-        ...it,
-        name: p?.name || 'Item',
-        image: p?.media?.coverUrl || '',
-        price: Number(p?.priceJMD || 0)
-      };
-    });
-
-    const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
-    const isEmpty = filled.length === 0;
-
-    emptyEl.hidden = !isEmpty;
-    placeBtn.disabled = isEmpty;
-
-    if (isEmpty) {
-      itemsEl.innerHTML = '';
-      subtotalEl.textContent = money(0);
-      totalEl.textContent = money(0);
-      return;
-    }
-
-    itemsEl.innerHTML = filled.map(it => `
-      <div class="checkout-item">
-        <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
-        <div class="ci-info">
-          <div class="ci-title">${escapeHtml(it.name || 'Item')}</div>
-          <div class="ci-meta">${it.size ? `Size: ${escapeHtml(it.size)} • ` : ''}Qty: ${Number(it.qty || 0)}</div>
-        </div>
-        <div class="ci-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</div>
-      </div>
-    `).join('');
-
-    subtotalEl.textContent = money(subtotal);
-    totalEl.textContent = money(subtotal);
-
-    placeBtn.addEventListener('click', () => {
-      const order = {
-        id: uid('ord_'),
-        createdAt: nowISO(),
-        items: raw.map(it => ({ ...it })),
-        subtotal,
-        total: subtotal
-      };
-
-      Orders.addFor(u.email, order);
-      Cart.clear();
-      UI.updateCartBadges();
-      toast('Order placed successfully!');
-      renderCheckoutPage();
-    }, { once: true });
-  }
-
-  // -----------------------------
-  // NAV BINDINGS
-  // -----------------------------
-  function bindLogoutLink() {
+  function bindLogoutLinks() {
     document.addEventListener('click', (e) => {
       const a = e.target.closest('a[href="logout.html"]');
       if (!a) return;
-
       e.preventDefault();
       Auth.logout();
       UI.updateNavAuthState();
@@ -1022,37 +889,192 @@
     });
   }
 
+  function renderAccountIfOnAccountPage() {
+    if (page() !== 'account.html' && page() !== 'account') return;
+
+    const user = Auth.currentUser();
+    const nameEl = $('#accountName');
+    const emailEl = $('#accountEmail');
+    const sinceEl = $('#accountSince');
+
+    if (nameEl) nameEl.textContent = user?.name || '';
+    if (emailEl) emailEl.textContent = user?.email || '';
+    if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
+  }
+
+  // -----------------------------
+  // ORDERS PAGE
+  // -----------------------------
+  function renderOrdersIfOnOrdersPage() {
+    if (page() !== 'orders.html' && page() !== 'orders') return;
+
+    const user = Auth.currentUser();
+    const listEl = $('#ordersList');
+    if (!user || !listEl) return;
+
+    const st = readState();
+    const orders = st.ordersByUser?.[user.email] || [];
+
+    if (!orders.length) {
+      listEl.innerHTML = `<p class="muted">No orders yet.</p>`;
+      return;
+    }
+
+    listEl.innerHTML = orders.map(o => `
+      <div class="order-card">
+        <div class="order-row">
+          <strong>Order #</strong> <span>${escapeHtml(o.id || '')}</span>
+        </div>
+        <div class="order-row">
+          <strong>Date</strong> <span>${escapeHtml(o.createdAt || '')}</span>
+        </div>
+        <div class="order-row">
+          <strong>Total</strong> <span>${money(o.totalJMD || 0)}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // -----------------------------
+  // CHECKOUT PAGE (DEMO)
+  // -----------------------------
+  function renderCheckoutIfOnCheckoutPage() {
+    if (page() !== 'checkout.html' && page() !== 'checkout') return;
+
+    const main = document.querySelector('main');
+    if (!main) return;
+
+    const items = Cart.load();
+    const st = readState();
+    const cache = st.productCache || {};
+
+    function resolveProduct(it) {
+      const pid = String(it.productId || '');
+      const p = Products.findById(pid);
+      if (p) {
+        return {
+          name: p.name || it.name || 'Item',
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
+          price: Number(p.priceJMD || it.price || 0)
+        };
+      }
+      const c = cache[pid];
+      if (c) {
+        return {
+          name: c.name || it.name || 'Item',
+          image: c.image || it.image || '',
+          price: Number(c.price || it.price || 0)
+        };
+      }
+      return {
+        name: it.name || 'Item',
+        image: it.image || '',
+        price: Number(it.price || 0)
+      };
+    }
+
+    const emptyWrap = $('#checkoutEmpty');
+    const wrap = $('#checkoutWrap');
+
+    if (!items.length) {
+      if (emptyWrap) emptyWrap.hidden = false;
+      if (wrap) wrap.hidden = true;
+      return;
+    }
+
+    if (emptyWrap) emptyWrap.hidden = true;
+    if (wrap) wrap.hidden = false;
+
+    const filled = items.map(it => ({ ...it, ...resolveProduct(it) }));
+    const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+
+    const listEl = $('#checkoutItems');
+    const subtotalEl = $('#checkoutSubtotal');
+    const totalEl = $('#checkoutTotal');
+    const btn = $('#placeOrderBtn');
+
+    if (listEl) {
+      listEl.innerHTML = filled.map(it => `
+        <div class="checkout-item">
+          <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
+          <div class="checkout-item-info">
+            <div class="checkout-item-title">${escapeHtml(it.name || 'Item')}</div>
+            <div class="checkout-item-meta">Size: ${escapeHtml(it.size || '')} • Qty: ${Number(it.qty || 0)}</div>
+          </div>
+          <div class="checkout-item-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</div>
+        </div>
+      `).join('');
+    }
+
+    if (subtotalEl) subtotalEl.textContent = money(subtotal);
+    if (totalEl) totalEl.textContent = money(subtotal);
+
+    if (btn) {
+      btn.onclick = () => {
+        const user = Auth.currentUser();
+        if (!user) {
+          toast('Please log in to continue.', { important: true });
+          localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
+          location.href = 'login.html';
+          return;
+        }
+
+        const order = {
+          id: uid('ord_'),
+          createdAt: nowISO(),
+          items: filled.map(it => ({
+            productId: it.productId,
+            size: it.size || '',
+            qty: Number(it.qty || 0),
+            name: it.name || '',
+            price: Number(it.price || 0)
+          })),
+          totalJMD: subtotal
+        };
+
+        const st2 = readState();
+        st2.ordersByUser[user.email] = st2.ordersByUser[user.email] || [];
+        st2.ordersByUser[user.email].unshift(order);
+        writeState(st2);
+
+        Cart.clear();
+        UI.updateCartBadges();
+        toast('Order placed (demo).');
+        location.href = 'orders.html';
+      };
+    }
+  }
+
   // -----------------------------
   // INIT
   // -----------------------------
   function init() {
     UI.ensureHeaderFooter();
+    UI.updateNavAuthState();
+    UI.updateCartBadges();
     UI.bindLoginDropdown();
     UI.bindNavActive();
 
     gateCheckoutAndOrders();
 
-    bindLogoutLink();
+    renderShopFromStore();
     bindAddToCart();
+
+    renderCartIfOnCartPage();
+    renderCheckoutIfOnCheckoutPage();
+
     bindLoginForm();
     bindRegisterForm();
+    bindLogoutLinks();
 
-    UI.updateNavAuthState();
-    UI.updateCartBadges();
-
-    renderShopFromStore();
-    renderCartIfOnCartPage();
-    renderAccountPage();
-    renderOrdersPage();
-    renderCheckoutPage();
+    renderAccountIfOnAccountPage();
+    renderOrdersIfOnOrdersPage();
   }
 
   document.addEventListener('DOMContentLoaded', init);
 
-  // expose (optional)
+  // Expose tiny API (debug / future admin)
   BS.Auth = Auth;
   BS.Cart = Cart;
-  BS.UI = UI;
   BS.Products = Products;
-  BS.Orders = Orders;
 })();
