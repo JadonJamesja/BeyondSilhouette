@@ -82,7 +82,9 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 40px;
+
+  /* more professional responsive padding */
+  padding: 14px clamp(18px, 3vw, 40px);
   gap: 0;
 }
 
@@ -96,28 +98,34 @@ body {
 #logo > a {
   text-decoration: none;
   color: hsl(var(--text));
+  white-space: nowrap;
 }
 
+/* NAV */
 #main-nav {
   display: flex;
   flex: 1;
   justify-content: center;
-  gap: 30px;
+
+  /* avoid "double big spacing" feeling */
+  gap: 22px;
 }
 
 #main-nav .nav-list {
   list-style: none;
   display: flex;
-  gap: 30px;
   align-items: center;
+
+  /* slightly tighter than before, reads more intentional */
+  gap: 20px;
 }
 
 .nav-link {
   text-decoration: none;
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 600;
   color: hsla(var(--text), 0.82);
-  transition: color 0.25s ease, opacity 0.25s ease;
+  transition: color 0.2s ease, opacity 0.2s ease;
 }
 
 .nav-link:hover {
@@ -129,7 +137,9 @@ body {
   align-items: center;
   gap: 15px;
   padding: 0;
-  margin-left: 10px;
+
+  /* reduce the "hole" between last link and icons */
+  margin-left: 6px;
 }
 
 .loginIcon > img {
@@ -434,7 +444,7 @@ body {
 .nav-icons{
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 18px; /* was 15px */
 }
 
 .cartIcon{
@@ -454,9 +464,9 @@ body {
   position: absolute;
   top: -8px;
   right: -10px;
-  background: hsl(var(--accent));
+  background: hsl(220 85% 38%);
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   padding: 2px 6px;
   border-radius: 999px;
   font-weight: 800;
@@ -488,9 +498,25 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
 }
 
 /* ==============================
-   MOBILE: LOGO SIZE REDUCTION
+   MOBILE: LOGO SIZE REDUCTION + NAV SPACING CLAMP
 ============================== */
 @media (max-width: 768px) {
+  .header-container {
+    padding: 12px 18px;
+  }
+
+  #main-nav {
+    gap: 18px;
+  }
+
+  #main-nav .nav-list {
+    gap: 16px;
+  }
+
+  .nav-icons {
+    gap: 14px;
+  }
+
   #logo {
     font-size: 1.15rem;
     line-height: 1.1;
