@@ -464,3 +464,40 @@ body {
   min-width: 18px;
   text-align: center;
 }
+
+/* ==============================
+   GLOBAL NAV CONSOLIDATION RULES
+   - Logo acts as "Home"
+   - Remove Shop link everywhere
+   - Show About only on Home page
+============================== */
+
+/* Remove "Home" link everywhere (logo already goes home) */
+#main-nav .nav-list a.nav-link[href="index.html"] {
+  display: none;
+}
+
+/* Remove "Shop" link everywhere */
+#main-nav .nav-list a.nav-link[href="shop-page.html"] {
+  display: none;
+}
+
+/* Show "About" ONLY on the Home page */
+body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
+  display: none;
+}
+
+/* ==============================
+   MOBILE: LOGO SIZE REDUCTION
+============================== */
+@media (max-width: 768px) {
+  #logo {
+    font-size: 1.15rem;
+    line-height: 1.1;
+    margin: 0;
+  }
+
+  #logo > a {
+    white-space: nowrap;
+  }
+}

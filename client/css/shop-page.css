@@ -130,12 +130,14 @@
     border-radius: 20px;
     padding: 15px;
     text-align: center;
+    border: 1px solid rgba(242, 178, 51, 0.55); /* gold accent */
     transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 #shop-page .product-card:hover {
     transform: translateY(-8px);
     box-shadow: 0 12px 25px rgba(0, 0, 0, 0.12);
+    border-color: rgba(242, 178, 51, 0.9);
 }
 
 #shop-page .product-card img {

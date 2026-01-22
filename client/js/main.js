@@ -92,7 +92,7 @@
     ensureToastStyles();
 
     if (important) {
-      try { alert(msg); } catch (_) {}
+      try { alert(msg); } catch (_) { }
     }
 
     const el = document.createElement('div');
@@ -649,6 +649,24 @@
       const isEmpty = items.length === 0;
       emptyEl.hidden = !isEmpty;
 
+      // Clear cart button (exists in cart.html as #clearCartBtn)
+      const clearBtn = document.getElementById('clearCartBtn');
+      if (clearBtn) {
+        // show only when cart has items
+        clearBtn.hidden = isEmpty;
+
+        // bind once (renderCartIfOnCartPage runs often)
+        if (!clearBtn.dataset.bound) {
+          clearBtn.dataset.bound = '1';
+          clearBtn.addEventListener('click', () => {
+            Cart.clear();
+            UI.updateCartBadges();
+            renderCartIfOnCartPage();
+            toast('Cart cleared.');
+          });
+        }
+      }
+
       if (isEmpty) {
         itemsEl.innerHTML = '';
         subtotalEl.textContent = money(0);
@@ -705,7 +723,7 @@
 
         UI.updateCartBadges();
         renderCartIfOnCartPage();
-      }, { once: true });
+      });
 
       itemsEl.addEventListener('click', (e) => {
         const btn = e.target.closest('.remove-from-cart');
@@ -720,7 +738,7 @@
         Cart.remove(pid, size);
         UI.updateCartBadges();
         renderCartIfOnCartPage();
-      }, { once: true });
+      });
 
       return;
     }
