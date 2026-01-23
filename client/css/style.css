@@ -527,3 +527,42 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
     white-space: nowrap;
   }
 }
+
+/* ==============================
+   INDEX ONLY: FIX TIGHT FEEL ON TABLET/MOBILE
+   - Index nav contains ONLY icons (no text links)
+   - Make header behave like a standard layout: logo left, icons right
+============================== */
+@media (max-width: 1024px) {
+  #home-page #main-nav {
+    justify-content: space-between;
+    gap: 12px; /* small safety gap if items wrap */
+  }
+
+  #home-page #main-nav .nav-list {
+    margin-left: auto; /* keep icons pushed right */
+  }
+
+  #home-page .nav-right {
+    margin-left: 0; /* avoid extra squeeze */
+  }
+
+  #home-page .header-container {
+    padding: 14px clamp(18px, 4vw, 40px);
+  }
+}
+
+@media (max-width: 768px) {
+  #home-page .header-container {
+    padding: 14px 20px;
+  }
+
+  #home-page #main-nav {
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  #home-page .nav-icons {
+    gap: 18px; /* keep cart/user from feeling cramped */
+  }
+}
