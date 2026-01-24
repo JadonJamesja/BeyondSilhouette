@@ -159,6 +159,20 @@
   }
 
   // -----------------------------
+  // API helper (used for Google login if backend exists)
+  // -----------------------------
+  async function apiJson(path, { method = 'GET', body } = {}) {
+    const res = await fetch(path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'include'
+    });
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data };
+  }
+
+  // -----------------------------
   // AUTH (LOCAL DEMO)
   // -----------------------------
   const Auth = {
@@ -171,8 +185,17 @@
 
     register({ fullname, email, password, confirmPassword }) {
       const em = String(email || '').trim().toLowerCase();
-      if (!fullname || !em || !password) throw new Error('Please fill in all required fields.');
-      if (confirmPassword != null && String(password) !== String(confirmPassword)) {
+      const name = String(fullname || '').trim();
+
+      // Normalize password inputs (fixes false mismatch due to whitespace/autofill)
+      const pw = String(password || '').trim();
+      const cpw = String(confirmPassword || '').trim();
+
+      if (!name || !em || !pw) throw new Error('Please fill in all required fields.');
+
+      // Only enforce confirm if the field exists (non-empty OR explicitly provided)
+      // but always compare trimmed values to avoid false mismatch.
+      if (confirmPassword != null && cpw !== '' && pw !== cpw) {
         throw new Error('Passwords do not match.');
       }
 
@@ -181,8 +204,8 @@
 
       users[em] = {
         email: em,
-        name: String(fullname),
-        passwordHash: demoHash(password),
+        name: name,
+        passwordHash: demoHash(pw),
         createdAt: nowISO(),
         role: 'customer'
       };
@@ -196,11 +219,13 @@
 
     login({ email, password }) {
       const em = String(email || '').trim().toLowerCase();
+      const pw = String(password || '').trim();
+
       const users = readUsers();
       const u = users[em];
 
       if (!u) throw new Error('No account found for this email.');
-      if (u.passwordHash !== demoHash(password)) throw new Error('Incorrect password.');
+      if (u.passwordHash !== demoHash(pw)) throw new Error('Incorrect password.');
 
       writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
       Cart.mergeGuestIntoUser(em);
@@ -456,6 +481,74 @@
       });
     }
   };
+
+  // -----------------------------
+  // GOOGLE SIGN-IN (client-side hook)
+  // IMPORTANT:
+  // - This does NOT inject HTML.
+  // - It only activates if your login/register page already has Google's button containers.
+  // - It calls /api/auth/google if available. If not available, it will show a clear message.
+  // -----------------------------
+  async function handleGoogleCredential(credential) {
+    if (!credential) return;
+
+    // Preferred: backend verifies token and creates session
+    try {
+      const { ok, data } = await apiJson('/api/auth/google', {
+        method: 'POST',
+        body: { credential }
+      });
+
+      if (!ok) {
+        toast(data?.error || 'Google sign-in is not configured on the server yet.', { important: true });
+        return;
+      }
+
+      // If backend returns a user, store a local mirror so existing UI continues to work
+      const u = data?.user;
+      if (!u?.email) {
+        toast('Google sign-in failed: missing user email.', { important: true });
+        return;
+      }
+
+      const em = String(u.email).trim().toLowerCase();
+      const users = readUsers();
+      users[em] = users[em] || {};
+      users[em].email = em;
+      users[em].name = users[em].name || u.name || em;
+      users[em].createdAt = users[em].createdAt || u.createdAt || nowISO();
+      users[em].role = users[em].role || u.role || 'customer';
+      writeUsers(users);
+
+      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'google' });
+
+      Cart.mergeGuestIntoUser(em);
+      UI.updateNavAuthState();
+      UI.updateCartBadges();
+
+      const rt = safeParse(localStorage.getItem(KEYS.returnTo));
+      localStorage.removeItem(KEYS.returnTo);
+      location.href = (rt && rt.href) ? rt.href : 'account.html';
+    } catch (err) {
+      toast('Google sign-in is not available yet (server endpoint missing).', { important: true });
+    }
+  }
+
+  function bindGoogleSignInIfPresent() {
+    const p = page();
+    if (p !== 'login.html' && p !== 'register.html' && p !== 'login' && p !== 'register') return;
+
+    // Only activate if the page already includes Google's button containers.
+    const hasOnload = !!document.getElementById('g_id_onload');
+    const hasSignin = !!document.querySelector('.g_id_signin');
+    if (!hasOnload && !hasSignin) return;
+
+    // Google will call this global callback if configured in HTML.
+    window.BSGoogleLoginCallback = async (response) => {
+      const credential = response?.credential;
+      await handleGoogleCredential(credential);
+    };
+  }
 
   // -----------------------------
   // SHOP: RENDER FROM STORE
@@ -848,8 +941,8 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
 
-      const email = form.querySelector('input[type="email"]')?.value || '';
-      const password = form.querySelector('input[type="password"]')?.value || '';
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+      const password = (form.querySelector('input[type="password"]')?.value || '').trim();
 
       try {
         Auth.login({ email, password });
@@ -874,10 +967,17 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
 
-      const fullname = form.querySelector('input[name="fullname"]')?.value || '';
-      const email = form.querySelector('input[type="email"]')?.value || '';
-      const password = form.querySelector('#password')?.value || '';
-      const confirmPassword = form.querySelector('#confirmPassword')?.value || '';
+      const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+
+      // Robust selectors (fixes mismatch when IDs/names vary)
+      const password =
+        (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
+
+      const confirmPassword =
+        (form.querySelector(
+          'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
+        )?.value || '').trim();
 
       try {
         Auth.register({ fullname, email, password, confirmPassword });
@@ -1074,6 +1174,9 @@
     UI.bindNavActive();
 
     gateCheckoutAndOrders();
+
+    // Google sign-in hook (only activates if your page already includes Google containers)
+    bindGoogleSignInIfPresent();
 
     renderShopFromStore();
     bindAddToCart();
