@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Account - Beyond Silhouette</title>
 
-  <!-- GLOBAL STYLES -->
   <link rel="stylesheet" href="./css/style.css">
   <link rel="stylesheet" href="./css/account.css">
 </head>
@@ -25,7 +24,7 @@
       <div class="nav-icons">
         <a href="cart.html" class="cartIcon" aria-label="Cart">
           <img src="./images/cart-icon.png" alt="Cart" class="cart-img">
-          <span class="cart-count">0</span>
+          <span class="cart-count" aria-live="polite">0</span>
         </a>
 
         <div class="login-dropdown">
@@ -51,9 +50,10 @@
 
     <div class="account-details">
       <h2>Profile Information</h2>
-      <p><strong>Name:</strong> <span id="accountName">—</span></p>
-      <p><strong>Email:</strong> <span id="accountEmail">—</span></p>
-      <p><strong>Member Since:</strong> <span id="accountSince">—</span></p>
+
+      <p><strong>Name:</strong> <span id="accountName"></span></p>
+      <p><strong>Email:</strong> <span id="accountEmail"></span></p>
+      <p><strong>Member Since:</strong> <span id="accountSince"></span></p>
 
       <a href="edit-profile.html" class="btn">Edit Profile</a>
     </div>
@@ -74,7 +74,6 @@
     <p>&copy; 2025 Beyond Silhouette. All rights reserved.</p>
   </footer>
 
-  <!-- GLOBAL SCRIPT -->
   <script src="./js/main.js"></script>
 </body>
 
