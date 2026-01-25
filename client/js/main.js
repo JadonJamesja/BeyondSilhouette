@@ -232,6 +232,54 @@
       return u;
     },
 
+    updateProfile({ name, currentPassword, newPassword }) {
+      const user = this.currentUser();
+      if (!user || !user.email) throw new Error('Please log in to continue.');
+
+      const em = String(user.email).trim().toLowerCase();
+      const nm = String(name || '').trim();
+      const curr = String(currentPassword || '').trim();
+      const next = (newPassword == null) ? '' : String(newPassword).trim();
+
+      if (!nm) throw new Error('Please enter your display name.');
+      if (!curr) throw new Error('Please enter your current password.');
+
+      const users = readUsers();
+      const u = users[em];
+      if (!u) throw new Error('Account not found.');
+
+      if (!u.passwordHash) {
+        throw new Error('Password is not set for this account.');
+      }
+
+      if (u.passwordHash !== demoHash(curr)) {
+        throw new Error('Current password is incorrect.');
+      }
+
+      // Update allowed fields only
+      u.name = nm;
+
+      if (next) {
+        u.passwordHash = demoHash(next);
+      }
+
+      // Preserve protected fields
+      u.email = u.email || em;
+      u.createdAt = u.createdAt || user.createdAt || nowISO();
+      u.role = u.role || user.role || 'customer';
+
+      users[em] = u;
+      writeUsers(users);
+
+      // Session is keyed by email; keep consistent
+      const sess = readSession();
+      if (sess && String(sess.email || '').toLowerCase() === em) {
+        writeSession(sess);
+      }
+
+      return u;
+    },
+
     logout() {
       clearSession();
     }
@@ -918,7 +966,7 @@
   // -----------------------------
   function gateCheckoutAndOrders() {
     const p = page();
-    const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html');
+    const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
     if (!needsAuth) return;
 
     const user = Auth.currentUser();
@@ -987,6 +1035,78 @@
         location.href = 'account.html';
       } catch (err) {
         toast(err?.message || 'Registration failed.', { important: true });
+      }
+    });
+  }
+
+  // -----------------------------
+  // EDIT PROFILE (FULL)
+  // -----------------------------
+  function bindEditProfileForm() {
+    if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
+
+    // Auth gate (reuse existing logic)
+    const user = Auth.currentUser();
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
+      toast('Please log in to continue.', { important: true });
+      location.href = 'login.html';
+      return;
+    }
+
+    const form = document.getElementById('editProfileForm');
+    if (!form) return;
+
+    const nameInput = document.getElementById('epName');
+    const emailInput = document.getElementById('epEmail');
+    const currentPwInput = document.getElementById('epCurrentPassword');
+    const newPwInput = document.getElementById('epNewPassword');
+    const confirmPwInput = document.getElementById('epConfirmNewPassword');
+    const cancelBtn = document.getElementById('epCancelBtn');
+
+    // Pre-populate
+    if (emailInput) emailInput.value = user.email || '';
+    if (nameInput) nameInput.value = user.name || '';
+
+    if (cancelBtn && !cancelBtn.dataset.bound) {
+      cancelBtn.dataset.bound = '1';
+      cancelBtn.addEventListener('click', () => {
+        location.href = 'account.html';
+      });
+    }
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      try {
+        const name = String(nameInput?.value || '').trim();
+        const currentPassword = String(currentPwInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirmNewPassword = String(confirmPwInput?.value || '').trim();
+
+        if (!name) throw new Error('Please enter your display name.');
+        if (!currentPassword) throw new Error('Please enter your current password.');
+
+        const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
+        if (wantsPwChange) {
+          if (!newPassword) throw new Error('Please enter a new password.');
+          if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
+        }
+
+        Auth.updateProfile({
+          name,
+          currentPassword,
+          newPassword: wantsPwChange ? newPassword : null
+        });
+
+        UI.updateNavAuthState();
+        toast('Profile updated successfully.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Could not update profile.', { important: true });
       }
     });
   }
@@ -1186,6 +1306,7 @@
 
     bindLoginForm();
     bindRegisterForm();
+    bindEditProfileForm();
     bindLogoutLinks();
 
     renderAccountIfOnAccountPage();
