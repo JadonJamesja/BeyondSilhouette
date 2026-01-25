@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Profile - Beyond Silhouette</title>
+
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/edit-profile.css">
+</head>
+
+<body>
+
+    <!-- HEADER -->
+    <header id="site-header">
+        <div class="container header-container">
+            <nav id="main-nav">
+                <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
+
+                <ul class="nav-list">
+                    <li class="nav-right">
+                        <div class="nav-icons">
+                            <a href="cart.html" class="cartIcon" aria-label="Cart">
+                                <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
+                                <span class="cart-count" aria-live="polite">0</span>
+                            </a>
+
+                            <div class="login-dropdown">
+                                <a href="#" class="loginIcon" aria-label="User menu">
+                                    <img src="./images/user icon.png" alt="Login">
+                                </a>
+                                <ul class="login-menu">
+                                    <li><a href="login.html">Sign In</a></li>
+                                    <li><a href="register.html">Create Account</a></li>
+                                    <li><a href="account.html">My Account</a></li>
+                                    <li><a href="orders.html">My Orders</a></li>
+                                    <li><a href="logout.html">Logout</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+
+            </nav>
+        </div>
+    </header>
+
+    <!-- EDIT PROFILE -->
+    <main class="edit-profile-container">
+        <h1>Edit Profile</h1>
+
+        <section class="card">
+            <div class="card-header">
+                <h2>Profile Details</h2>
+                <p class="muted">Update your name and password. For security, your current password is required.</p>
+            </div>
+
+            <form id="editProfileForm" novalidate>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="epEmail">Email</label>
+                        <input id="epEmail" type="email" value="" readonly>
+                        <p class="help">Email cannot be changed in this demo.</p>
+                    </div>
+
+                    <div class="field">
+                        <label for="epName">Display Name</label>
+                        <input id="epName" type="text" placeholder="Your name" autocomplete="name" required>
+                    </div>
+
+                    <div class="divider" role="separator" aria-hidden="true"></div>
+
+                    <div class="field">
+                        <label for="epCurrentPassword">Current Password</label>
+                        <input id="epCurrentPassword" type="password" placeholder="Enter current password"
+                            autocomplete="current-password" required>
+                    </div>
+
+                    <div class="field">
+                        <label for="epNewPassword">New Password</label>
+                        <input id="epNewPassword" type="password" placeholder="Enter new password (optional)"
+                            autocomplete="new-password">
+                    </div>
+
+                    <div class="field">
+                        <label for="epConfirmNewPassword">Confirm New Password</label>
+                        <input id="epConfirmNewPassword" type="password" placeholder="Confirm new password"
+                            autocomplete="new-password">
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button class="btn-primary" type="submit">Save Changes</button>
+                    <button class="btn-secondary" type="button" id="epCancelBtn">Cancel</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer id="site-footer">
+        <p>&copy; 2025 Beyond Silhouette. All rights reserved.</p>
+    </footer>
+
+    <script src="./js/main.js"></script>
+</body>
+
+</html>
