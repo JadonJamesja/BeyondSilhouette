@@ -25,7 +25,8 @@
     state: 'bs_state_v1',          // { cartByUser, productCache, ordersByUser }
     session: 'bs_session_v1',      // { email, token, createdAt, provider }
     users: 'bs_users_v1',          // { [email]: { email, name, passwordHash, createdAt, role } }
-    returnTo: 'bs_return_to_v1'    // { href }
+    returnTo: 'bs_return_to_v1',   // { href }
+    pwReset: 'bs_pw_reset_v1'      // { [email]: { code, expiresAt } }
   };
 
   const USER_GUEST = '__guest__';
@@ -143,6 +144,32 @@
 
   function writeUsers(users) {
     localStorage.setItem(KEYS.users, JSON.stringify(users || {}));
+  }
+
+  // -----------------------------
+  // PASSWORD RESET STORE (OPTION B)
+  // -----------------------------
+  function readPwResets() {
+    const raw = localStorage.getItem(KEYS.pwReset);
+    const obj = raw ? (safeParse(raw) || {}) : {};
+    return (obj && typeof obj === 'object') ? obj : {};
+  }
+
+  function writePwResets(map) {
+    localStorage.setItem(KEYS.pwReset, JSON.stringify(map || {}));
+  }
+
+  function isExpiredISO(iso) {
+    if (!iso) return true;
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return true;
+    return Date.now() > t;
+  }
+
+  function generateResetCode6() {
+    // 6-digit numeric code (100000 - 999999)
+    const n = Math.floor(100000 + Math.random() * 900000);
+    return String(n);
   }
 
   // -----------------------------
@@ -278,6 +305,75 @@
       }
 
       return u;
+    },
+
+    // -----------------------------
+    // OPTION B: REQUEST PASSWORD RESET (DEMO)
+    // -----------------------------
+    requestPasswordReset(email) {
+      const em = String(email || '').trim().toLowerCase();
+      if (!em) throw new Error('Please enter your email.');
+
+      const users = readUsers();
+      const u = users[em];
+      if (!u) throw new Error('No account found for this email.');
+
+      const code = generateResetCode6();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+
+      const resets = readPwResets();
+      resets[em] = { code, expiresAt };
+      writePwResets(resets);
+
+      return { code, expiresAt };
+    },
+
+    // -----------------------------
+    // OPTION B: RESET PASSWORD (DEMO)
+    // -----------------------------
+    resetPassword({ email, code, newPassword }) {
+      const em = String(email || '').trim().toLowerCase();
+      const cd = String(code || '').trim();
+      const np = String(newPassword || '').trim();
+
+      if (!em) throw new Error('Please enter your email.');
+      if (!cd) throw new Error('Please enter your reset code.');
+      if (!np) throw new Error('Please enter a new password.');
+
+      const users = readUsers();
+      const u = users[em];
+      if (!u) throw new Error('No account found for this email.');
+
+      const resets = readPwResets();
+      const entry = resets[em];
+      if (!entry || !entry.code) throw new Error('No active reset request found. Please generate a new code.');
+
+      if (isExpiredISO(entry.expiresAt)) {
+        delete resets[em];
+        writePwResets(resets);
+        throw new Error('This reset code has expired. Please generate a new one.');
+      }
+
+      if (String(entry.code) !== cd) {
+        throw new Error('Reset code is incorrect.');
+      }
+
+      // Update password hash (demo)
+      u.passwordHash = demoHash(np);
+
+      // Preserve protected fields
+      u.email = u.email || em;
+      u.createdAt = u.createdAt || nowISO();
+      u.role = u.role || 'customer';
+
+      users[em] = u;
+      writeUsers(users);
+
+      // Single-use token
+      delete resets[em];
+      writePwResets(resets);
+
+      return true;
     },
 
     logout() {
@@ -532,15 +628,10 @@
 
   // -----------------------------
   // GOOGLE SIGN-IN (client-side hook)
-  // IMPORTANT:
-  // - This does NOT inject HTML.
-  // - It only activates if your login/register page already has Google's button containers.
-  // - It calls /api/auth/google if available. If not available, it will show a clear message.
   // -----------------------------
   async function handleGoogleCredential(credential) {
     if (!credential) return;
 
-    // Preferred: backend verifies token and creates session
     try {
       const { ok, data } = await apiJson('/api/auth/google', {
         method: 'POST',
@@ -552,7 +643,6 @@
         return;
       }
 
-      // If backend returns a user, store a local mirror so existing UI continues to work
       const u = data?.user;
       if (!u?.email) {
         toast('Google sign-in failed: missing user email.', { important: true });
@@ -586,12 +676,10 @@
     const p = page();
     if (p !== 'login.html' && p !== 'register.html' && p !== 'login' && p !== 'register') return;
 
-    // Only activate if the page already includes Google's button containers.
     const hasOnload = !!document.getElementById('g_id_onload');
     const hasSignin = !!document.querySelector('.g_id_signin');
     if (!hasOnload && !hasSignin) return;
 
-    // Google will call this global callback if configured in HTML.
     window.BSGoogleLoginCallback = async (response) => {
       const credential = response?.credential;
       await handleGoogleCredential(credential);
@@ -705,7 +793,6 @@
       UI.updateCartBadges();
       toast(`Added to cart: ${product.name}`);
 
-      // re-render so stock counts update live
       renderShopFromStore();
     });
   }
@@ -716,18 +803,15 @@
   function renderCartIfOnCartPage() {
     if (!page().includes('cart.html')) return;
 
-    // Preferred (current) cart DOM targets
     const itemsEl = $('#cartItems');
     const emptyEl = $('#cartEmpty');
     const subtotalEl = $('#cartSubtotal');
     const totalEl = $('#cartTotal');
 
-    // Legacy fallback (older markup)
     const legacyContainer = $('.cart-container');
 
     const items = Cart.load();
 
-    // Helper: resolve product details without guessing
     const st = readState();
     const cache = st.productCache || {};
 
@@ -735,7 +819,6 @@
       const pid = String(it.productId || '');
       const p = Products.findById(pid);
 
-      // Prefer products store
       if (p) {
         return {
           name: p.name || it.name || 'Item',
@@ -744,7 +827,6 @@
         };
       }
 
-      // Fallback: cached product info (older flows)
       const c = cache[pid];
       if (c) {
         return {
@@ -754,7 +836,6 @@
         };
       }
 
-      // Last resort: whatever is stored on the cart item
       return {
         name: it.name || 'Item',
         image: it.image || '',
@@ -783,20 +864,14 @@
       return Math.max(0, base - otherQty);
     }
 
-    // -----------------------------
-    // CURRENT MARKUP PATH
-    // -----------------------------
     if (itemsEl && emptyEl && subtotalEl && totalEl) {
       const isEmpty = items.length === 0;
       emptyEl.hidden = !isEmpty;
 
-      // Clear cart button (exists in cart.html as #clearCartBtn)
       const clearBtn = document.getElementById('clearCartBtn');
       if (clearBtn) {
-        // show only when cart has items
         clearBtn.hidden = isEmpty;
 
-        // bind once (renderCartIfOnCartPage runs often)
         if (!clearBtn.dataset.bound) {
           clearBtn.dataset.bound = '1';
           clearBtn.addEventListener('click', () => {
@@ -841,7 +916,6 @@
       subtotalEl.textContent = money(subtotal);
       totalEl.textContent = money(subtotal);
 
-      // Bind qty/remove (event delegation)
       itemsEl.addEventListener('change', (e) => {
         const input = e.target.closest('input[type="number"]');
         if (!input) return;
@@ -884,9 +958,6 @@
       return;
     }
 
-    // -----------------------------
-    // LEGACY FALLBACK PATH
-    // -----------------------------
     if (!legacyContainer) return;
 
     legacyContainer.innerHTML = '';
@@ -1018,7 +1089,6 @@
       const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
       const email = (form.querySelector('input[type="email"]')?.value || '').trim();
 
-      // Robust selectors (fixes mismatch when IDs/names vary)
       const password =
         (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
 
@@ -1040,12 +1110,101 @@
   }
 
   // -----------------------------
+  // FORGOT PASSWORD (OPTION B)
+  // -----------------------------
+  function bindForgotPasswordForm() {
+    if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
+
+    const form = document.getElementById('forgotPasswordForm');
+    if (!form) return;
+
+    const emailInput = document.getElementById('fpEmail');
+    const codeWrap = document.getElementById('fpCodeWrap');
+    const codeEl = document.getElementById('fpResetCode');
+    const copyBtn = document.getElementById('fpCopyCodeBtn');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const email = String(emailInput?.value || '').trim();
+
+      try {
+        const { code } = Auth.requestPasswordReset(email);
+
+        if (codeEl) codeEl.textContent = String(code);
+        if (codeWrap) codeWrap.hidden = false;
+
+        toast('Reset code generated (demo).');
+      } catch (err) {
+        toast(err?.message || 'Could not generate reset code.', { important: true });
+      }
+    });
+
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = '1';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          const txt = String(codeEl?.textContent || '').trim();
+          if (!txt) throw new Error('No code to copy.');
+          await navigator.clipboard.writeText(txt);
+          toast('Code copied.');
+        } catch (err) {
+          toast('Could not copy code.', { important: true });
+        }
+      });
+    }
+  }
+
+  // -----------------------------
+  // RESET PASSWORD (OPTION B)
+  // -----------------------------
+  function bindResetPasswordForm() {
+    if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
+
+    const form = document.getElementById('resetPasswordForm');
+    if (!form) return;
+
+    const emailInput = document.getElementById('rpEmail');
+    const codeInput = document.getElementById('rpCode');
+    const newPwInput = document.getElementById('rpNewPassword');
+    const confirmPwInput = document.getElementById('rpConfirmNewPassword');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      try {
+        const email = String(emailInput?.value || '').trim();
+        const code = String(codeInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirm = String(confirmPwInput?.value || '').trim();
+
+        if (!email) throw new Error('Please enter your email.');
+        if (!code) throw new Error('Please enter your reset code.');
+        if (!newPassword) throw new Error('Please enter a new password.');
+        if (newPassword !== confirm) throw new Error('New passwords do not match.');
+
+        Auth.resetPassword({ email, code, newPassword });
+
+        toast('Password reset successfully. Please log in.');
+        location.href = 'login.html';
+      } catch (err) {
+        toast(err?.message || 'Could not reset password.', { important: true });
+      }
+    });
+  }
+
+  // -----------------------------
   // EDIT PROFILE (FULL)
   // -----------------------------
   function bindEditProfileForm() {
     if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
 
-    // Auth gate (reuse existing logic)
     const user = Auth.currentUser();
     if (!user) {
       localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
@@ -1064,7 +1223,6 @@
     const confirmPwInput = document.getElementById('epConfirmNewPassword');
     const cancelBtn = document.getElementById('epCancelBtn');
 
-    // Pre-populate
     if (emailInput) emailInput.value = user.email || '';
     if (nameInput) nameInput.value = user.name || '';
 
@@ -1295,7 +1453,6 @@
 
     gateCheckoutAndOrders();
 
-    // Google sign-in hook (only activates if your page already includes Google containers)
     bindGoogleSignInIfPresent();
 
     renderShopFromStore();
@@ -1306,6 +1463,8 @@
 
     bindLoginForm();
     bindRegisterForm();
+    bindForgotPasswordForm();
+    bindResetPasswordForm();
     bindEditProfileForm();
     bindLogoutLinks();
 
@@ -1319,4 +1478,6 @@
   BS.Auth = Auth;
   BS.Cart = Cart;
   BS.Products = Products;
+  BS.Orders = Orders;
+
 })();

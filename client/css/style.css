@@ -308,6 +308,28 @@ body {
   transform: translateY(0);
 }
 
+.auth-secondary-btn{
+  display: inline-flex;            /* makes it “button-like” and visible */
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  width: 100%;
+  min-height: 44px;
+
+  background: transparent;
+  border: 1px solid #000;
+  color: #000;
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.auth-secondary-btn:hover{
+  background: #000;
+  color: #fff;
+}
+
+
 /* ------------------------------
    4. FEATURED SECTION
 ------------------------------ */
