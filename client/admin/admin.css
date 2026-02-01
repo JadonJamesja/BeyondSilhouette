@@ -330,7 +330,18 @@ body.admin{
 }
 
 .sidebar-top{ display:flex; justify-content: space-between; align-items:center; gap: 10px; }
-.sidebar-toggle{ display:none; }
+
+/* Toggle button (desktop + mobile) */
+.sidebar-toggle{
+  display:inline-flex;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  line-height: 1;
+}
 
 .nav{ display:grid; gap:8px; padding: 6px; }
 .nav-item{
@@ -442,21 +453,55 @@ body.admin{
   }
   body.admin.sidebar-open .sidebar{ transform: translateX(0); }
   .sidebar-toggle{ display:inline-flex; }
+
+  body.admin.sidebar-open::before{
+    content:"";
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.28);
+    z-index: 40;
+  }
 }
 
-/* Desktop collapsed mode */
+/* ===== Desktop collapsed mode (FIXED) =====
+   Goal:
+   - collapse should NOT “push items slightly”
+   - it should HIDE the nav items cleanly (no jumbled mini-icons)
+   - keep only Brand mark + toggle visible so you can reopen
+*/
 @media (min-width: 921px){
-  body.sidebar-collapsed{ grid-template-columns: 92px 1fr; }
+  /* sidebar becomes a slim rail */
+  body.sidebar-collapsed{
+    grid-template-columns: 84px 1fr;
+  }
+
+  body.sidebar-collapsed .sidebar{
+    padding: 12px 10px;
+  }
+
+  /* keep brand mark + toggle */
   body.sidebar-collapsed .brand-meta{ display:none; }
-  body.sidebar-collapsed .nav-item{ font-size: 0; padding: 0; border: none; background: transparent; }
-  body.sidebar-collapsed .nav a::before{
-    content: "•";
-    display:grid;
-    place-items:center;
-    height: 44px;
-    border-radius: 14px;
-    border: 1px solid hsl(var(--border));
-    background: hsla(var(--text), .02);
+  body.sidebar-collapsed .brand-link{ padding: 8px; justify-content: center; }
+  body.sidebar-collapsed .brand-mark{ width:44px; height:44px; border-radius: 16px; }
+
+  /* IMPORTANT: hide nav (this prevents the jumbled left side) */
+  body.sidebar-collapsed .nav{
+    display:none;
+  }
+
+  /* hide user details + action labels, keep clean rail */
+  body.sidebar-collapsed .user-meta{ display:none; }
+  body.sidebar-collapsed .user-pill{ justify-content:center; padding: 10px; }
+  body.sidebar-collapsed .sidebar-actions{
+    display:none;
+  }
+
+  /* make sure the toggle stays centered and visible */
+  body.sidebar-collapsed .sidebar-top{
+    justify-content: center;
+  }
+  body.sidebar-collapsed .sidebar-toggle{
+    margin-left: 0;
   }
 }
 

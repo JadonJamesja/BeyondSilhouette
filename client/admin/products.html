@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -17,13 +18,14 @@
           <div class="brand-subtitle">Admin</div>
         </div>
       </a>
-      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar"
+        aria-label="Toggle sidebar">☰</button>
     </div>
 
     <nav class="nav">
       <a class="nav-item" href="./dashboard.html">Dashboard</a>
-      <a class="nav-item" href="./orders.html">Orders</a>
       <a class="nav-item active" href="./products.html">Products</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
       <a class="nav-item" href="./customers.html">Customers</a>
       <a class="nav-item" href="./settings.html">Settings</a>
     </nav>
@@ -51,8 +53,10 @@
       </div>
 
       <div class="topbar-actions">
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="New product (demo).">New product</button>
-        <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Opening shop (after DB we’ll render live).">Open shop</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="New product (demo).">New
+          product</button>
+        <button class="btn btn-primary btn-sm" type="button" data-action="toast"
+          data-toast="Opening shop (after DB we’ll render live).">Open shop</button>
       </div>
     </header>
 
@@ -61,7 +65,8 @@
       <article class="card">
         <div class="card-head">
           <h2 class="h2">Upload / Edit</h2>
-          <p class="muted">You’ll be able to save drafts, publish later, edit sizes/stock, and manage images after DB wiring.</p>
+          <p class="muted">You’ll be able to save drafts, publish later, edit sizes/stock, and manage images after DB
+            wiring.</p>
         </div>
 
         <form class="form" id="productForm" novalidate>
@@ -122,16 +127,20 @@
           <label class="field">
             <span class="label">Product images</span>
             <input class="input" id="productImages" type="file" accept="image/*" multiple />
-            <span class="muted" style="font-size:13px;">For now, preview works. Storage will be wired to DB later.</span>
+            <span class="muted" style="font-size:13px;">For now, preview works. Storage will be wired to DB
+              later.</span>
           </label>
 
           <div class="image-grid" id="imageGrid" aria-label="Image previews"></div>
 
           <div class="row-between">
-            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Saved as draft (demo).">Save draft</button>
+            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Saved as draft (demo).">Save
+              draft</button>
             <div class="row">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Draft deleted (demo).">Delete</button>
-              <button class="btn btn-primary" type="button" data-action="toast" data-toast="Published (demo).">Publish</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+                data-toast="Draft deleted (demo).">Delete</button>
+              <button class="btn btn-primary" type="button" data-action="toast"
+                data-toast="Published (demo).">Publish</button>
             </div>
           </div>
 
@@ -180,8 +189,10 @@
               <div class="muted">Draft • Updated 2h ago</div>
             </div>
             <div class="row">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Loaded draft (demo).">Edit</button>
-              <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Published draft (demo).">Publish</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+                data-toast="Loaded draft (demo).">Edit</button>
+              <button class="btn btn-primary btn-sm" type="button" data-action="toast"
+                data-toast="Published draft (demo).">Publish</button>
             </div>
           </div>
         </div>
@@ -198,8 +209,10 @@
               <div class="muted">Published • Stock managed by size</div>
             </div>
             <div class="row">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Opened product (demo).">Edit</button>
-              <button class="btn btn-danger btn-sm" type="button" data-action="toast" data-toast="Unpublished (demo).">Unpublish</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+                data-toast="Opened product (demo).">Edit</button>
+              <button class="btn btn-danger btn-sm" type="button" data-action="toast"
+                data-toast="Unpublished (demo).">Unpublish</button>
             </div>
           </div>
         </div>
@@ -216,4 +229,5 @@
 
   <script src="./admin.js"></script>
 </body>
+
 </html>

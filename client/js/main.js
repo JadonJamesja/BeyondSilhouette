@@ -26,7 +26,7 @@
     session: 'bs_session_v1',      // { email, token, createdAt, provider }
     users: 'bs_users_v1',          // { [email]: { email, name, passwordHash, createdAt, role } }
     returnTo: 'bs_return_to_v1',   // { href }
-    pwReset: 'bs_pw_reset_v1'      // { [email]: { code, expiresAt } }
+    pwReset: 'bs_pw_reset_v1'      // { [email]: { code, expiresAt }
   };
 
   const USER_GUEST = '__guest__';
@@ -513,6 +513,7 @@
 
       const userItems = st.cartByUser[email]?.items || [];
       const merged = Array.isArray(userItems) ? userItems.slice() : [];
+
 
       guest.forEach(g => {
         const pid = String(g.productId);
@@ -1442,6 +1443,27 @@
   }
 
   // -----------------------------
+  // DEV-ONLY: PROMOTE USER TO ADMIN (OPTION B)
+  // -----------------------------
+  function makeAdmin(email) {
+    const em = String(email || '').trim().toLowerCase();
+    if (!em) throw new Error('makeAdmin(email): email is required.');
+
+    const users = readUsers();
+    const u = users[em];
+    if (!u) throw new Error('makeAdmin(email): no user found with that email.');
+
+    u.email = u.email || em;
+    u.createdAt = u.createdAt || nowISO();
+    u.role = 'admin';
+
+    users[em] = u;
+    writeUsers(users);
+
+    return true;
+  }
+
+  // -----------------------------
   // INIT
   // -----------------------------
   function init() {
@@ -1479,5 +1501,8 @@
   BS.Cart = Cart;
   BS.Products = Products;
   BS.Orders = Orders;
+
+  // Expose DEV-only admin promotion
+  BS.makeAdmin = makeAdmin;
 
 })();

@@ -1,118 +1,137 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en" data-theme="dark">
+
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BeyondSilhouette • Admin Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard | Beyond Silhouette</title>
   <link rel="stylesheet" href="./admin.css" />
+  <script defer src="./admin.js"></script>
 </head>
 
 <body class="admin">
-  <aside class="sidebar" aria-label="Admin sidebar">
+  <!-- Sidebar -->
+  <aside class="sidebar">
     <div class="sidebar-top">
-      <a class="brand brand-link" href="./dashboard.html">
-        <div class="brand-mark" aria-hidden="true">BS</div>
-        <div class="brand-meta">
-          <div class="brand-title">BeyondSilhouette</div>
-          <div class="brand-subtitle">Admin</div>
+      <div class="brand">
+        <div class="brand-mark">BS</div>
+        <div class="brand-text">
+          <div class="brand-title">Beyond Silhouette</div>
+          <div class="brand-sub">Admin Panel</div>
         </div>
-      </a>
+      </div>
 
-      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">
+      <button class="icon-btn" data-action="toggle-sidebar" aria-label="Toggle sidebar">
         ☰
       </button>
     </div>
 
-    <nav class="nav" aria-label="Admin navigation">
-      <a class="nav-item active" href="./dashboard.html">Dashboard</a>
-      <a class="nav-item" href="./orders.html">Orders</a>
-      <a class="nav-item" href="./products.html">Products</a>
-      <a class="nav-item" href="./customers.html">Customers</a>
-      <a class="nav-item" href="./settings.html">Settings</a>
+    <nav class="nav">
+      <a class="nav-link active" href="./dashboard.html">Dashboard</a>
+      <a class="nav-link" href="./products.html">Products</a>
+      <a class="nav-link" href="./orders.html">Orders</a>
+      <a class="nav-link" href="./customers.html">Customers</a>
+      <a class="nav-link" href="./settings.html">Settings</a>
     </nav>
 
     <div class="sidebar-bottom">
-      <div class="user-pill">
-        <div class="avatar" aria-hidden="true">A</div>
-        <div class="user-meta">
-          <div class="user-name" data-ui="adminName">Admin</div>
-          <div class="user-role muted">Administrator</div>
+      <div class="admin-chip">
+        <div class="dot"></div>
+        <div>
+          <div class="chip-title" data-ui="adminName">Admin</div>
+          <div class="chip-sub muted">Online</div>
         </div>
       </div>
 
-      <div class="sidebar-actions">
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
-      </div>
+      <button class="btn btn-ghost full" data-action="logout">Logout</button>
     </div>
   </aside>
 
-  <div class="main">
+  <!-- Main -->
+  <main class="main">
     <header class="topbar">
       <div>
-        <h1 class="h1">Dashboard</h1>
-        <p class="muted">A clean overview that’s ready for real data later.</p>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="muted">Overview of your store activity.</p>
       </div>
 
       <div class="topbar-actions">
-        <div class="pill">
-          <span class="dot" aria-hidden="true"></span>
-          <span>Store healthy</span>
+        <div class="input-group">
+          <select class="input input-sm" id="rangePreset" aria-label="Date range preset">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="last7">Last 7 days</option>
+            <option value="last30">Last 30 days</option>
+            <option value="thisMonth">This month</option>
+            <option value="custom">Custom</option>
+          </select>
+
+          <input class="input input-sm" id="rangeStart" type="date" aria-label="Start date" />
+          <input class="input input-sm" id="rangeEnd" type="date" aria-label="End date" />
+
+          <button class="btn btn-ghost btn-sm" id="applyRangeBtn" type="button">Apply</button>
         </div>
-        <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Quick action done.">Quick action</button>
+
+        <button class="btn btn-ghost" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-primary" data-action="toast" data-toast="Quick actions are next.">Quick Action</button>
       </div>
     </header>
 
     <section class="grid stats">
       <article class="card stat">
         <div class="stat-head">
-          <div class="muted">Revenue</div>
-          <div class="badge">Today</div>
+          <div>
+            <div class="stat-label">Revenue</div>
+            <div class="stat-badge">JMD</div>
+          </div>
         </div>
-        <div class="stat-value">J$ 212,480</div>
-        <div class="stat-sub muted">+8.2% vs yesterday</div>
+        <div class="stat-value" id="statRevenueValue">0</div>
+        <div class="stat-sub muted" id="statRevenueSub">—</div>
       </article>
 
       <article class="card stat">
         <div class="stat-head">
-          <div class="muted">Orders</div>
-          <div class="badge badge-soft">24h</div>
+          <div>
+            <div class="stat-label">Orders</div>
+            <div class="stat-badge">Placed</div>
+          </div>
         </div>
-        <div class="stat-value">96</div>
-        <div class="stat-sub muted">12 pending fulfillment</div>
+        <div class="stat-value" id="statOrdersValue">0</div>
+        <div class="stat-sub muted" id="statOrdersSub">—</div>
       </article>
 
       <article class="card stat">
         <div class="stat-head">
-          <div class="muted">Customers</div>
-          <div class="badge badge-soft">New</div>
+          <div>
+            <div class="stat-label">Customers</div>
+            <div class="stat-badge">Users</div>
+          </div>
         </div>
-        <div class="stat-value">38</div>
-        <div class="stat-sub muted">+14 this week</div>
+        <div class="stat-value" id="statCustomersValue">0</div>
+        <div class="stat-sub muted" id="statCustomersSub">—</div>
       </article>
 
       <article class="card stat">
         <div class="stat-head">
-          <div class="muted">Low stock</div>
-          <div class="badge badge-soft">Alert</div>
+          <div>
+            <div class="stat-label">Low Stock</div>
+            <div class="stat-badge">Alerts</div>
+          </div>
         </div>
-        <div class="stat-value">3</div>
-        <div class="stat-sub muted">Items below threshold</div>
+        <div class="stat-value" id="statLowStockValue">0</div>
+        <div class="stat-sub muted" id="statLowStockSub">—</div>
       </article>
     </section>
 
     <section class="grid two">
       <article class="card">
-        <div class="card-head row-between">
-          <div>
-            <h2 class="h2">Recent orders</h2>
-            <p class="muted">Latest activity snapshot.</p>
-          </div>
-          <a class="btn btn-ghost btn-sm" href="./orders.html">View all</a>
+        <div class="card-head">
+          <h2>Recent Orders</h2>
+          <a class="link" href="./orders.html">View all</a>
         </div>
 
         <div class="table-wrap">
-          <table class="table" aria-label="Recent orders">
+          <table class="table">
             <thead>
               <tr>
                 <th>Order</th>
@@ -121,83 +140,31 @@
                 <th class="right">Total</th>
               </tr>
             </thead>
-            <tbody>
-              <tr>
-                <td>#1042</td>
-                <td>J. Carter</td>
-                <td><span class="chip chip-ok">Paid</span></td>
-                <td class="right">J$ 18,900</td>
-              </tr>
-              <tr>
-                <td>#1041</td>
-                <td>A. Blake</td>
-                <td><span class="chip chip-warn">Pending</span></td>
-                <td class="right">J$ 7,450</td>
-              </tr>
-              <tr>
-                <td>#1040</td>
-                <td>S. Morgan</td>
-                <td><span class="chip chip-ok">Paid</span></td>
-                <td class="right">J$ 24,000</td>
-              </tr>
-              <tr>
-                <td>#1039</td>
-                <td>K. Reid</td>
-                <td><span class="chip chip-bad">Refunded</span></td>
-                <td class="right">J$ 5,999</td>
-              </tr>
-            </tbody>
+            <tbody id="recentOrdersTbody"></tbody>
           </table>
-        </div>
-
-        <div class="card-foot row-between">
-          <div class="muted">Next: connect to database to power this table.</div>
-          <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="Report generated (demo).">Generate report</button>
         </div>
       </article>
 
       <article class="card">
         <div class="card-head">
-          <h2 class="h2">Ops checklist</h2>
-          <p class="muted">Keep the store sharp and consistent.</p>
+          <h2>Notes</h2>
         </div>
-
-        <ul class="list" aria-label="Checklist">
-          <li class="list-item">
-            <div>
-              <div class="list-title">Review low-stock products</div>
-              <div class="muted">3 items need restock</div>
-            </div>
-            <span class="badge">Now</span>
-          </li>
-          <li class="list-item">
-            <div>
-              <div class="list-title">Approve pending orders</div>
-              <div class="muted">12 awaiting processing</div>
-            </div>
-            <span class="badge badge-soft">Today</span>
-          </li>
-          <li class="list-item">
-            <div>
-              <div class="list-title">Update hero banner</div>
-              <div class="muted">New drop this weekend</div>
-            </div>
-            <span class="badge badge-soft">This week</span>
-          </li>
-        </ul>
-
-        <div class="card-foot row-between">
-          <div class="muted">Tip: keep actions minimal, results clean.</div>
-          <a class="btn btn-primary btn-sm" href="./products.html">Manage products</a>
+        <div class="note">
+          <p class="muted">
+            This dashboard now reads real data from your client-side stores:
+            <code>bs_state_v1</code>, <code>bs_users_v1</code>, and <code>bs_products_v1</code>.
+          </p>
+          <p class="muted">
+            Next step later: replace localStorage reads with your real backend API.
+          </p>
         </div>
       </article>
     </section>
 
     <footer class="footer muted">
-      © <span data-ui="year"></span> BeyondSilhouette Admin
+      © <span data-ui="year"></span> Beyond Silhouette. Admin Panel.
     </footer>
-  </div>
-
-  <script src="./admin.js"></script>
+  </main>
 </body>
+
 </html>
