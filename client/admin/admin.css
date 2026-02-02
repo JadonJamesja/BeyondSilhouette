@@ -61,6 +61,7 @@ html[data-theme="light"]{
       transparent 55%);
 }
 
+
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
 
@@ -199,6 +200,64 @@ code{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mo
 .chip-ok{ border-color: hsla(var(--ok), .35); background: hsla(var(--ok), .10); }
 .chip-warn{ border-color: hsla(var(--warn), .40); background: hsla(var(--warn), .12); }
 .chip-bad{ border-color: hsla(var(--danger), .35); background: hsla(var(--danger), .10); }
+/* ===== Order status chips (admin) ===== */
+.chip-status{ font-weight: 800; }
+
+.chip-placed{
+  border-color: hsla(var(--accent), .35);
+  background: hsla(var(--accent), .10);
+}
+
+.chip-processing{
+  border-color: hsla(var(--warn), .45);
+  background: hsla(var(--warn), .14);
+}
+
+.chip-shipped{
+  border-color: hsla(var(--accent2), .40);
+  background: hsla(var(--accent2), .12);
+}
+
+.chip-delivered{
+  border-color: hsla(var(--ok), .40);
+  background: hsla(var(--ok), .12);
+}
+
+.chip-cancelled{
+  border-color: hsla(var(--danger), .40);
+  background: hsla(var(--danger), .12);
+}
+
+/* Optional: make status dropdown a bit tighter */
+select.input.input-sm{
+  min-width: 140px;
+}
+
+/* ===== Select styling (matches inputs in dark + light) ===== */
+select.input{
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  padding-right: 34px; /* room for chevron */
+  cursor: pointer;
+
+  background-color: hsla(var(--text), .03);
+  background-image:
+    linear-gradient(45deg, transparent 50%, hsla(var(--muted), .9) 50%),
+    linear-gradient(135deg, hsla(var(--muted), .9) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+select.input:focus{
+  outline: none;
+  border-color: hsla(var(--ring), .55);
+  box-shadow: 0 0 0 3px hsla(var(--ring), .18);
+}
 
 .grid{ display:grid; gap:26px; }
 .grid.two{ grid-template-columns: 1fr; }
@@ -356,56 +415,6 @@ body.admin{
   border-color: hsla(var(--accent), .35);
 }
 
-/* ===== Compatibility: nav-link / icon-btn / content ===== */
-.nav-link{
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: hsla(var(--text), .94);
-  display:block;
-}
-.nav-link:hover{ border-color: hsl(var(--border)); background: hsla(var(--text), .02); }
-.nav-link.active{
-  background: linear-gradient(180deg, hsla(var(--accent), .20), hsla(var(--accent), .10));
-  border-color: hsla(var(--accent), .35);
-}
-
-.icon-btn{
-  display:inline-flex;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  line-height: 1;
-  border:1px solid hsl(var(--border));
-  background: hsla(var(--text), .03);
-  color: hsl(var(--text));
-  cursor:pointer;
-}
-.icon-btn:hover{ background: hsla(var(--text), .06); }
-.icon-btn:focus{ outline:none; }
-.icon-btn:focus-visible{ box-shadow: 0 0 0 3px hsla(var(--ring), .22); }
-
-/* Some pages use .content wrapper instead of <main class="main"> */
-.content{ padding: 32px; }
-.btn.full{ width:100%; justify-content:center; }
-
-/* Orders/Customers pages use this chip style */
-.admin-chip{
-  display:flex;
-  gap: 10px;
-  align-items:center;
-  padding: 12px;
-  border-radius: 18px;
-  border: 1px solid hsl(var(--border));
-  background: hsla(var(--text), .02);
-}
-.chip-title{ font-weight: 950; }
-.chip-sub{ font-size: 12.5px; }
-
 .sidebar-bottom{ display:grid; gap: 10px; }
 .user-pill{
   display:flex;
@@ -437,9 +446,6 @@ body.admin{
   margin-bottom: 26px;
 }
 .topbar-actions{ display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
-
-/* Dashboard page title compatibility */
-.page-title{ margin:0; font-size: 20px; letter-spacing: -0.01em; }
 
 /* Dashboard stats grid */
 .stats{ grid-template-columns: 1fr; }
@@ -488,27 +494,9 @@ body.admin{
 .preview-title{ font-weight: 950; font-size: 17px; }
 .preview-price{ font-weight: 950; }
 
-/* Responsive sidebar overlay
-   Mobile goal:
-   - sidebar FULLY off-canvas when closed
-   - ONLY the hamburger button stays visible
-   - works for BOTH .icon-btn and .sidebar-toggle
-*/
+/* Responsive sidebar overlay */
 @media (max-width: 920px){
   body.admin{ grid-template-columns: 1fr; }
-
-  /* Mobile sizing tighten (no redesign) */
-  body{ font-size: 13px; }
-  .main, .content{ padding: 18px; }
-  .topbar{ gap: 12px; margin-bottom: 18px; }
-  .page-title{ font-size: 18px; }
-  .h1{ font-size: 22px; }
-  .card-head{ padding: 18px 18px 12px; }
-  .card-foot{ padding: 12px 18px 18px; }
-  .table-wrap{ margin: 0 18px 18px; }
-  .table{ min-width: 660px; }
-  .table th, .table td{ padding: 12px 10px; font-size: 13px; }
-
   .sidebar{
     position: fixed;
     inset: 12px auto 12px 12px;
@@ -518,43 +506,11 @@ body.admin{
     z-index: 50;
     border: 1px solid hsl(var(--border));
     border-radius: 22px;
-    transform: translateX(-100%); /* fully hidden */
+    transform: translateX(-110%);
     transition: transform .18s ease;
-    overflow: visible; /* allow the toggle to stick out */
   }
-
-  .sidebar-top{ position: relative; }
-
-  /* The actual toggle button (works across pages) */
-  .sidebar [data-action="toggle-sidebar"]{
-    position: absolute;
-    right: -56px; /* visible when sidebar is closed */
-    top: 0;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border-radius: 16px;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    box-shadow: var(--shadow-soft);
-    background: linear-gradient(180deg, hsla(var(--accent), .18), hsla(var(--accent), .08));
-    border: 1px solid hsla(var(--accent), .35);
-    color: hsl(var(--text));
-  }
-
   body.admin.sidebar-open .sidebar{ transform: translateX(0); }
-
-  /* When open, put the button back in its normal spot */
-  body.admin.sidebar-open .sidebar [data-action="toggle-sidebar"]{
-    position: static;
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    box-shadow: none;
-    background: hsla(var(--text), .03);
-    border-color: hsl(var(--border));
-  }
+  .sidebar-toggle{ display:inline-flex; }
 
   body.admin.sidebar-open::before{
     content:"";
@@ -565,8 +521,14 @@ body.admin{
   }
 }
 
-/* ===== Desktop collapsed mode (kept, but JS will not use it right now) ===== */
+/* ===== Desktop collapsed mode (FIXED) =====
+   Goal:
+   - collapse should NOT “push items slightly”
+   - it should HIDE the nav items cleanly (no jumbled mini-icons)
+   - keep only Brand mark + toggle visible so you can reopen
+*/
 @media (min-width: 921px){
+  /* sidebar becomes a slim rail */
   body.sidebar-collapsed{
     grid-template-columns: 84px 1fr;
   }
@@ -575,26 +537,130 @@ body.admin{
     padding: 12px 10px;
   }
 
+  /* keep brand mark + toggle */
   body.sidebar-collapsed .brand-meta{ display:none; }
   body.sidebar-collapsed .brand-link{ padding: 8px; justify-content: center; }
   body.sidebar-collapsed .brand-mark{ width:44px; height:44px; border-radius: 16px; }
 
+  /* IMPORTANT: hide nav (this prevents the jumbled left side) */
   body.sidebar-collapsed .nav{
     display:none;
   }
 
+  /* hide user details + action labels, keep clean rail */
   body.sidebar-collapsed .user-meta{ display:none; }
   body.sidebar-collapsed .user-pill{ justify-content:center; padding: 10px; }
   body.sidebar-collapsed .sidebar-actions{
     display:none;
   }
 
+  /* make sure the toggle stays centered and visible */
   body.sidebar-collapsed .sidebar-top{
     justify-content: center;
   }
   body.sidebar-collapsed .sidebar-toggle{
     margin-left: 0;
   }
+}
+
+/* ===== Modals ===== */
+body.modal-open{ overflow:hidden; }
+
+.modal-overlay{
+  position: fixed;
+  inset: 0;
+  display:grid;
+  place-items:center;
+  padding: 18px;
+  background: rgba(0,0,0,.32);
+  z-index: 80;
+}
+
+.modal-panel{
+  width: 100%;
+  max-width: 920px;
+  max-height: calc(100vh - 36px);
+  overflow:auto;
+  border-radius: calc(var(--radius) + 4px);
+  border: 1px solid hsl(var(--border));
+  background: linear-gradient(180deg, hsl(var(--panel)) 0%, hsl(var(--panel2)) 100%);
+  box-shadow: var(--shadow);
+}
+
+.modal-head{
+  padding: 16px 18px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.modal-title{ font-weight: 950; letter-spacing: -0.01em; }
+
+.modal-body{
+  padding: 16px 18px 18px;
+  display:grid;
+  gap: 14px;
+}
+
+.section-title{
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: hsl(var(--muted));
+}
+
+.modal-meta{
+  border: 1px solid hsl(var(--border));
+  border-radius: 16px;
+  background: hsla(var(--text), .02);
+  padding: 12px 12px;
+  display:grid;
+  gap: 10px;
+}
+
+.meta-row{
+  display:flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.modal-orders{
+  display:grid;
+  gap: 10px;
+}
+
+.modal-order-row{
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+  gap: 12px;
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid hsl(var(--border));
+  background: hsla(var(--text), .02);
+}
+
+.modal-order-main{ display:grid; gap: 4px; }
+.modal-order-title{ font-weight: 900; }
+.modal-order-sub{ font-size: 12.5px; color: hsl(var(--muted)); }
+
+.modal-order-actions{ gap: 10px; }
+
+@media (max-width: 520px){
+  .modal-overlay{ padding: 12px; }
+  .modal-head{ padding: 14px 14px; }
+  .modal-body{ padding: 14px 14px 16px; }
+  .meta-row{ flex-direction: column; align-items: flex-start; gap: 4px; }
+  .modal-order-row{ align-items: flex-start; }
+}
+
+/* ✅ Hard guarantee: if an overlay has [hidden], it must not show */
+.modal-overlay[hidden]{
+  display: none !important;
 }
 
 /* Toast */

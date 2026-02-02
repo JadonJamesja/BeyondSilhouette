@@ -25,8 +25,6 @@
     settings: 'bs_admin_settings_v1'
   };
 
-  const ORDER_STATUSES = ['Placed', 'Processing', 'Shipped', 'Delivered'];
-
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -99,12 +97,6 @@
     const d = iso ? new Date(iso) : null;
     if (!d || !Number.isFinite(d.getTime())) return '—';
     return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-  }
-
-  function normalizeOrderStatus(value) {
-    const v = String(value || '').trim();
-    const found = ORDER_STATUSES.find(s => s.toLowerCase() === v.toLowerCase());
-    return found || 'Placed';
   }
 
   /* ================= Theme (persisted) ================= */
@@ -210,22 +202,6 @@
     qsa('[data-ui="adminName"]').forEach(n => (n.textContent = display));
   }
 
-  function syncActiveNav() {
-    // Keeps sidebar highlight correct on every page (prevents copy/paste drift).
-    const path = location.pathname.replace(/\\/g, '/').toLowerCase();
-    const file = (path.split('/').pop() || '').trim();
-    if (!file) return;
-
-    const links = qsa('.nav a');
-    if (!links.length) return;
-
-    links.forEach(a => a.classList.remove('active'));
-
-    const target = ('./' + file).toLowerCase();
-    const match = links.find(a => String(a.getAttribute('href') || '').toLowerCase() === target);
-    if (match) match.classList.add('active');
-  }
-
   /* ================= Sidebar + delegated actions ================= */
   function bindDelegatedActions() {
     document.addEventListener('click', (e) => {
@@ -246,8 +222,7 @@
         if (window.matchMedia && window.matchMedia('(max-width: 920px)').matches) {
           document.body.classList.toggle('sidebar-open');
         } else {
-          // Phase 1.1: do NOT collapse on desktop.
-          toast('Sidebar collapse is disabled for now.');
+          document.body.classList.toggle('sidebar-collapsed');
         }
         return;
       }
@@ -660,11 +635,31 @@
     st.ordersByUser = st.ordersByUser || {};
     return st;
   }
-
-  function writeState(next) {
-    const obj = next && typeof next === 'object' ? next : {};
-    obj.ordersByUser = obj.ordersByUser || {};
+  function writeState(st) {
+    const obj = (st && typeof st === 'object') ? st : {};
+    if (!obj.ordersByUser || typeof obj.ordersByUser !== 'object') {
+      obj.ordersByUser = {};
+    }
     localStorage.setItem(SITE.state, JSON.stringify(obj));
+  }
+
+  function setOrderStatusInState(email, orderId, nextStatus) {
+    const em = String(email || '').trim().toLowerCase();
+    const oid = String(orderId || '').trim();
+    const status = String(nextStatus || '').trim() || 'Placed';
+
+    if (!em || !oid) return false;
+
+    const st = readState();
+    const list = Array.isArray(st.ordersByUser[em]) ? st.ordersByUser[em] : [];
+    const idx = list.findIndex(o => o && String(o.id || '') === oid);
+
+    if (idx < 0) return false;
+
+    list[idx].status = status;
+    st.ordersByUser[em] = list;
+    writeState(st);
+    return true;
   }
 
   function flattenOrders() {
@@ -676,16 +671,15 @@
       const arr = map[email];
       if (!Array.isArray(arr)) return;
 
-      arr.forEach((o, idx) => {
+      arr.forEach((o) => {
         if (!o || typeof o !== 'object') return;
         out.push({
           email: String(email || '').trim().toLowerCase(),
           id: String(o.id || ''),
           createdAt: String(o.createdAt || ''),
-          status: normalizeOrderStatus(o.status || 'Placed'),
+          status: String(o.status || 'Placed'),
           totalJMD: Number(o.totalJMD || 0),
           items: Array.isArray(o.items) ? o.items : [],
-          _idx: idx,
           raw: o
         });
       });
@@ -700,33 +694,6 @@
     return out;
   }
 
-  function updateOrderStatusInState(email, orderId, newStatus) {
-    const em = String(email || '').trim().toLowerCase();
-    const oid = String(orderId || '').trim();
-    const status = normalizeOrderStatus(newStatus);
-
-    if (!em || !oid) return false;
-
-    const st = readState();
-    const map = (st.ordersByUser && typeof st.ordersByUser === 'object') ? st.ordersByUser : {};
-    const arr = map[em];
-
-    if (!Array.isArray(arr)) return false;
-
-    const idx = arr.findIndex(o => o && String(o.id || '') === oid);
-    if (idx < 0) return false;
-
-    const o = arr[idx] || {};
-    o.status = status;
-    o.updatedAt = nowISO();
-    arr[idx] = o;
-    map[em] = arr;
-    st.ordersByUser = map;
-
-    writeState(st);
-    return true;
-  }
-
   /* ================= Orders page (REAL) ================= */
   function initOrders() {
     const tbody = qs('#ordersTbody');
@@ -734,6 +701,7 @@
 
     const search = qs('#orderSearch');
     const users = readSiteUsers();
+    const all = flattenOrders();
 
     // Optional modal (only if your HTML includes it)
     const modal = qs('#orderModal');
@@ -741,9 +709,6 @@
     const modalMeta = qs('#orderModalMeta');
     const modalItems = qs('#orderModalItems');
     const modalClose = qs('#orderModalClose');
-
-    let currentQuery = '';
-    let currentOpen = { id: '', email: '' };
 
     function resolveCustomerLabel(email) {
       const em = String(email || '').trim().toLowerCase();
@@ -764,23 +729,7 @@
       );
     }
 
-    function statusSelectHtml(row) {
-      const opts = ORDER_STATUSES.map(s => {
-        const sel = s.toLowerCase() === String(row.status || '').toLowerCase() ? 'selected' : '';
-        return `<option value="${escapeHtml(s)}" ${sel}>${escapeHtml(s)}</option>`;
-      }).join('');
-      return `
-        <select class="input input-sm" data-order-status="1"
-          data-order-id="${escapeHtml(row.id)}"
-          data-order-email="${escapeHtml(row.email)}"
-          aria-label="Order status">
-          ${opts}
-        </select>
-      `;
-    }
-
-    function render(list) {
-      const rows = Array.isArray(list) ? list : [];
+    function render(rows) {
       if (!rows.length) {
         tbody.innerHTML = `
           <tr>
@@ -794,7 +743,19 @@
         const label = r.id ? `#${escapeHtml(r.id)}` : '—';
         const date = escapeHtml(formatDateShort(r.createdAt));
         const customer = escapeHtml(resolveCustomerLabel(r.email));
-        const statusChip = `<span class="chip chip-ok">${escapeHtml(r.status || 'Placed')}</span>`;
+        const st = String(r.status || 'Placed').trim();
+        const stKey = st.toLowerCase();
+        const stClass =
+          stKey === 'delivered' ? 'chip-delivered' :
+            stKey === 'shipped' ? 'chip-shipped' :
+              stKey === 'processing' ? 'chip-processing' :
+                stKey === 'cancelled' ? 'chip-cancelled' :
+                  'chip-placed';
+
+        const statusHtml = `<span class="chip chip-status ${stClass}">${escapeHtml(st)}</span>`;
+
+
+
         const total = escapeHtml(formatJ(r.totalJMD));
 
         return `
@@ -802,82 +763,55 @@
             <td>${label}</td>
             <td>${date}</td>
             <td>${customer}</td>
-            <td>${statusChip}</td>
+            <td>${statusHtml}</td>
             <td class="right">${total}</td>
             <td class="right">
-              <div class="row" style="justify-content:flex-end;">
-                ${statusSelectHtml(r)}
-                <button class="btn btn-ghost btn-sm" type="button"
-                  data-open-order="1"
-                  data-order-id="${escapeHtml(r.id)}"
-                  data-order-email="${escapeHtml(r.email)}">Open</button>
-              </div>
+              <select class="input input-sm"
+                data-order-status="1"
+                data-order-id="${escapeHtml(r.id)}"
+                data-order-email="${escapeHtml(r.email)}">
+                <option value="Placed" ${String(r.status || 'Placed') === 'Placed' ? 'selected' : ''}>Placed</option>
+                <option value="Processing" ${String(r.status || '') === 'Processing' ? 'selected' : ''}>Processing</option>
+                <option value="Shipped" ${String(r.status || '') === 'Shipped' ? 'selected' : ''}>Shipped</option>
+                <option value="Delivered" ${String(r.status || '') === 'Delivered' ? 'selected' : ''}>Delivered</option>
+                <option value="Cancelled" ${String(r.status || '') === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+              </select>
+
+              <button class="btn btn-ghost btn-sm" type="button"
+                data-open-order="1"
+                data-order-id="${escapeHtml(r.id)}"
+                data-order-email="${escapeHtml(r.email)}">Open</button>
             </td>
           </tr>
         `;
       }).join('');
     }
 
-    function getAllFiltered() {
-      const all = flattenOrders();
-      return currentQuery ? all.filter(o => matchesQuery(o, currentQuery)) : all;
-    }
-
-    function rerender() {
-      render(getAllFiltered());
-      // If a modal is open, refresh it (so status stays in sync)
-      if (modal && !modal.hidden && currentOpen.id && currentOpen.email) {
-        openModalFor(currentOpen.id, currentOpen.email, { silent: true });
-      }
-    }
-
-    function openModalFor(orderId, email, opts = {}) {
+    function openModalFor(orderId, email) {
       const oid = String(orderId || '').trim();
       const em = String(email || '').trim().toLowerCase();
-      const silent = !!opts.silent;
 
-      const all = flattenOrders();
       const row =
         all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
         all.find(o => String(o.id || '') === oid) ||
         null;
 
       if (!row) {
-        if (!silent) toast('Order not found.');
+        toast('Order not found.');
         return;
       }
 
-      currentOpen = { id: row.id || '', email: row.email || '' };
-
       // If modal is not present in HTML, fallback
       if (!modal || !modalTitle || !modalMeta || !modalItems) {
-        if (!silent) toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)} — add modal markup to show details.`);
+        toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)} — add modal markup to show details.`);
         return;
       }
 
       modalTitle.textContent = `Order #${row.id || ''}`;
-
-      const statusControl = `
-        <div class="meta-row">
-          <span class="muted">Status</span>
-          <span>
-            <select class="input input-sm" data-order-status="1"
-              data-order-id="${escapeHtml(row.id)}"
-              data-order-email="${escapeHtml(row.email)}"
-              aria-label="Order status">
-              ${ORDER_STATUSES.map(s => {
-                const sel = s.toLowerCase() === String(row.status || '').toLowerCase() ? 'selected' : '';
-                return `<option value="${escapeHtml(s)}" ${sel}>${escapeHtml(s)}</option>`;
-              }).join('')}
-            </select>
-          </span>
-        </div>
-      `;
-
       modalMeta.innerHTML = `
         <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(row.createdAt))}</span></div>
         <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(resolveCustomerLabel(row.email))}</span></div>
-        ${statusControl}
+        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(row.status || 'Placed')}</span></div>
         <div class="meta-row"><span class="muted">Total</span><span>${escapeHtml(formatJ(row.totalJMD))}</span></div>
       `;
 
@@ -898,12 +832,12 @@
               </thead>
               <tbody>
                 ${row.items.map(it => {
-                  const nm = escapeHtml(it.name || it.title || 'Item');
-                  const sz = escapeHtml(it.size || '—');
-                  const qty = toInt(it.qty || it.quantity || 0);
-                  const price = Number(it.price || 0);
-                  const line = price * qty;
-                  return `
+          const nm = escapeHtml(it.name || it.title || 'Item');
+          const sz = escapeHtml(it.size || '—');
+          const qty = toInt(it.qty || it.quantity || 0);
+          const price = Number(it.price || 0);
+          const line = price * qty;
+          return `
                     <tr>
                       <td>${nm}</td>
                       <td>${sz}</td>
@@ -912,7 +846,7 @@
                       <td class="right">${escapeHtml(formatJ(line))}</td>
                     </tr>
                   `;
-                }).join('')}
+        }).join('')}
               </tbody>
             </table>
           </div>
@@ -927,22 +861,20 @@
       if (!modal) return;
       modal.hidden = true;
       document.body.classList.remove('modal-open');
-      currentOpen = { id: '', email: '' };
     }
 
     // Initial render
-    render(flattenOrders());
+    render(all);
 
     // Search
     if (search && !search.dataset.bound) {
       search.dataset.bound = '1';
       search.addEventListener('input', () => {
-        currentQuery = String(search.value || '').trim();
-        rerender();
+        const q = String(search.value || '');
+        render(all.filter(row => matchesQuery(row, q)));
       });
     }
 
-    // Open (button)
     if (!tbody.dataset.bound) {
       tbody.dataset.bound = '1';
       tbody.addEventListener('click', (e) => {
@@ -952,25 +884,32 @@
         const em = btn.getAttribute('data-order-email') || '';
         openModalFor(oid, em);
       });
+    }
 
-      // Status change (dropdown) — delegated
+    // Status change (dropdown)
+    if (!tbody.dataset.boundStatus) {
+      tbody.dataset.boundStatus = '1';
       tbody.addEventListener('change', (e) => {
         const sel = e.target && e.target.closest ? e.target.closest('[data-order-status="1"]') : null;
         if (!sel) return;
 
         const oid = sel.getAttribute('data-order-id') || '';
         const em = sel.getAttribute('data-order-email') || '';
-        const next = sel.value;
+        const nextStatus = String(sel.value || '').trim() || 'Placed';
 
-        const ok = updateOrderStatusInState(em, oid, next);
+        const ok = setOrderStatusInState(em, oid, nextStatus);
         if (!ok) {
           toast('Could not update status.');
-          rerender();
           return;
         }
 
-        toast('Status updated.');
-        rerender();
+        const row = all.find(o => String(o.id || '') === String(oid) && String(o.email || '') === String(em).toLowerCase());
+        if (row) row.status = nextStatus;
+
+        const q = String(search?.value || '');
+        render(all.filter(r => matchesQuery(r, q)));
+
+        toast(`Status: ${nextStatus}`);
       });
     }
 
@@ -988,26 +927,6 @@
       modal.addEventListener('click', (e) => {
         const panel = qs('.modal-panel', modal);
         if (panel && !panel.contains(e.target)) closeModal();
-      });
-
-      // Status change inside modal (dropdown) — delegated
-      modal.addEventListener('change', (e) => {
-        const sel = e.target && e.target.closest ? e.target.closest('[data-order-status="1"]') : null;
-        if (!sel) return;
-
-        const oid = sel.getAttribute('data-order-id') || '';
-        const em = sel.getAttribute('data-order-email') || '';
-        const next = sel.value;
-
-        const ok = updateOrderStatusInState(em, oid, next);
-        if (!ok) {
-          toast('Could not update status.');
-          rerender();
-          return;
-        }
-
-        toast('Status updated.');
-        rerender();
       });
     }
 
@@ -1073,6 +992,18 @@
 
     function sumRevenue(rows) {
       return rows.reduce((sum, r) => sum + Number(r.totalJMD || 0), 0);
+    }
+
+    function calcLowStockCount() {
+      const thr = Number(settings.lowStockThreshold || 0);
+      let count = 0;
+      products.forEach((p) => {
+        if (!p || p.isActive === false) return;
+        const sb = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
+        const total = toInt(sb.S) + toInt(sb.M) + toInt(sb.L) + toInt(sb.XL);
+        if (total <= thr) count += 1;
+      });
+      return count;
     }
 
     function defaultRange() {
@@ -1257,7 +1188,6 @@
       renderForRange(r);
     }
   }
-
   /* ================= Customers (REAL) ================= */
   function initCustomers() {
     const tbody = qs('#customersTbody');
@@ -1266,6 +1196,20 @@
     const search = qs('#customerSearch');
     const users = readSiteUsers();
     const orders = flattenOrders();
+
+    // Optional modals (only if your HTML includes them)
+    const cusModal = qs('#customerModal');
+    const cusModalTitle = qs('#customerModalTitle');
+    const cusModalMeta = qs('#customerModalMeta');
+    const cusModalOrders = qs('#customerModalOrders');
+    const cusModalClose = qs('#customerModalClose');
+
+    // Reused order modal (if present on this page)
+    const ordModal = qs('#orderModal');
+    const ordModalTitle = qs('#orderModalTitle');
+    const ordModalMeta = qs('#orderModalMeta');
+    const ordModalItems = qs('#orderModalItems');
+    const ordModalClose = qs('#orderModalClose');
 
     const byEmailOrders = new Map();
     orders.forEach((o) => {
@@ -1294,6 +1238,156 @@
       })
       .sort((a, b) => b.ltv - a.ltv);
 
+    function resolveCustomerName(email) {
+      const em = String(email || '').trim().toLowerCase();
+      const u = users[em];
+      const nm = u && u.name ? String(u.name).trim() : '';
+      return nm || '—';
+    }
+
+    function openCustomerModal(email) {
+      const em = String(email || '').trim().toLowerCase();
+      const u = users[em] || null;
+      const list = byEmailOrders.get(em) || [];
+      const count = list.length;
+      const total = list.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0);
+
+      if (!cusModal || !cusModalTitle || !cusModalMeta || !cusModalOrders) {
+        // Fallback if modal markup isn't present
+        toast(`${resolveCustomerName(em)} (${em}) • Orders: ${count} • LTV: ${formatJ(total)}`);
+        return;
+      }
+
+      const displayName = (u && u.name) ? String(u.name).trim() : 'Customer';
+      cusModalTitle.textContent = displayName;
+
+      cusModalMeta.innerHTML = `
+        <div class="meta-row"><span class="muted">Name</span><span>${escapeHtml(displayName || '—')}</span></div>
+        <div class="meta-row"><span class="muted">Email</span><span>${escapeHtml(em || '—')}</span></div>
+        <div class="meta-row"><span class="muted">Total orders</span><span>${escapeHtml(String(count))}</span></div>
+        <div class="meta-row"><span class="muted">Lifetime value</span><span>${escapeHtml(formatJ(total))}</span></div>
+      `;
+
+      const recent = list.slice(0, 8);
+      if (!recent.length) {
+        cusModalOrders.innerHTML = `<div class="muted">No orders yet.</div>`;
+      } else {
+        cusModalOrders.innerHTML = `
+          <div class="modal-orders">
+            ${recent.map(o => {
+          const oid = String(o.id || '');
+          const when = formatDateShort(o.createdAt);
+          const st = String(o.status || 'Placed');
+          const tot = formatJ(o.totalJMD);
+          return `
+                <div class="modal-order-row">
+                  <div class="modal-order-main">
+                    <div class="modal-order-title">#${escapeHtml(oid || '—')}</div>
+                    <div class="modal-order-sub">${escapeHtml(when)} • ${escapeHtml(st)}</div>
+                  </div>
+                  <div class="row modal-order-actions">
+                    <span class="badge badge-soft">${escapeHtml(tot)}</span>
+                    <button class="btn btn-ghost btn-sm" type="button" data-open-order="1"
+                      data-order-id="${escapeHtml(oid)}" data-order-email="${escapeHtml(em)}">Open</button>
+                  </div>
+                </div>
+              `;
+        }).join('')}
+          </div>
+        `;
+      }
+
+      cusModal.hidden = false;
+      document.body.classList.add('modal-open');
+    }
+
+    function closeCustomerModal() {
+      if (!cusModal) return;
+      cusModal.hidden = true;
+      // Only remove modal-open if no other modal is visible
+      const anyOpen = qsa('.modal-overlay').some(m => m && !m.hasAttribute('hidden'));
+      if (!anyOpen) document.body.classList.remove('modal-open');
+    }
+
+    function openOrderModal(orderId, email) {
+      const oid = String(orderId || '').trim();
+      const em = String(email || '').trim().toLowerCase();
+
+      // Find in full orders list (not just customer's recent slice)
+      const all = orders;
+      const row =
+        all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
+        all.find(o => String(o.id || '') === oid) ||
+        null;
+
+      if (!row) {
+        toast('Order not found.');
+        return;
+      }
+
+      if (!ordModal || !ordModalTitle || !ordModalMeta || !ordModalItems) {
+        toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)}.`);
+        return;
+      }
+
+      ordModalTitle.textContent = `Order #${row.id || ''}`;
+      ordModalMeta.innerHTML = `
+        <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(row.createdAt))}</span></div>
+        <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(resolveCustomerName(row.email) === '—' ? row.email : `${resolveCustomerName(row.email)} (${row.email})`)}</span></div>
+        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(String(row.status || 'Placed'))}</span></div>
+        <div class="meta-row"><span class="muted">Total</span><span>${escapeHtml(formatJ(row.totalJMD))}</span></div>
+      `;
+
+      const items = Array.isArray(row.items) ? row.items : [];
+      if (!items.length) {
+        ordModalItems.innerHTML = `<div class="muted">No items found for this order.</div>`;
+      } else {
+        ordModalItems.innerHTML = `
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Size</th>
+                  <th class="right">Qty</th>
+                  <th class="right">Price</th>
+                  <th class="right">Line</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map(it => {
+          const nm = escapeHtml(it.name || it.title || 'Item');
+          const sz = escapeHtml(it.size || '—');
+          const qty = toInt(it.qty || it.quantity || 0);
+          const price = Number(it.price || 0);
+          const line = price * qty;
+          return `
+                    <tr>
+                      <td>${nm}</td>
+                      <td>${sz}</td>
+                      <td class="right">${qty}</td>
+                      <td class="right">${escapeHtml(formatJ(price))}</td>
+                      <td class="right">${escapeHtml(formatJ(line))}</td>
+                    </tr>
+                  `;
+        }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      ordModal.hidden = false;
+      document.body.classList.add('modal-open');
+    }
+
+    function closeOrderModal() {
+      if (!ordModal) return;
+      ordModal.hidden = true;
+      const anyOpen = qsa('.modal-overlay').some(m => m && !m.hasAttribute('hidden'));
+      if (!anyOpen) document.body.classList.remove('modal-open');
+    }
+
     function matches(row, q) {
       const needle = String(q || '').trim().toLowerCase();
       if (!needle) return true;
@@ -1321,8 +1415,8 @@
             <td>${escapeHtml(String(r.orders))}</td>
             <td class="right">${escapeHtml(formatJ(r.ltv))}</td>
             <td class="right">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
-                data-toast="Customer details view is next.">Open</button>
+              <button class="btn btn-ghost btn-sm" type="button"
+                data-open-customer="1" data-customer-email="${escapeHtml(r.email)}">Open</button>
             </td>
           </tr>
         `;
@@ -1338,6 +1432,68 @@
         render(rows.filter(r => matches(r, q)));
       });
     }
+
+    // Customer open
+    if (!tbody.dataset.bound) {
+      tbody.dataset.bound = '1';
+      tbody.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-open-customer="1"]') : null;
+        if (!btn) return;
+        const em = btn.getAttribute('data-customer-email') || '';
+        openCustomerModal(em);
+      });
+    }
+
+    // Orders open (from within customer modal)
+    if (cusModalOrders && !cusModalOrders.dataset.bound) {
+      cusModalOrders.dataset.bound = '1';
+      cusModalOrders.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-open-order="1"]') : null;
+        if (!btn) return;
+        const oid = btn.getAttribute('data-order-id') || '';
+        const em = btn.getAttribute('data-order-email') || '';
+        openOrderModal(oid, em);
+      });
+    }
+
+    // Modal close controls
+    if (cusModalClose && !cusModalClose.dataset.bound) {
+      cusModalClose.dataset.bound = '1';
+      cusModalClose.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeCustomerModal();
+      });
+    }
+
+    if (cusModal && !cusModal.dataset.bound) {
+      cusModal.dataset.bound = '1';
+      cusModal.addEventListener('click', (e) => {
+        const panel = qs('.modal-panel', cusModal);
+        if (panel && !panel.contains(e.target)) closeCustomerModal();
+      });
+    }
+
+    if (ordModalClose && !ordModalClose.dataset.bound) {
+      ordModalClose.dataset.bound = '1';
+      ordModalClose.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeOrderModal();
+      });
+    }
+
+    if (ordModal && !ordModal.dataset.bound) {
+      ordModal.dataset.bound = '1';
+      ordModal.addEventListener('click', (e) => {
+        const panel = qs('.modal-panel', ordModal);
+        if (panel && !panel.contains(e.target)) closeOrderModal();
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (ordModal && !ordModal.hidden) closeOrderModal();
+      else if (cusModal && !cusModal.hidden) closeCustomerModal();
+    });
   }
 
   /* ================= Settings (REAL) ================= */
@@ -1399,7 +1555,6 @@
   setYear();
   requireAdminGate();
   hydrateAdminName();
-  syncActiveNav();
   bindDelegatedActions();
   initProductsManager();
   initDashboard();

@@ -8,110 +8,157 @@
 </head>
 
 <body class="admin">
-  <!-- Sidebar -->
-<aside class="sidebar" aria-label="Admin sidebar">
-  <div class="sidebar-top">
-    <a class="brand brand-link" href="./dashboard.html">
-      <div class="brand-mark" aria-hidden="true">BS</div>
-      <div class="brand-meta">
-        <div class="brand-title">BeyondSilhouette</div>
-        <div class="brand-subtitle">Admin</div>
-      </div>
-    </a>
-
-    <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
-  </div>
-
-  <nav class="nav">
-    <a class="nav-item" href="./dashboard.html">Dashboard</a>
-    <a class="nav-item" href="./products.html">Products</a>
-    <a class="nav-item" href="./orders.html">Orders</a>
-    <a class="nav-item" href="./customers.html">Customers</a>
-    <a class="nav-item" href="./settings.html">Settings</a>
-  </nav>
-
-  <div class="sidebar-bottom">
-    <div class="user-pill">
-      <div class="avatar" aria-hidden="true">A</div>
-      <div class="user-meta">
-        <div class="user-name" data-ui="adminName">Admin</div>
-        <div class="user-role muted">Administrator</div>
-      </div>
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
     </div>
 
-    <div class="sidebar-actions">
-      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
-    </div>
-  </div>
-</aside>
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item active" href="./settings.html">Settings</a>
+    </nav>
 
-  <!-- Main -->
-  <main class="main">
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
     <header class="topbar">
       <div>
         <h1 class="h1">Settings</h1>
-        <div class="muted">Admin preferences stored locally.</div>
+        <p class="muted">Brand, store preferences, and deployment prep.</p>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Toggle theme</button>
       </div>
     </header>
 
     <section class="grid two">
-      <div class="card">
+      <article class="card">
         <div class="card-head">
-          <div class="h2">Theme</div>
-          <div class="muted">Choose light or dark for admin pages.</div>
+          <h2 class="h2">Brand</h2>
+          <p class="muted">These become editable & stored in DB later.</p>
         </div>
 
-        <form id="adminSettingsForm" class="form" autocomplete="off">
-          <div class="field">
-            <div class="label">Theme</div>
-            <select id="adminThemeSelect" class="input">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
+        <form class="form">
+          <label class="field">
+            <span class="label">Store name</span>
+            <input class="input" value="BeyondSilhouette" />
+          </label>
+
+          <label class="field">
+            <span class="label">Support email</span>
+            <input class="input" value="support@beyondsilhouette.com" />
+          </label>
+
+          <div class="row-between">
+            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Reset (demo).">Reset</button>
+            <button class="btn btn-primary" type="button" data-action="toast" data-toast="Saved (demo).">Save</button>
           </div>
 
-          <div class="field">
-            <div class="label">Low Stock Threshold</div>
-            <input id="lowStockThreshold" class="input" type="number" min="0" step="1" />
-            <div class="hint">Used on dashboard “Low stock”.</div>
-          </div>
-
-          <div class="row">
-            <button class="btn btn-primary" type="submit">Save</button>
-            <button class="btn btn-ghost" type="button" data-action="settings-reset">Reset</button>
+          <div class="hint">
+            After DB: this becomes real settings storage, with validation + roles.
           </div>
         </form>
-      </div>
+      </article>
 
-      <div class="card">
+      <article class="card">
         <div class="card-head">
-          <div class="h2">Notes</div>
-          <div class="muted">These settings are stored in:</div>
+          <h2 class="h2">Backend setup</h2>
+          <p class="muted">This is the next phase we’ll build in this chat.</p>
         </div>
 
-        <div class="list">
-          <div class="list-item">
-            <div>
-              <div class="list-title"><code>bs_admin_theme</code></div>
-              <div class="muted">Persists your admin theme.</div>
+        <div class="stack">
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Recommended: Firebase</div>
+                <div class="muted">Auth + Firestore + Storage</div>
+              </div>
+              <span class="badge badge-soft">Fastest</span>
             </div>
           </div>
 
-          <div class="list-item">
-            <div>
-              <div class="list-title"><code>bs_admin_settings_v1</code></div>
-              <div class="muted">Thresholds and admin preferences.</div>
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Alternative: Supabase</div>
+                <div class="muted">Auth + Postgres + Storage</div>
+              </div>
+              <span class="badge badge-soft">Great</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Current mode</div>
+                <div class="muted">UI-only • demo actions</div>
+              </div>
+              <span class="badge">Ready</span>
+            </div>
+          </div>
+
+          <!-- Phase 1.4: Backup / Restore (LOCAL ONLY) -->
+          <div class="panel">
+            <div class="row-between">
+              <div>
+                <div class="panel-title">Backup & Restore</div>
+                <div class="muted">Export/restore local demo data (products, users, orders).</div>
+              </div>
+              <span class="badge badge-soft">Local</span>
+            </div>
+
+            <div class="mt-12">
+              <div class="row" style="flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" type="button" data-action="export-backup">Export JSON</button>
+
+                <label class="field" style="min-width:220px; margin:0;">
+                  <span class="label">Restore file</span>
+                  <input id="adminBackupFile" class="input input-sm" type="file" accept="application/json" />
+                </label>
+
+                <button class="btn btn-ghost btn-sm" type="button" data-action="import-backup">Restore</button>
+              </div>
+
+              <div class="hint mt-12">
+                Tip: Export before big edits. Restore will overwrite local demo data.
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="card-foot muted">Export/backup tools can be added next for safety.</div>
-      </div>
+        <div class="card-foot row-between">
+          <div class="muted">Next: choose backend + schema mapping.</div>
+          <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="We’ll map the steps next.">Start roadmap</button>
+        </div>
+      </article>
     </section>
 
     <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
-  </main>
+  </div>
 
   <script src="./admin.js"></script>
 </body>
