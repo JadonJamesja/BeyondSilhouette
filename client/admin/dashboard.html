@@ -1,170 +1,181 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-theme="dark">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Dashboard | Beyond Silhouette</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Dashboard</title>
   <link rel="stylesheet" href="./admin.css" />
-  <script defer src="./admin.js"></script>
 </head>
 
 <body class="admin">
   <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-top">
-      <div class="brand">
-        <div class="brand-mark">BS</div>
-        <div class="brand-text">
-          <div class="brand-title">Beyond Silhouette</div>
-          <div class="brand-sub">Admin Panel</div>
-        </div>
+<aside class="sidebar" aria-label="Admin sidebar">
+  <div class="sidebar-top">
+    <a class="brand brand-link" href="./dashboard.html">
+      <div class="brand-mark" aria-hidden="true">BS</div>
+      <div class="brand-meta">
+        <div class="brand-title">BeyondSilhouette</div>
+        <div class="brand-subtitle">Admin</div>
       </div>
+    </a>
 
-      <button class="icon-btn" data-action="toggle-sidebar" aria-label="Toggle sidebar">
-        ☰
-      </button>
+    <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+  </div>
+
+  <nav class="nav">
+    <a class="nav-item" href="./dashboard.html">Dashboard</a>
+    <a class="nav-item" href="./products.html">Products</a>
+    <a class="nav-item" href="./orders.html">Orders</a>
+    <a class="nav-item" href="./customers.html">Customers</a>
+    <a class="nav-item" href="./settings.html">Settings</a>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <div class="user-pill">
+      <div class="avatar" aria-hidden="true">A</div>
+      <div class="user-meta">
+        <div class="user-name" data-ui="adminName">Admin</div>
+        <div class="user-role muted">Administrator</div>
+      </div>
     </div>
 
-    <nav class="nav">
-      <a class="nav-link active" href="./dashboard.html">Dashboard</a>
-      <a class="nav-link" href="./products.html">Products</a>
-      <a class="nav-link" href="./orders.html">Orders</a>
-      <a class="nav-link" href="./customers.html">Customers</a>
-      <a class="nav-link" href="./settings.html">Settings</a>
-    </nav>
-
-    <div class="sidebar-bottom">
-      <div class="admin-chip">
-        <div class="dot"></div>
-        <div>
-          <div class="chip-title" data-ui="adminName">Admin</div>
-          <div class="chip-sub muted">Online</div>
-        </div>
-      </div>
-
-      <button class="btn btn-ghost full" data-action="logout">Logout</button>
+    <div class="sidebar-actions">
+      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
     </div>
-  </aside>
+  </div>
+</aside>
 
   <!-- Main -->
   <main class="main">
     <header class="topbar">
       <div>
-        <h1 class="page-title">Dashboard</h1>
-        <p class="muted">Overview of your store activity.</p>
+        <h1 class="h1">Dashboard</h1>
+        <div class="muted">Quick view of performance + inventory.</div>
       </div>
 
       <div class="topbar-actions">
-        <div class="input-group">
-          <select class="input input-sm" id="rangePreset" aria-label="Date range preset">
-            <option value="today">Today</option>
-            <option value="yesterday">Yesterday</option>
-            <option value="last7">Last 7 days</option>
-            <option value="last30">Last 30 days</option>
-            <option value="thisMonth">This month</option>
-            <option value="custom">Custom</option>
-          </select>
-
-          <input class="input input-sm" id="rangeStart" type="date" aria-label="Start date" />
-          <input class="input input-sm" id="rangeEnd" type="date" aria-label="End date" />
-
-          <button class="btn btn-ghost btn-sm" id="applyRangeBtn" type="button">Apply</button>
-        </div>
-
-        <button class="btn btn-ghost" data-action="toggle-theme">Theme</button>
-        <button class="btn btn-primary" data-action="toast" data-toast="Quick actions are next.">Quick Action</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Export is coming next.">Export</button>
       </div>
     </header>
 
+    <!-- Stats -->
     <section class="grid stats">
-      <article class="card stat">
+      <div class="card stat">
         <div class="stat-head">
-          <div>
-            <div class="stat-label">Revenue</div>
-            <div class="stat-badge">JMD</div>
-          </div>
+          <div class="muted">Revenue</div>
+          <span class="badge badge-soft">JMD</span>
         </div>
-        <div class="stat-value" id="statRevenueValue">0</div>
-        <div class="stat-sub muted" id="statRevenueSub">—</div>
-      </article>
+        <div id="statRevenueValue" class="stat-value">J$ 0</div>
+        <div id="statRevenueSub" class="muted stat-sub">Range: —</div>
+      </div>
 
-      <article class="card stat">
+      <div class="card stat">
         <div class="stat-head">
-          <div>
-            <div class="stat-label">Orders</div>
-            <div class="stat-badge">Placed</div>
-          </div>
+          <div class="muted">Orders</div>
+          <span class="badge badge-soft">Count</span>
         </div>
-        <div class="stat-value" id="statOrdersValue">0</div>
-        <div class="stat-sub muted" id="statOrdersSub">—</div>
-      </article>
+        <div id="statOrdersValue" class="stat-value">0</div>
+        <div id="statOrdersSub" class="muted stat-sub">Range: —</div>
+      </div>
 
-      <article class="card stat">
+      <div class="card stat">
         <div class="stat-head">
-          <div>
-            <div class="stat-label">Customers</div>
-            <div class="stat-badge">Users</div>
-          </div>
+          <div class="muted">Customers</div>
+          <span class="badge badge-soft">Count</span>
         </div>
-        <div class="stat-value" id="statCustomersValue">0</div>
-        <div class="stat-sub muted" id="statCustomersSub">—</div>
-      </article>
+        <div id="statCustomersValue" class="stat-value">0</div>
+        <div id="statCustomersSub" class="muted stat-sub">New in range: 0</div>
+      </div>
 
-      <article class="card stat">
+      <div class="card stat">
         <div class="stat-head">
-          <div>
-            <div class="stat-label">Low Stock</div>
-            <div class="stat-badge">Alerts</div>
-          </div>
+          <div class="muted">Low stock</div>
+          <span class="badge badge-soft">Products</span>
         </div>
-        <div class="stat-value" id="statLowStockValue">0</div>
-        <div class="stat-sub muted" id="statLowStockSub">—</div>
-      </article>
+        <div id="statLowStockValue" class="stat-value">0</div>
+        <div id="statLowStockSub" class="muted stat-sub">≤ 3 in stock</div>
+      </div>
     </section>
 
-    <section class="grid two">
-      <article class="card">
-        <div class="card-head">
-          <h2>Recent Orders</h2>
-          <a class="link" href="./orders.html">View all</a>
+    <!-- Range -->
+    <section class="card mt-12">
+      <div class="card-head row-between">
+        <div>
+          <div class="h2">Range</div>
+          <div class="muted">Filter revenue + order stats by date.</div>
+        </div>
+      </div>
+
+      <form class="form" autocomplete="off">
+        <div class="grid two tight">
+          <div class="field">
+            <div class="label">Preset</div>
+            <select id="rangePreset" class="input">
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 days</option>
+              <option value="last30">Last 30 days</option>
+              <option value="thisMonth">This month</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <div class="label">Start</div>
+            <input id="rangeStart" class="input" type="date" />
+          </div>
+
+          <div class="field">
+            <div class="label">End</div>
+            <input id="rangeEnd" class="input" type="date" />
+          </div>
+
+          <div class="field">
+            <div class="label"> </div>
+            <button id="applyRangeBtn" class="btn btn-primary" type="button">Apply</button>
+          </div>
         </div>
 
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Customer</th>
-                <th>Status</th>
-                <th class="right">Total</th>
-              </tr>
-            </thead>
-            <tbody id="recentOrdersTbody"></tbody>
-          </table>
+        <div class="hint">
+          Orders are read from <code>bs_state_v1.ordersByUser</code>. Customers from <code>bs_users_v1</code>.
         </div>
-      </article>
-
-      <article class="card">
-        <div class="card-head">
-          <h2>Notes</h2>
-        </div>
-        <div class="note">
-          <p class="muted">
-            This dashboard now reads real data from your client-side stores:
-            <code>bs_state_v1</code>, <code>bs_users_v1</code>, and <code>bs_products_v1</code>.
-          </p>
-          <p class="muted">
-            Next step later: replace localStorage reads with your real backend API.
-          </p>
-        </div>
-      </article>
+      </form>
     </section>
 
-    <footer class="footer muted">
-      © <span data-ui="year"></span> Beyond Silhouette. Admin Panel.
-    </footer>
+    <!-- Recent orders -->
+    <section class="card">
+      <div class="card-head row-between">
+        <div>
+          <div class="h2">Recent Orders</div>
+          <div class="muted">Last 4 orders in storage.</div>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="./orders.html">Open Orders</a>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody id="recentOrdersTbody">
+            <tr>
+              <td colspan="4" class="muted">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
   </main>
-</body>
 
+  <script src="./admin.js"></script>
+</body>
 </html>

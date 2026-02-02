@@ -25,6 +25,8 @@
     settings: 'bs_admin_settings_v1'
   };
 
+  const ORDER_STATUSES = ['Placed', 'Processing', 'Shipped', 'Delivered'];
+
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -97,6 +99,12 @@
     const d = iso ? new Date(iso) : null;
     if (!d || !Number.isFinite(d.getTime())) return '—';
     return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+  }
+
+  function normalizeOrderStatus(value) {
+    const v = String(value || '').trim();
+    const found = ORDER_STATUSES.find(s => s.toLowerCase() === v.toLowerCase());
+    return found || 'Placed';
   }
 
   /* ================= Theme (persisted) ================= */
@@ -202,6 +210,22 @@
     qsa('[data-ui="adminName"]').forEach(n => (n.textContent = display));
   }
 
+  function syncActiveNav() {
+    // Keeps sidebar highlight correct on every page (prevents copy/paste drift).
+    const path = location.pathname.replace(/\\/g, '/').toLowerCase();
+    const file = (path.split('/').pop() || '').trim();
+    if (!file) return;
+
+    const links = qsa('.nav a');
+    if (!links.length) return;
+
+    links.forEach(a => a.classList.remove('active'));
+
+    const target = ('./' + file).toLowerCase();
+    const match = links.find(a => String(a.getAttribute('href') || '').toLowerCase() === target);
+    if (match) match.classList.add('active');
+  }
+
   /* ================= Sidebar + delegated actions ================= */
   function bindDelegatedActions() {
     document.addEventListener('click', (e) => {
@@ -222,7 +246,8 @@
         if (window.matchMedia && window.matchMedia('(max-width: 920px)').matches) {
           document.body.classList.toggle('sidebar-open');
         } else {
-          document.body.classList.toggle('sidebar-collapsed');
+          // Phase 1.1: do NOT collapse on desktop.
+          toast('Sidebar collapse is disabled for now.');
         }
         return;
       }
@@ -636,6 +661,12 @@
     return st;
   }
 
+  function writeState(next) {
+    const obj = next && typeof next === 'object' ? next : {};
+    obj.ordersByUser = obj.ordersByUser || {};
+    localStorage.setItem(SITE.state, JSON.stringify(obj));
+  }
+
   function flattenOrders() {
     const st = readState();
     const map = (st && st.ordersByUser && typeof st.ordersByUser === 'object') ? st.ordersByUser : {};
@@ -645,15 +676,16 @@
       const arr = map[email];
       if (!Array.isArray(arr)) return;
 
-      arr.forEach((o) => {
+      arr.forEach((o, idx) => {
         if (!o || typeof o !== 'object') return;
         out.push({
           email: String(email || '').trim().toLowerCase(),
           id: String(o.id || ''),
           createdAt: String(o.createdAt || ''),
-          status: String(o.status || 'Placed'),
+          status: normalizeOrderStatus(o.status || 'Placed'),
           totalJMD: Number(o.totalJMD || 0),
           items: Array.isArray(o.items) ? o.items : [],
+          _idx: idx,
           raw: o
         });
       });
@@ -668,6 +700,33 @@
     return out;
   }
 
+  function updateOrderStatusInState(email, orderId, newStatus) {
+    const em = String(email || '').trim().toLowerCase();
+    const oid = String(orderId || '').trim();
+    const status = normalizeOrderStatus(newStatus);
+
+    if (!em || !oid) return false;
+
+    const st = readState();
+    const map = (st.ordersByUser && typeof st.ordersByUser === 'object') ? st.ordersByUser : {};
+    const arr = map[em];
+
+    if (!Array.isArray(arr)) return false;
+
+    const idx = arr.findIndex(o => o && String(o.id || '') === oid);
+    if (idx < 0) return false;
+
+    const o = arr[idx] || {};
+    o.status = status;
+    o.updatedAt = nowISO();
+    arr[idx] = o;
+    map[em] = arr;
+    st.ordersByUser = map;
+
+    writeState(st);
+    return true;
+  }
+
   /* ================= Orders page (REAL) ================= */
   function initOrders() {
     const tbody = qs('#ordersTbody');
@@ -675,7 +734,6 @@
 
     const search = qs('#orderSearch');
     const users = readSiteUsers();
-    const all = flattenOrders();
 
     // Optional modal (only if your HTML includes it)
     const modal = qs('#orderModal');
@@ -683,6 +741,9 @@
     const modalMeta = qs('#orderModalMeta');
     const modalItems = qs('#orderModalItems');
     const modalClose = qs('#orderModalClose');
+
+    let currentQuery = '';
+    let currentOpen = { id: '', email: '' };
 
     function resolveCustomerLabel(email) {
       const em = String(email || '').trim().toLowerCase();
@@ -703,7 +764,23 @@
       );
     }
 
-    function render(rows) {
+    function statusSelectHtml(row) {
+      const opts = ORDER_STATUSES.map(s => {
+        const sel = s.toLowerCase() === String(row.status || '').toLowerCase() ? 'selected' : '';
+        return `<option value="${escapeHtml(s)}" ${sel}>${escapeHtml(s)}</option>`;
+      }).join('');
+      return `
+        <select class="input input-sm" data-order-status="1"
+          data-order-id="${escapeHtml(row.id)}"
+          data-order-email="${escapeHtml(row.email)}"
+          aria-label="Order status">
+          ${opts}
+        </select>
+      `;
+    }
+
+    function render(list) {
+      const rows = Array.isArray(list) ? list : [];
       if (!rows.length) {
         tbody.innerHTML = `
           <tr>
@@ -717,7 +794,7 @@
         const label = r.id ? `#${escapeHtml(r.id)}` : '—';
         const date = escapeHtml(formatDateShort(r.createdAt));
         const customer = escapeHtml(resolveCustomerLabel(r.email));
-        const statusHtml = `<span class="chip chip-ok">${escapeHtml(r.status || 'Placed')}</span>`;
+        const statusChip = `<span class="chip chip-ok">${escapeHtml(r.status || 'Placed')}</span>`;
         const total = escapeHtml(formatJ(r.totalJMD));
 
         return `
@@ -725,44 +802,82 @@
             <td>${label}</td>
             <td>${date}</td>
             <td>${customer}</td>
-            <td>${statusHtml}</td>
+            <td>${statusChip}</td>
             <td class="right">${total}</td>
             <td class="right">
-              <button class="btn btn-ghost btn-sm" type="button"
-                data-open-order="1"
-                data-order-id="${escapeHtml(r.id)}"
-                data-order-email="${escapeHtml(r.email)}">Open</button>
+              <div class="row" style="justify-content:flex-end;">
+                ${statusSelectHtml(r)}
+                <button class="btn btn-ghost btn-sm" type="button"
+                  data-open-order="1"
+                  data-order-id="${escapeHtml(r.id)}"
+                  data-order-email="${escapeHtml(r.email)}">Open</button>
+              </div>
             </td>
           </tr>
         `;
       }).join('');
     }
 
-    function openModalFor(orderId, email) {
+    function getAllFiltered() {
+      const all = flattenOrders();
+      return currentQuery ? all.filter(o => matchesQuery(o, currentQuery)) : all;
+    }
+
+    function rerender() {
+      render(getAllFiltered());
+      // If a modal is open, refresh it (so status stays in sync)
+      if (modal && !modal.hidden && currentOpen.id && currentOpen.email) {
+        openModalFor(currentOpen.id, currentOpen.email, { silent: true });
+      }
+    }
+
+    function openModalFor(orderId, email, opts = {}) {
       const oid = String(orderId || '').trim();
       const em = String(email || '').trim().toLowerCase();
+      const silent = !!opts.silent;
 
+      const all = flattenOrders();
       const row =
         all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
         all.find(o => String(o.id || '') === oid) ||
         null;
 
       if (!row) {
-        toast('Order not found.');
+        if (!silent) toast('Order not found.');
         return;
       }
 
+      currentOpen = { id: row.id || '', email: row.email || '' };
+
       // If modal is not present in HTML, fallback
       if (!modal || !modalTitle || !modalMeta || !modalItems) {
-        toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)} — add modal markup to show details.`);
+        if (!silent) toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)} — add modal markup to show details.`);
         return;
       }
 
       modalTitle.textContent = `Order #${row.id || ''}`;
+
+      const statusControl = `
+        <div class="meta-row">
+          <span class="muted">Status</span>
+          <span>
+            <select class="input input-sm" data-order-status="1"
+              data-order-id="${escapeHtml(row.id)}"
+              data-order-email="${escapeHtml(row.email)}"
+              aria-label="Order status">
+              ${ORDER_STATUSES.map(s => {
+                const sel = s.toLowerCase() === String(row.status || '').toLowerCase() ? 'selected' : '';
+                return `<option value="${escapeHtml(s)}" ${sel}>${escapeHtml(s)}</option>`;
+              }).join('')}
+            </select>
+          </span>
+        </div>
+      `;
+
       modalMeta.innerHTML = `
         <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(row.createdAt))}</span></div>
         <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(resolveCustomerLabel(row.email))}</span></div>
-        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(row.status || 'Placed')}</span></div>
+        ${statusControl}
         <div class="meta-row"><span class="muted">Total</span><span>${escapeHtml(formatJ(row.totalJMD))}</span></div>
       `;
 
@@ -812,21 +927,22 @@
       if (!modal) return;
       modal.hidden = true;
       document.body.classList.remove('modal-open');
+      currentOpen = { id: '', email: '' };
     }
 
     // Initial render
-    render(all);
+    render(flattenOrders());
 
     // Search
     if (search && !search.dataset.bound) {
       search.dataset.bound = '1';
       search.addEventListener('input', () => {
-        const q = String(search.value || '');
-        render(all.filter(row => matchesQuery(row, q)));
+        currentQuery = String(search.value || '').trim();
+        rerender();
       });
     }
 
-    // Open
+    // Open (button)
     if (!tbody.dataset.bound) {
       tbody.dataset.bound = '1';
       tbody.addEventListener('click', (e) => {
@@ -835,6 +951,26 @@
         const oid = btn.getAttribute('data-order-id') || '';
         const em = btn.getAttribute('data-order-email') || '';
         openModalFor(oid, em);
+      });
+
+      // Status change (dropdown) — delegated
+      tbody.addEventListener('change', (e) => {
+        const sel = e.target && e.target.closest ? e.target.closest('[data-order-status="1"]') : null;
+        if (!sel) return;
+
+        const oid = sel.getAttribute('data-order-id') || '';
+        const em = sel.getAttribute('data-order-email') || '';
+        const next = sel.value;
+
+        const ok = updateOrderStatusInState(em, oid, next);
+        if (!ok) {
+          toast('Could not update status.');
+          rerender();
+          return;
+        }
+
+        toast('Status updated.');
+        rerender();
       });
     }
 
@@ -852,6 +988,26 @@
       modal.addEventListener('click', (e) => {
         const panel = qs('.modal-panel', modal);
         if (panel && !panel.contains(e.target)) closeModal();
+      });
+
+      // Status change inside modal (dropdown) — delegated
+      modal.addEventListener('change', (e) => {
+        const sel = e.target && e.target.closest ? e.target.closest('[data-order-status="1"]') : null;
+        if (!sel) return;
+
+        const oid = sel.getAttribute('data-order-id') || '';
+        const em = sel.getAttribute('data-order-email') || '';
+        const next = sel.value;
+
+        const ok = updateOrderStatusInState(em, oid, next);
+        if (!ok) {
+          toast('Could not update status.');
+          rerender();
+          return;
+        }
+
+        toast('Status updated.');
+        rerender();
       });
     }
 
@@ -917,18 +1073,6 @@
 
     function sumRevenue(rows) {
       return rows.reduce((sum, r) => sum + Number(r.totalJMD || 0), 0);
-    }
-
-    function calcLowStockCount() {
-      const thr = Number(settings.lowStockThreshold || 0);
-      let count = 0;
-      products.forEach((p) => {
-        if (!p || p.isActive === false) return;
-        const sb = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
-        const total = toInt(sb.S) + toInt(sb.M) + toInt(sb.L) + toInt(sb.XL);
-        if (total <= thr) count += 1;
-      });
-      return count;
     }
 
     function defaultRange() {
@@ -1255,6 +1399,7 @@
   setYear();
   requireAdminGate();
   hydrateAdminName();
+  syncActiveNav();
   bindDelegatedActions();
   initProductsManager();
   initDashboard();

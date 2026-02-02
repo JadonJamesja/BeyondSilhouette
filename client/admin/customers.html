@@ -1,69 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-theme="dark">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Customers | Beyond Silhouette</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BeyondSilhouette • Admin Customers</title>
   <link rel="stylesheet" href="./admin.css" />
-  <script defer src="./admin.js"></script>
 </head>
 
 <body class="admin">
-  <aside class="sidebar">
-    <div class="sidebar-top">
-      <div class="brand">
-        <div class="brand-mark">BS</div>
-        <div class="brand-text">
-          <div class="brand-title">Beyond Silhouette</div>
-          <div class="brand-sub">Admin Panel</div>
-        </div>
+  <!-- Sidebar -->
+<aside class="sidebar" aria-label="Admin sidebar">
+  <div class="sidebar-top">
+    <a class="brand brand-link" href="./dashboard.html">
+      <div class="brand-mark" aria-hidden="true">BS</div>
+      <div class="brand-meta">
+        <div class="brand-title">BeyondSilhouette</div>
+        <div class="brand-subtitle">Admin</div>
       </div>
+    </a>
 
-      <button class="icon-btn" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+    <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+  </div>
+
+  <nav class="nav">
+    <a class="nav-item" href="./dashboard.html">Dashboard</a>
+    <a class="nav-item" href="./products.html">Products</a>
+    <a class="nav-item" href="./orders.html">Orders</a>
+    <a class="nav-item" href="./customers.html">Customers</a>
+    <a class="nav-item" href="./settings.html">Settings</a>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <div class="user-pill">
+      <div class="avatar" aria-hidden="true">A</div>
+      <div class="user-meta">
+        <div class="user-name" data-ui="adminName">Admin</div>
+        <div class="user-role muted">Administrator</div>
+      </div>
     </div>
 
-    <nav class="nav">
-      <a class="nav-link" href="./dashboard.html">Dashboard</a>
-      <a class="nav-link" href="./products.html">Products</a>
-      <a class="nav-link" href="./orders.html">Orders</a>
-      <a class="nav-link active" href="./customers.html">Customers</a>
-      <a class="nav-link" href="./settings.html">Settings</a>
-    </nav>
-
-    <div class="sidebar-bottom">
-      <div class="admin-chip">
-        <div class="dot"></div>
-        <div>
-          <div class="chip-title" data-ui="adminName">Admin</div>
-          <div class="chip-sub muted">Online</div>
-        </div>
-      </div>
-
-      <button class="btn btn-ghost full" data-action="logout">Logout</button>
+    <div class="sidebar-actions">
+      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
     </div>
-  </aside>
+  </div>
+</aside>
 
-  <main class="main">
+  <div class="content">
     <header class="topbar">
-      <div>
-        <h1 class="page-title">Customers</h1>
-        <p class="muted">View customer accounts and their activity.</p>
+      <div class="topbar-left">
+        <h1 class="h2">Customers</h1>
+        <p class="muted">Users from <code>bs_users_v1</code> (non-admin only).</p>
       </div>
 
-      <div class="topbar-actions">
-        <input class="input input-sm" id="customerSearch" placeholder="Search name / email…" />
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Filter opened (demo).">Filter</button>
-        <button class="btn btn-ghost" data-action="toggle-theme">Theme</button>
+      <div class="topbar-right">
+        <div class="input-wrap">
+          <input id="customerSearch" class="input" type="search" placeholder="Search by name or email…" />
+        </div>
       </div>
     </header>
 
     <section class="card">
-      <div class="card-head">
-        <h2>Customer List</h2>
-        <span class="muted">From <code>bs_users_v1</code> + orders from <code>bs_state_v1</code>.</span>
-      </div>
-
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -71,19 +68,26 @@
               <th>Name</th>
               <th>Email</th>
               <th>Orders</th>
-              <th class="right">Lifetime Value</th>
+              <th class="right">LTV</th>
               <th class="right">Actions</th>
             </tr>
           </thead>
-          <tbody id="customersTbody"></tbody>
+          <tbody id="customersTbody">
+            <tr>
+              <td colspan="5" class="muted">Loading…</td>
+            </tr>
+          </tbody>
         </table>
+      </div>
+
+      <div class="card-foot muted">
+        Tip: we can add “open customer” details next (orders + sizes + last purchase).
       </div>
     </section>
 
-    <footer class="footer muted">
-      © <span data-ui="year"></span> Beyond Silhouette. Admin Panel.
-    </footer>
-  </main>
-</body>
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+  </div>
 
+  <script src="./admin.js"></script>
+</body>
 </html>
