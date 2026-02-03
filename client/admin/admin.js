@@ -643,7 +643,7 @@
     localStorage.setItem(SITE.state, JSON.stringify(obj));
   }
 
-  function setOrderStatusInState(email, orderId, nextStatus) {
+  function setOrderStatusInState(email, orderId, nextStatus, actor) {
     const em = String(email || '').trim().toLowerCase();
     const oid = String(orderId || '').trim();
     const status = String(nextStatus || '').trim() || 'Placed';
@@ -656,9 +656,28 @@
 
     if (idx < 0) return false;
 
-    list[idx].status = status;
+    const order = list[idx];
+    const prev = String(order.status || 'Placed');
+
+    // Avoid spam entries if status didn’t actually change
+    if (prev === status) return true;
+
+    // Ensure history array exists
+    if (!Array.isArray(order.history)) order.history = [];
+
+    // Who changed it?
+    const by = actor && actor.by ? String(actor.by) : 'admin';
+    const at = new Date().toISOString();
+
+    order.history.push({ at, by, from: prev, to: status });
+
+    // Update status
+    order.status = status;
+
+    list[idx] = order;
     st.ordersByUser[em] = list;
     writeState(st);
+
     return true;
   }
 
@@ -694,6 +713,13 @@
     return out;
   }
 
+  function getAdminActor() {
+    const u = getCurrentUser();
+    const email = u && u.email ? String(u.email).trim().toLowerCase() : 'admin';
+    const name = u && u.name ? String(u.name).trim() : '';
+    return { by: name ? `${name} (${email})` : email };
+  }
+
   /* ================= Orders page (REAL) ================= */
   function initOrders() {
     const tbody = qs('#ordersTbody');
@@ -701,13 +727,16 @@
 
     const search = qs('#orderSearch');
     const users = readSiteUsers();
-    const all = flattenOrders();
+
+    // Keep a mutable list so we can refresh it after status changes
+    let all = flattenOrders();
 
     // Optional modal (only if your HTML includes it)
     const modal = qs('#orderModal');
     const modalTitle = qs('#orderModalTitle');
     const modalMeta = qs('#orderModalMeta');
     const modalItems = qs('#orderModalItems');
+    const modalHistory = qs('#orderModalHistory');
     const modalClose = qs('#orderModalClose');
 
     function resolveCustomerLabel(email) {
@@ -747,15 +776,12 @@
         const stKey = st.toLowerCase();
         const stClass =
           stKey === 'delivered' ? 'chip-delivered' :
-            stKey === 'shipped' ? 'chip-shipped' :
-              stKey === 'processing' ? 'chip-processing' :
-                stKey === 'cancelled' ? 'chip-cancelled' :
-                  'chip-placed';
+          stKey === 'shipped' ? 'chip-shipped' :
+          stKey === 'processing' ? 'chip-processing' :
+          stKey === 'cancelled' ? 'chip-cancelled' :
+          'chip-placed';
 
         const statusHtml = `<span class="chip chip-status ${stClass}">${escapeHtml(st)}</span>`;
-
-
-
         const total = escapeHtml(formatJ(r.totalJMD));
 
         return `
@@ -787,9 +813,47 @@
       }).join('');
     }
 
+    function renderHistoryInto(row) {
+      if (!modalHistory) return;
+
+      // Clear every time (prevents duplicate sections / stale content)
+      modalHistory.innerHTML = '';
+
+      const hist = Array.isArray(row?.raw?.history) ? row.raw.history : [];
+      if (!hist.length) {
+        modalHistory.innerHTML = `<div class="muted">No status changes yet.</div>`;
+        return;
+      }
+
+      // Reverse so newest first
+      const items = hist.slice().reverse();
+
+      modalHistory.innerHTML = `
+        <div class="panel" style="display:grid; gap:10px;">
+          ${items.map(h => {
+            const when = escapeHtml(formatDateShort(h.at));
+            const by = escapeHtml(h.by || 'admin');
+            const from = escapeHtml(h.from || '—');
+            const to = escapeHtml(h.to || '—');
+            return `
+              <div class="meta-row" style="align-items:flex-start;">
+                <div style="display:grid; gap:4px;">
+                  <div><strong>${from}</strong> → <strong>${to}</strong></div>
+                  <div class="muted" style="font-size:12.5px;">${when} • ${by}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
     function openModalFor(orderId, email) {
       const oid = String(orderId || '').trim();
       const em = String(email || '').trim().toLowerCase();
+
+      // Refresh from storage so modal sees latest history every time
+      all = flattenOrders();
 
       const row =
         all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
@@ -815,6 +879,7 @@
         <div class="meta-row"><span class="muted">Total</span><span>${escapeHtml(formatJ(row.totalJMD))}</span></div>
       `;
 
+      // Items
       if (!row.items.length) {
         modalItems.innerHTML = `<div class="muted">No items found for this order.</div>`;
       } else {
@@ -832,12 +897,12 @@
               </thead>
               <tbody>
                 ${row.items.map(it => {
-          const nm = escapeHtml(it.name || it.title || 'Item');
-          const sz = escapeHtml(it.size || '—');
-          const qty = toInt(it.qty || it.quantity || 0);
-          const price = Number(it.price || 0);
-          const line = price * qty;
-          return `
+                  const nm = escapeHtml(it.name || it.title || 'Item');
+                  const sz = escapeHtml(it.size || '—');
+                  const qty = toInt(it.qty || it.quantity || 0);
+                  const price = Number(it.price || 0);
+                  const line = price * qty;
+                  return `
                     <tr>
                       <td>${nm}</td>
                       <td>${sz}</td>
@@ -846,12 +911,15 @@
                       <td class="right">${escapeHtml(formatJ(line))}</td>
                     </tr>
                   `;
-        }).join('')}
+                }).join('')}
               </tbody>
             </table>
           </div>
         `;
       }
+
+      // ✅ History (this is what you were missing)
+      renderHistoryInto(row);
 
       modal.hidden = false;
       document.body.classList.add('modal-open');
@@ -875,6 +943,7 @@
       });
     }
 
+    // Open button
     if (!tbody.dataset.bound) {
       tbody.dataset.bound = '1';
       tbody.addEventListener('click', (e) => {
@@ -897,14 +966,14 @@
         const em = sel.getAttribute('data-order-email') || '';
         const nextStatus = String(sel.value || '').trim() || 'Placed';
 
-        const ok = setOrderStatusInState(em, oid, nextStatus);
+        const ok = setOrderStatusInState(em, oid, nextStatus, getAdminActor());
         if (!ok) {
           toast('Could not update status.');
           return;
         }
 
-        const row = all.find(o => String(o.id || '') === String(oid) && String(o.email || '') === String(em).toLowerCase());
-        if (row) row.status = nextStatus;
+        // Refresh list from storage (so history + status are accurate everywhere)
+        all = flattenOrders();
 
         const q = String(search?.value || '');
         render(all.filter(r => matchesQuery(r, q)));
@@ -992,18 +1061,6 @@
 
     function sumRevenue(rows) {
       return rows.reduce((sum, r) => sum + Number(r.totalJMD || 0), 0);
-    }
-
-    function calcLowStockCount() {
-      const thr = Number(settings.lowStockThreshold || 0);
-      let count = 0;
-      products.forEach((p) => {
-        if (!p || p.isActive === false) return;
-        const sb = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
-        const total = toInt(sb.S) + toInt(sb.M) + toInt(sb.L) + toInt(sb.XL);
-        if (total <= thr) count += 1;
-      });
-      return count;
     }
 
     function defaultRange() {
@@ -1188,6 +1245,7 @@
       renderForRange(r);
     }
   }
+
   /* ================= Customers (REAL) ================= */
   function initCustomers() {
     const tbody = qs('#customersTbody');
@@ -1209,6 +1267,7 @@
     const ordModalTitle = qs('#orderModalTitle');
     const ordModalMeta = qs('#orderModalMeta');
     const ordModalItems = qs('#orderModalItems');
+    const ordModalHistory = qs('#orderModalHistory');
     const ordModalClose = qs('#orderModalClose');
 
     const byEmailOrders = new Map();
@@ -1275,11 +1334,11 @@
         cusModalOrders.innerHTML = `
           <div class="modal-orders">
             ${recent.map(o => {
-          const oid = String(o.id || '');
-          const when = formatDateShort(o.createdAt);
-          const st = String(o.status || 'Placed');
-          const tot = formatJ(o.totalJMD);
-          return `
+              const oid = String(o.id || '');
+              const when = formatDateShort(o.createdAt);
+              const st = String(o.status || 'Placed');
+              const tot = formatJ(o.totalJMD);
+              return `
                 <div class="modal-order-row">
                   <div class="modal-order-main">
                     <div class="modal-order-title">#${escapeHtml(oid || '—')}</div>
@@ -1292,7 +1351,7 @@
                   </div>
                 </div>
               `;
-        }).join('')}
+            }).join('')}
           </div>
         `;
       }
@@ -1309,12 +1368,45 @@
       if (!anyOpen) document.body.classList.remove('modal-open');
     }
 
+    function renderOrderHistoryIntoModal(row) {
+      if (!ordModalHistory) return;
+
+      ordModalHistory.innerHTML = '';
+
+      const hist = Array.isArray(row?.raw?.history) ? row.raw.history : [];
+      if (!hist.length) {
+        ordModalHistory.innerHTML = `<div class="muted">No status changes yet.</div>`;
+        return;
+      }
+
+      const items = hist.slice().reverse();
+      ordModalHistory.innerHTML = `
+        <div class="panel" style="display:grid; gap:10px;">
+          ${items.map(h => {
+            const when = escapeHtml(formatDateShort(h.at));
+            const by = escapeHtml(h.by || 'admin');
+            const from = escapeHtml(h.from || '—');
+            const to = escapeHtml(h.to || '—');
+            return `
+              <div class="meta-row" style="align-items:flex-start;">
+                <div style="display:grid; gap:4px;">
+                  <div><strong>${from}</strong> → <strong>${to}</strong></div>
+                  <div class="muted" style="font-size:12.5px;">${when} • ${by}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
     function openOrderModal(orderId, email) {
       const oid = String(orderId || '').trim();
       const em = String(email || '').trim().toLowerCase();
 
-      // Find in full orders list (not just customer's recent slice)
-      const all = orders;
+      // Refresh orders so history is current
+      const all = flattenOrders();
+
       const row =
         all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
         all.find(o => String(o.id || '') === oid) ||
@@ -1356,12 +1448,12 @@
               </thead>
               <tbody>
                 ${items.map(it => {
-          const nm = escapeHtml(it.name || it.title || 'Item');
-          const sz = escapeHtml(it.size || '—');
-          const qty = toInt(it.qty || it.quantity || 0);
-          const price = Number(it.price || 0);
-          const line = price * qty;
-          return `
+                  const nm = escapeHtml(it.name || it.title || 'Item');
+                  const sz = escapeHtml(it.size || '—');
+                  const qty = toInt(it.qty || it.quantity || 0);
+                  const price = Number(it.price || 0);
+                  const line = price * qty;
+                  return `
                     <tr>
                       <td>${nm}</td>
                       <td>${sz}</td>
@@ -1370,12 +1462,15 @@
                       <td class="right">${escapeHtml(formatJ(line))}</td>
                     </tr>
                   `;
-        }).join('')}
+                }).join('')}
               </tbody>
             </table>
           </div>
         `;
       }
+
+      // ✅ History (optional if #orderModalHistory exists on this page)
+      renderOrderHistoryIntoModal(row);
 
       ordModal.hidden = false;
       document.body.classList.add('modal-open');

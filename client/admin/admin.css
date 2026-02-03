@@ -292,7 +292,107 @@ select.input:focus{
   font-weight: 800;
   background: hsla(var(--text), .02);
 }
+
 .table tr:hover td{ background: hsla(var(--text), .02); }
+/* ===== Orders table: row tint by status ===== */
+.table tr[data-status] td{
+  transition: background .12s ease, border-color .12s ease;
+}
+
+/* subtle left accent bar */
+.table tr[data-status] td:first-child{
+  position: relative;
+}
+.table tr[data-status] td:first-child::before{
+  content:"";
+  position:absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 999px;
+  background: transparent;
+  opacity: .9;
+}
+
+/* Placed */
+.table tr[data-status="placed"] td{
+  background: hsla(var(--accent), .06);
+}
+.table tr[data-status="placed"] td:first-child::before{
+  background: hsla(var(--accent), .85);
+}
+
+/* Processing */
+.table tr[data-status="processing"] td{
+  background: hsla(var(--warn), .08);
+}
+.table tr[data-status="processing"] td:first-child::before{
+  background: hsla(var(--warn), .95);
+}
+
+/* Shipped */
+.table tr[data-status="shipped"] td{
+  background: hsla(var(--accent2), .07);
+}
+.table tr[data-status="shipped"] td:first-child::before{
+  background: hsla(var(--accent2), .90);
+}
+
+/* Delivered */
+.table tr[data-status="delivered"] td{
+  background: hsla(var(--ok), .08);
+}
+.table tr[data-status="delivered"] td:first-child::before{
+  background: hsla(var(--ok), .95);
+}
+
+/* Cancelled */
+.table tr[data-status="cancelled"] td{
+  background: hsla(var(--danger), .08);
+}
+.table tr[data-status="cancelled"] td:first-child::before{
+  background: hsla(var(--danger), .95);
+}
+
+/* keep hover effect but not washing out the status */
+.table tr[data-status]:hover td{
+  background: hsla(var(--text), .03);
+}
+
+/* ===== Select / dropdown styling (light + dark) ===== */
+select.input{
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 38px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, hsla(var(--muted), .95) 50%),
+    linear-gradient(135deg, hsla(var(--muted), .95) 50%, transparent 50%),
+    linear-gradient(to right, hsla(var(--border), .9), hsla(var(--border), .9));
+  background-position:
+    calc(100% - 18px) 55%,
+    calc(100% - 12px) 55%,
+    calc(100% - 34px) 50%;
+  background-size:
+    6px 6px,
+    6px 6px,
+    1px 18px;
+  background-repeat: no-repeat;
+}
+
+/* actual dropdown menu surface */
+select.input option{
+  background: hsl(var(--panel));
+  color: hsl(var(--text));
+}
+
+/* focus ring should match theme */
+select.input:focus{
+  outline: none;
+  border-color: hsla(var(--ring), .55);
+  box-shadow: 0 0 0 3px hsla(var(--ring), .18);
+}
 
 .list{
   display:grid;

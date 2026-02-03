@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -8,43 +9,44 @@
 </head>
 
 <body class="admin">
-   <!-- Sidebar -->
-<aside class="sidebar" aria-label="Admin sidebar">
-  <div class="sidebar-top">
-    <a class="brand brand-link" href="./dashboard.html">
-      <div class="brand-mark" aria-hidden="true">BS</div>
-      <div class="brand-meta">
-        <div class="brand-title">BeyondSilhouette</div>
-        <div class="brand-subtitle">Admin</div>
-      </div>
-    </a>
+  <!-- Sidebar -->
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
 
-    <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
-  </div>
-
-  <nav class="nav">
-    <a class="nav-item" href="./dashboard.html">Dashboard</a>
-    <a class="nav-item" href="./products.html">Products</a>
-    <a class="nav-item" href="./orders.html">Orders</a>
-    <a class="nav-item" href="./customers.html">Customers</a>
-    <a class="nav-item" href="./settings.html">Settings</a>
-  </nav>
-
-  <div class="sidebar-bottom">
-    <div class="user-pill">
-      <div class="avatar" aria-hidden="true">A</div>
-      <div class="user-meta">
-        <div class="user-name" data-ui="adminName">Admin</div>
-        <div class="user-role muted">Administrator</div>
-      </div>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar"
+        aria-label="Toggle sidebar">☰</button>
     </div>
 
-    <div class="sidebar-actions">
-      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
     </div>
-  </div>
-</aside>
+  </aside>
 
   <div class="content">
     <header class="topbar">
@@ -84,8 +86,10 @@
       <div class="card-foot row row-between">
         <div class="muted">Tip: add status transitions (Processing → Shipped → Delivered) after DB.</div>
         <div class="row">
-          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Prev page (demo).">Prev</button>
-          <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Next page (demo).">Next</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+            data-toast="Prev page (demo).">Prev</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+            data-toast="Next page (demo).">Next</button>
         </div>
       </div>
     </section>
@@ -101,15 +105,28 @@
         <button class="btn btn-ghost btn-sm" type="button" id="orderModalClose" aria-label="Close">✕</button>
       </div>
 
-      <div class="modal-body">
-        <div class="modal-meta" id="orderModalMeta"></div>
+      <!-- Order Details Modal -->
+      <div class="modal-overlay" id="orderModal" hidden>
+        <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
+          <div class="modal-head">
+            <div class="modal-title" id="orderModalTitle">Order</div>
+            <button class="btn btn-ghost btn-sm" type="button" id="orderModalClose" aria-label="Close">✕</button>
+          </div>
 
-        <h3 class="section-title">Items</h3>
-        <div id="orderModalItems"></div>
+          <div class="modal-body">
+            <div class="modal-meta" id="orderModalMeta"></div>
+
+            <h3 class="section-title">History</h3>
+            <div id="orderModalHistory"></div>
+
+            <h3 class="section-title">Items</h3>
+            <div id="orderModalItems"></div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
 
-  <script src="./admin.js"></script>
+
+<script src="./admin.js"></script>
 </body>
+
 </html>
