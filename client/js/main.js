@@ -1307,30 +1307,73 @@
 
     const user = Auth.currentUser();
     const listEl = $('#ordersList');
-    if (!user || !listEl) return;
+    if (!listEl) return;
 
-    const st = readState();
-    const orders = st.ordersByUser?.[user.email] || [];
-
-    if (!orders.length) {
-      listEl.innerHTML = `<p class="muted">No orders yet.</p>`;
+    if (!user || !user.email) {
+      listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
       return;
     }
 
-    listEl.innerHTML = orders.map(o => `
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
+
+    const safe = (s) => escapeHtml(String(s || ''));
+
+    if (!orders.length) {
+      listEl.innerHTML = `
       <div class="order-card">
         <div class="order-row">
-          <strong>Order #</strong> <span>${escapeHtml(o.id || '')}</span>
+          <strong>No orders yet</strong>
+          <span class="muted">Once you check out, your orders will appear here.</span>
         </div>
         <div class="order-row">
-          <strong>Date</strong> <span>${escapeHtml(o.createdAt || '')}</span>
-        </div>
-        <div class="order-row">
-          <strong>Total</strong> <span>${money(o.totalJMD || 0)}</span>
+          <a class="btn btn-primary" href="shop-page.html">Go shopping</a>
         </div>
       </div>
-    `).join('');
+    `;
+      return;
+    }
+
+    const sorted = orders.slice().sort((a, b) => {
+      const ta = new Date(a?.createdAt || 0).getTime();
+      const tb = new Date(b?.createdAt || 0).getTime();
+      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+    });
+
+    listEl.innerHTML = sorted.map(o => {
+      const id = safe(o.id);
+      const status = safe(o.status || 'Placed');
+      const total = money(o.totalJMD || 0);
+      const date = safe(fmtDate(o.createdAt));
+
+      return `
+      <div class="order-card">
+        <div class="order-row">
+          <strong>Order #</strong> <span>${id}</span>
+        </div>
+        <div class="order-row">
+          <strong>Date</strong> <span>${date}</span>
+        </div>
+        <div class="order-row">
+          <strong>Status</strong> <span>${status}</span>
+        </div>
+        <div class="order-row">
+          <strong>Total</strong> <span>${total}</span>
+        </div>
+        <div class="order-row">
+          <a class="btn btn-ghost" href="receipt.html?order=${encodeURIComponent(o.id || '')}">View receipt</a>
+        </div>
+      </div>
+    `;
+    }).join('');
   }
+
 
   // -----------------------------
   // CHECKOUT PAGE (DEMO)
@@ -1416,18 +1459,26 @@
           return;
         }
 
+        const now = new Date().toISOString();
+
         const order = {
-          id: uid('ord_'),
-          createdAt: nowISO(),
-          items: filled.map(it => ({
+          id,
+          createdAt: now,
+          status: 'Placed',
+          history: [
+            { at: now, by: 'System', from: '—', to: 'Placed' }
+          ],
+          totalJMD: total,
+          items: items.map(it => ({
             productId: it.productId,
-            size: it.size || '',
-            qty: Number(it.qty || 0),
-            name: it.name || '',
-            price: Number(it.price || 0)
-          })),
-          totalJMD: subtotal
+            size: it.size,
+            qty: it.qty,
+            name: it.name,
+            price: it.price,
+            image: it.image
+          }))
         };
+
 
         const st2 = readState();
         st2.ordersByUser[user.email] = st2.ordersByUser[user.email] || [];
@@ -1441,6 +1492,84 @@
       };
     }
   }
+
+  function renderReceiptIfOnReceiptPage() {
+    if (page() !== 'receipt.html' && page() !== 'receipt') return;
+
+    const user = Auth.currentUser();
+    if (!user || !user.email) {
+      location.href = 'login.html';
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const orderId = String(params.get('order') || '').trim();
+
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+    const order = orders.find(o => String(o?.id || '') === orderId) || null;
+
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value == null ? '' : value);
+    };
+
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
+
+    if (!order) {
+      setText('rcptOrderId', '—');
+      setText('rcptOrderDate', '—');
+      setText('rcptOrderStatus', '—');
+      const itemsEl = document.getElementById('rcptItems');
+      if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+      return;
+    }
+
+    setText('rcptOrderId', `#${order.id || ''}`);
+    setText('rcptOrderDate', fmtDate(order.createdAt));
+    setText('rcptOrderStatus', order.status || 'Placed');
+    setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
+    setText('rcptTotal', money(order.totalJMD || 0));
+
+    const tbody = document.getElementById('rcptItems');
+    if (tbody) {
+      if (!items.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
+      } else {
+        tbody.innerHTML = items.map(it => {
+          const nm = escapeHtml(it?.name || 'Item');
+          const sz = escapeHtml(it?.size || '—');
+          const qty = Number(it?.qty || 0);
+          const price = Number(it?.price || 0);
+          const line = price * qty;
+
+          return `
+          <tr>
+            <td>${nm}</td>
+            <td>${sz}</td>
+            <td class="right">${qty}</td>
+            <td class="right">${escapeHtml(money(price))}</td>
+            <td class="right">${escapeHtml(money(line))}</td>
+          </tr>
+        `;
+        }).join('');
+      }
+    }
+
+    const printBtn = document.getElementById('printReceiptBtn');
+    if (printBtn && !printBtn.dataset.bound) {
+      printBtn.dataset.bound = '1';
+      printBtn.addEventListener('click', () => window.print());
+    }
+  }
+
 
   // -----------------------------
   // DEV-ONLY: PROMOTE USER TO ADMIN (OPTION B)
@@ -1492,6 +1621,10 @@
 
     renderAccountIfOnAccountPage();
     renderOrdersIfOnOrdersPage();
+
+    renderOrdersIfOnOrdersPage();
+    renderReceiptIfOnReceiptPage();
+
   }
 
   document.addEventListener('DOMContentLoaded', init);

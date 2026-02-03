@@ -2,109 +2,80 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Orders | Beyond Silhouette</title>
-    <link rel="stylesheet" href="./css/style.css">
-    <link rel="stylesheet" href="./css/orders.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Orders | Beyond Silhouette</title>
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/orders.css">
 </head>
 
 <body id="orders-page">
 
-    <!-- HEADER -->
-    <header id="site-header">
-        <div class="container header-container">
-            <nav id="main-nav">
-                <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
-                <ul class="nav-list">
-                    <li><a href="index.html" class="nav-link">Home</a></li>
-                    <li><a href="shop-page.html" class="nav-link">Shop</a></li>
-                    <li class="nav-right">
-                        <div class="nav-icons">
-                            <a href="cart.html" class="cartIcon" aria-label="Cart">
-                                <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
-                                <span class="cart-count" aria-live="polite">0</span>
-                            </a>
-                            <div class="login-dropdown">
-                                <a href="#" class="loginIcon">
-                                    <img src="./images/user icon.png" alt="Login">
-                                </a>
-                                <ul class="login-menu">
-                                    <li><a href="login.html">Sign In</a></li>
-                                    <li><a href="register.html">Create Account</a></li>
-                                    <li><a href="account.html">My Account</a></li>
-                                    <li><a href="orders.html">My Orders</a></li>
-                                    <li><a href="logout.html">Logout</a></li>
-                                </ul>
-                            </div>
-                        </div>
-                    </li>
+  <!-- HEADER -->
+  <header id="site-header">
+    <div class="container header-container">
+      <nav id="main-nav">
+        <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
+        <ul class="nav-list">
+          <li><a href="index.html" class="nav-link">Home</a></li>
+          <li><a href="shop-page.html" class="nav-link">Shop</a></li>
+          <li class="nav-right">
+            <div class="nav-icons">
+              <a href="cart.html" class="cartIcon" aria-label="Cart">
+                <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
+                <span class="cart-count" aria-live="polite">0</span>
+              </a>
+
+              <div class="login-dropdown">
+                <a href="#" class="loginIcon">
+                  <img src="./images/user icon.png" alt="Login">
+                </a>
+                <ul class="login-menu">
+                  <li><a href="login.html">Sign In</a></li>
+                  <li><a href="register.html">Create Account</a></li>
+                  <li><a href="account.html">My Account</a></li>
+                  <li><a href="orders.html">My Orders</a></li>
+                  <li><a href="logout.html">Logout</a></li>
                 </ul>
-            </nav>
-        </div>
-    </header>
+              </div>
 
-    <!-- ORDERS SECTION -->
-    <main class="orders-container">
-        <h1>My Orders</h1>
-
-        <!-- Order Card 1 -->
-        <div class="order-card">
-            <div class="order-header">
-                <h2>Order #1001</h2>
-                <p><strong>Date:</strong> Aug 20, 2025</p>
             </div>
-            <div class="order-body">
-                <p><strong>Status:</strong> <span class="status shipped">Shipped</span></p>
-                <p><strong>Total:</strong> J$12,000</p>
-                <p><strong>Items:</strong></p>
-                <ul>
-                    <li>Blue Bikini Set - Size M</li>
-                    <li>Black One Piece - Size S</li>
-                </ul>
-                <button class="btn order-details-btn" data-order="1001">View Details</button>
-            </div>
-        </div>
-
-        <!-- Order Card 2 -->
-        <div class="order-card">
-            <div class="order-header">
-                <h2>Order #1002</h2>
-                <p><strong>Date:</strong> Jul 12, 2025</p>
-            </div>
-            <div class="order-body">
-                <p><strong>Status:</strong> <span class="status delivered">Delivered</span></p>
-                <p><strong>Total:</strong> J$8,500</p>
-                <p><strong>Items:</strong></p>
-                <ul>
-                    <li>Red Bikini Top - Size L</li>
-                </ul>
-                <button class="btn order-details-btn" data-order="1002">View Details</button>
-            </div>
-        </div>
-
-        <div class="no-orders" style="display:none;">
-            <p>You don’t have any orders yet. <a href="shop-page.html">Start shopping</a></p>
-        </div>
-    </main>
-
-    <!-- MODAL -->
-    <div id="order-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2>Order Details</h2>
-            <div id="modal-body">
-                <!-- JS will fill this dynamically -->
-            </div>
-        </div>
+          </li>
+        </ul>
+      </nav>
     </div>
+  </header>
 
-    <!-- FOOTER -->
-    <footer id="site-footer">
-        <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
-    </footer>
+  <!-- ORDERS SECTION -->
+  <main class="orders-container">
+    <h1>My Orders</h1>
 
-<script src="js/main.js"></script>
+    <!-- IMPORTANT: main.js expects this -->
+    <div id="ordersList"></div>
+
+    <!-- Optional: you can keep this, but main.js currently writes "No orders yet" into #ordersList -->
+    <div class="no-orders" style="display:none;">
+      <p>You don’t have any orders yet. <a href="shop-page.html">Start shopping</a></p>
+    </div>
+  </main>
+
+  <!-- MODAL (not used by your current main.js orders renderer, but safe to keep for Phase 3.2 receipts) -->
+  <div id="order-modal" class="modal">
+    <div class="modal-content">
+      <span class="close-btn">&times;</span>
+      <h2>Order Details</h2>
+      <div id="modal-body">
+        <!-- JS will fill this dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer id="site-footer">
+    <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
+  </footer>
+
+  <script src="js/main.js"></script>
 </body>
 
 </html>
