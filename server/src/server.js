@@ -5,12 +5,18 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
+
 
 import prisma from "./prisma.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { readSession, setSession, clearSession } from "./session.js";
 
 dotenv.config();
+
+const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -143,6 +149,61 @@ app.post("/api/auth/logout", (req, res) => {
   return res.json({ ok: true });
 });
 
+// Optional: Google Sign-In (only works if GOOGLE_CLIENT_ID is set)
+app.post("/api/auth/google", async (req, res) => {
+  if (!googleClient) {
+    return res.status(501).json({
+      ok: false,
+      error: "Google auth is not configured on this server.",
+      missing: ["GOOGLE_CLIENT_ID"],
+    });
+  }
+
+  const idToken = String(req.body?.idToken || "").trim();
+  if (!idToken) {
+    return res.status(400).json({ ok: false, error: "Missing idToken" });
+  }
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const email = String(payload?.email || "").trim().toLowerCase();
+    const name = String(payload?.name || "").trim();
+
+    if (!email) return res.status(400).json({ ok: false, error: "Google token missing email" });
+
+    // Create-or-login user
+    let user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+
+    if (!user) {
+      const randomPw = crypto.randomBytes(32).toString("hex");
+      const passwordHash = await hashPassword(randomPw);
+
+      user = await prisma.user.create({
+        data: {
+          email,
+          name: name || null,
+          passwordHash,
+          role: "customer",
+        },
+        select: { id: true, email: true, name: true, role: true, createdAt: true },
+      });
+    }
+
+    setSession(res, { userId: user.id });
+    setSession(res, { userId: user.id, email: user.email, role: user.role });
+    return res.json({ ok: true, user });
+  } catch (err) {
+    return res.status(401).json({ ok: false, error: err?.message || "Invalid Google token" });
+  }
+});
 // -----------------------------
 // ORDERS (MVP)
 // - Requires authenticated session
@@ -155,7 +216,18 @@ function requireUser(req, res) {
     res.status(401).json({ ok: false, error: "Not authenticated" });
     return null;
   }
+
   return sess;
+  function requireAdmin(req, res) {
+    const sess = requireUser(req, res);
+    if (!sess) return null;
+    if (sess.role !== "admin") {
+      res.status(403).json({ ok: false, error: "Admin only" });
+      return null;
+    }
+    return sess;
+  }
+
 }
 
 function parseQty(v) {
@@ -164,121 +236,57 @@ function parseQty(v) {
   return Math.max(0, Math.floor(n));
 }
 
-app.post("/api/orders", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
-  const items = rawItems
-    .map((it) => ({
-      productId: String(it?.productId || "").trim(),
-      size: String(it?.size || "").trim(),
-      quantity: parseQty(it?.quantity ?? it?.qty),
-    }))
-    .filter((it) => it.productId && it.size && it.quantity > 0);
-
-  if (!items.length) {
-    return res.status(400).json({ ok: false, error: "Cart is empty" });
-  }
-
-  try {
-    const order = await prisma.$transaction(async (tx) => {
-      // Load products in one go (server is source of truth for price)
-      const productIds = Array.from(new Set(items.map((i) => i.productId)));
-      const products = await tx.product.findMany({
-        where: { id: { in: productIds } },
-        select: { id: true, priceJMD: true, isPublished: true, name: true },
-      });
-      const productById = new Map(products.map((p) => [p.id, p]));
-
-      const outOfStock = [];
-
-      for (const it of items) {
-        const p = productById.get(it.productId);
-        if (!p) {
-          outOfStock.push({ productId: it.productId, size: it.size, available: 0, reason: "NOT_FOUND" });
-          continue;
-        }
-
-        // Check inventory (compound unique: productId+size)
-        const inv = await tx.inventory.findUnique({
-          where: { productId_size: { productId: it.productId, size: it.size } },
-          select: { stock: true },
-        });
-
-        const available = Number(inv?.stock ?? 0);
-        if (available < it.quantity) {
-          outOfStock.push({ productId: it.productId, size: it.size, available });
-          continue;
-        }
-
-        // Atomic decrement: only decrement if stock is still >= qty
-        const updated = await tx.inventory.updateMany({
-          where: {
-            productId: it.productId,
-            size: it.size,
-            stock: { gte: it.quantity },
-          },
-          data: { stock: { decrement: it.quantity } },
-        });
-
-        if (updated.count !== 1) {
-          const inv2 = await tx.inventory.findUnique({
-            where: { productId_size: { productId: it.productId, size: it.size } },
-            select: { stock: true },
-          });
-          outOfStock.push({ productId: it.productId, size: it.size, available: Number(inv2?.stock ?? 0) });
-        }
-      }
-
-      if (outOfStock.length) {
-        const err = new Error("OUT_OF_STOCK");
-        err.code = "OUT_OF_STOCK";
-        err.details = outOfStock;
-        throw err;
-      }
-
-      const orderItems = items.map((it) => {
-        const p = productById.get(it.productId);
-        return {
-          productId: it.productId,
-          size: it.size,
-          quantity: it.quantity,
-          unitPrice: Number(p?.priceJMD ?? 0),
-        };
-      });
-
-      const subtotal = orderItems.reduce((sum, li) => sum + li.unitPrice * li.quantity, 0);
-      const total = subtotal;
-
-      return tx.order.create({
-        data: {
-          userId: sess.userId,
-          subtotal,
-          total,
-          currency: "JMD",
-          status: "processing",
-          items: { create: orderItems },
-        },
-        select: { id: true, subtotal: true, total: true, currency: true, status: true, createdAt: true },
-      });
-    });
-
-    return res.status(201).json({ ok: true, order });
-  } catch (err) {
-    if (err?.code === "OUT_OF_STOCK") {
-      return res.status(409).json({ ok: false, code: "OUT_OF_STOCK", items: err.details || [] });
-    }
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to create order" });
-  }
-});
-
+// List my orders (canonical)
 app.get("/api/orders/my", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
   try {
-    const orders = await prisma.order.findMany({
+    const ordersRaw = await prisma.order.findMany({
+      where: { userId: sess.userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        subtotal: true,
+        total: true,
+        currency: true,
+        status: true,
+        createdAt: true,
+        items: {
+          select: {
+            productId: true,
+            size: true,
+            quantity: true,
+            unitPrice: true,
+          },
+        },
+      },
+    });
+
+    // Add compatibility aliases expected by frontend
+    const orders = ordersRaw.map((o) => ({
+      ...o,
+      subtotalJMD: o.subtotal,
+      totalJMD: o.total,
+    }));
+
+    return res.json({ ok: true, orders });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ ok: false, error: err?.message || "Failed to load orders" });
+  }
+});
+
+
+// Backward-compatible alias (frontend in ZIP calls this)
+app.get("/api/orders/me", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  try {
+    const ordersRaw = await prisma.order.findMany({
       where: { userId: sess.userId },
       orderBy: { createdAt: "desc" },
       take: 50,
@@ -293,11 +301,94 @@ app.get("/api/orders/my", async (req, res) => {
       },
     });
 
+    const orders = ordersRaw.map((o) => ({
+      ...o,
+      subtotalJMD: o.subtotal,
+      totalJMD: o.total,
+    }));
+
     return res.json({ ok: true, orders });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
   }
 });
+
+// Receipt / order detail (frontend calls /api/orders/:id)
+app.get("/api/orders/:id", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  const orderId = String(req.params?.id || "").trim();
+  if (!orderId) return res.status(400).json({ ok: false, error: "Missing order id" });
+
+  try {
+    const o = await prisma.order.findFirst({
+      where: { id: orderId, userId: sess.userId },
+      select: {
+        id: true,
+        createdAt: true,
+        status: true,
+        subtotal: true,
+        total: true,
+        currency: true,
+        items: {
+          select: {
+            size: true,
+            quantity: true,
+            unitPrice: true,
+            product: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    if (!o) return res.status(404).json({ ok: false, error: "Order not found" });
+
+    // Shape to match frontend expectations
+    const order = {
+      id: o.id,
+      createdAt: o.createdAt,
+      status: o.status,
+      subtotalJMD: o.subtotal,
+      totalJMD: o.total,
+      currency: o.currency,
+      items: (o.items || []).map((it) => ({
+        name: it.product?.name || "Item",
+        size: it.size,
+        qty: it.quantity,
+        price: it.unitPrice,
+      })),
+    };
+
+    return res.json({ ok: true, order });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
+  }
+});
+
+
+
+// Add compatibility aliases expected by frontend
+const orders = ordersRaw.map((o) => ({
+  ...o,
+  subtotalJMD: o.subtotal,
+  totalJMD: o.total,
+}));
+
+return res.json({ ok: true, orders });
+  } catch (err) {
+  return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
+}
+});
+
+// -----------------------------
+// ADMIN (requires admin role)
+// -----------------------------
+
+GET    /api/admin/products
+POST   /api/admin/products
+PATCH  /api/admin/products/:id
+PATCH  /api/admin/inventory
 
 // -----------------------------
 // FRONTEND (same-domain hosting)
