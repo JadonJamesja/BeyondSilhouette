@@ -1302,41 +1302,39 @@
   // -----------------------------
   // ORDERS PAGE
   // -----------------------------
-  function renderOrdersIfOnOrdersPage() {
-    if (page() !== 'orders.html' && page() !== 'orders') return;
+ async function renderOrdersIfOnOrdersPage() {
+  if (page() !== 'orders.html' && page() !== 'orders') return;
 
-    const user = Auth.currentUser();
-    const listEl = $('#ordersList');
-    if (!listEl) return;
+  const user = Auth.currentUser();
+  const listEl = $('#ordersList');
+  if (!listEl) return;
 
-    if (!user || !user.email) {
-      listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
-      return;
-    }
+  if (!user || !user.email) {
+    listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
+    return;
+  }
 
-    const st = readState();
-    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+  const fmtDate = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    if (!d || !Number.isFinite(d.getTime())) return '—';
+    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+  };
 
-    const fmtDate = (iso) => {
-      const d = iso ? new Date(iso) : null;
-      if (!d || !Number.isFinite(d.getTime())) return '—';
-      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-    };
+  const safe = (s) => escapeHtml(String(s || ''));
 
-    const safe = (s) => escapeHtml(String(s || ''));
-
-    if (!orders.length) {
+  const renderList = (orders) => {
+    if (!Array.isArray(orders) || !orders.length) {
       listEl.innerHTML = `
-      <div class="order-card">
-        <div class="order-row">
-          <strong>No orders yet</strong>
-          <span class="muted">Once you check out, your orders will appear here.</span>
+        <div class="order-card">
+          <div class="order-row">
+            <strong>No orders yet</strong>
+            <span class="muted">Once you check out, your orders will appear here.</span>
+          </div>
+          <div class="order-row">
+            <a class="btn btn-primary" href="shop-page.html">Go shopping</a>
+          </div>
         </div>
-        <div class="order-row">
-          <a class="btn btn-primary" href="shop-page.html">Go shopping</a>
-        </div>
-      </div>
-    `;
+      `;
       return;
     }
 
@@ -1353,26 +1351,58 @@
       const date = safe(fmtDate(o.createdAt));
 
       return `
-      <div class="order-card">
-        <div class="order-row">
-          <strong>Order #</strong> <span>${id}</span>
+        <div class="order-card">
+          <div class="order-row">
+            <strong>Order #</strong> <span>${id}</span>
+          </div>
+          <div class="order-row">
+            <strong>Date</strong> <span>${date}</span>
+          </div>
+          <div class="order-row">
+            <strong>Status</strong> <span>${status}</span>
+          </div>
+          <div class="order-row">
+            <strong>Total</strong> <span>${total}</span>
+          </div>
+          <div class="order-row">
+            <a class="btn btn-ghost" href="receipt.html?order=${encodeURIComponent(o.id || '')}">View receipt</a>
+          </div>
         </div>
-        <div class="order-row">
-          <strong>Date</strong> <span>${date}</span>
-        </div>
-        <div class="order-row">
-          <strong>Status</strong> <span>${status}</span>
-        </div>
-        <div class="order-row">
-          <strong>Total</strong> <span>${total}</span>
-        </div>
-        <div class="order-row">
-          <a class="btn btn-ghost" href="receipt.html?order=${encodeURIComponent(o.id || '')}">View receipt</a>
-        </div>
-      </div>
-    `;
+      `;
     }).join('');
+  };
+
+  // --- PRODUCTION: try backend first ---
+  try {
+    const res = await fetch('/api/orders/me', { credentials: 'include' });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
+
+    // Accept either { orders: [...] } or [...]
+    const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+    renderList(orders);
+    return;
+  } catch (err) {
+    const msg = String(err?.message || '').toLowerCase();
+    const canFallback =
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('not found') ||
+      msg.includes('unexpected token');
+
+    if (!canFallback) {
+      listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
+      return;
+    }
   }
+
+  // --- DEMO FALLBACK ---
+  const st = readState();
+  const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+  renderList(orders);
+}
+
 
 
   // -----------------------------
@@ -1450,7 +1480,7 @@
     if (totalEl) totalEl.textContent = money(subtotal);
 
     if (btn) {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const user = Auth.currentUser();
         if (!user) {
           toast('Please log in to continue.', { important: true });
@@ -1459,67 +1489,125 @@
           return;
         }
 
-        const now = new Date().toISOString();
+        // Always build from "filled" so name/price/image are correct
+        const orderItemsResolved = filled.map(it => ({
+          productId: String(it.productId),
+          size: String(it.size || ''),
+          qty: Number(it.qty || 0),
+          name: String(it.name || 'Item'),
+          price: Number(it.price || 0),
+          image: String(it.image || '')
+        }));
+
+        // Total from the already computed subtotal
+        const totalJMD = Number(subtotal || 0);
+
+        // --- PRODUCTION PATH: try backend first ---
+        try {
+          const payload = {
+            // keep payload minimal; backend should resolve prices from DB
+            items: orderItemsResolved.map(it => ({
+              productId: it.productId,
+              size: it.size,
+              qty: it.qty
+            }))
+          };
+
+          const res = await fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+            // If backend exists but returns an error, show it (no demo fallback)
+            throw new Error(data?.error || 'Could not place order.');
+          }
+
+          // Expect backend to return { orderId } (or { order: { id } })
+          const orderId =
+            String(data?.orderId || data?.order?.id || '').trim();
+
+          if (!orderId) {
+            throw new Error('Order placed but missing order id from server.');
+          }
+
+          Cart.clear();
+          UI.updateCartBadges();
+          toast('Order placed.');
+          location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
+          return;
+        } catch (err) {
+          // If server route doesn't exist (static hosting), fall back to demo.
+          // Only fallback on "failed to fetch" / 404-ish situations.
+          const msg = String(err?.message || '');
+          const canFallback =
+            msg.toLowerCase().includes('failed to fetch') ||
+            msg.toLowerCase().includes('networkerror') ||
+            msg.toLowerCase().includes('not found') ||
+            msg.toLowerCase().includes('unexpected token'); // bad JSON when no API
+
+          if (!canFallback) {
+            toast(msg || 'Could not place order.', { important: true });
+            return;
+          }
+        }
+
+        // --- DEMO FALLBACK: localStorage ordersByUser ---
+        const now = nowISO();
+        const orderId = uid('ord_');
 
         const order = {
-          id,
+          id: orderId,
           createdAt: now,
           status: 'Placed',
-          history: [
-            { at: now, by: 'System', from: '—', to: 'Placed' }
-          ],
-          totalJMD: total,
-          items: items.map(it => ({
-            productId: it.productId,
-            size: it.size,
-            qty: it.qty,
-            name: it.name,
-            price: it.price,
-            image: it.image
-          }))
+          history: [{ at: now, by: 'System', from: '—', to: 'Placed' }],
+          totalJMD,
+          items: orderItemsResolved
         };
 
-
         const st2 = readState();
-        st2.ordersByUser[user.email] = st2.ordersByUser[user.email] || [];
-        st2.ordersByUser[user.email].unshift(order);
+        const em = String(user.email || '').trim().toLowerCase();
+        st2.ordersByUser[em] = Array.isArray(st2.ordersByUser[em]) ? st2.ordersByUser[em] : [];
+        st2.ordersByUser[em].unshift(order);
         writeState(st2);
 
         Cart.clear();
         UI.updateCartBadges();
         toast('Order placed (demo).');
-        location.href = 'orders.html';
+        location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
       };
     }
+
   }
 
-  function renderReceiptIfOnReceiptPage() {
-    if (page() !== 'receipt.html' && page() !== 'receipt') return;
+  async function renderReceiptIfOnReceiptPage() {
+  if (page() !== 'receipt.html' && page() !== 'receipt') return;
 
-    const user = Auth.currentUser();
-    if (!user || !user.email) {
-      location.href = 'login.html';
-      return;
-    }
+  const user = Auth.currentUser();
+  if (!user || !user.email) {
+    location.href = 'login.html';
+    return;
+  }
 
-    const params = new URLSearchParams(location.search);
-    const orderId = String(params.get('order') || '').trim();
+  const params = new URLSearchParams(location.search);
+  const orderId = String(params.get('order') || '').trim();
 
-    const st = readState();
-    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
-    const order = orders.find(o => String(o?.id || '') === orderId) || null;
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(value == null ? '' : value);
+  };
 
-    const setText = (id, value) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = String(value == null ? '' : value);
-    };
+  const fmtDate = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    if (!d || !Number.isFinite(d.getTime())) return '—';
+    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+  };
 
-    const fmtDate = (iso) => {
-      const d = iso ? new Date(iso) : null;
-      if (!d || !Number.isFinite(d.getTime())) return '—';
-      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-    };
-
+  const renderOrder = (order) => {
     if (!order) {
       setText('rcptOrderId', '—');
       setText('rcptOrderDate', '—');
@@ -1551,24 +1639,59 @@
           const line = price * qty;
 
           return `
-          <tr>
-            <td>${nm}</td>
-            <td>${sz}</td>
-            <td class="right">${qty}</td>
-            <td class="right">${escapeHtml(money(price))}</td>
-            <td class="right">${escapeHtml(money(line))}</td>
-          </tr>
-        `;
+            <tr>
+              <td>${nm}</td>
+              <td>${sz}</td>
+              <td class="right">${qty}</td>
+              <td class="right">${escapeHtml(money(price))}</td>
+              <td class="right">${escapeHtml(money(line))}</td>
+            </tr>
+          `;
         }).join('');
       }
     }
+  };
 
-    const printBtn = document.getElementById('printReceiptBtn');
-    if (printBtn && !printBtn.dataset.bound) {
-      printBtn.dataset.bound = '1';
-      printBtn.addEventListener('click', () => window.print());
+  // --- PRODUCTION: try backend first ---
+  try {
+    if (!orderId) throw new Error('Missing order id.');
+
+    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { credentials: 'include' });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) throw new Error(data?.error || 'Could not load receipt.');
+
+    // Accept either { order: {...} } or {...}
+    const order = data?.order ? data.order : data;
+    renderOrder(order);
+  } catch (err) {
+    const msg = String(err?.message || '').toLowerCase();
+    const canFallback =
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('not found') ||
+      msg.includes('unexpected token');
+
+    if (!canFallback) {
+      renderOrder(null);
+      toast(err?.message || 'Could not load receipt.', { important: true });
+      return;
     }
+
+    // --- DEMO FALLBACK ---
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+    const order = orders.find(o => String(o?.id || '') === orderId) || null;
+    renderOrder(order);
   }
+
+  const printBtn = document.getElementById('printReceiptBtn');
+  if (printBtn && !printBtn.dataset.bound) {
+    printBtn.dataset.bound = '1';
+    printBtn.addEventListener('click', () => window.print());
+  }
+}
+
 
 
   // -----------------------------
@@ -1622,9 +1745,7 @@
     renderAccountIfOnAccountPage();
     renderOrdersIfOnOrdersPage();
 
-    renderOrdersIfOnOrdersPage();
     renderReceiptIfOnReceiptPage();
-
   }
 
   document.addEventListener('DOMContentLoaded', init);
