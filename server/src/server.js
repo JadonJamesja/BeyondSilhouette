@@ -8,7 +8,6 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 
-
 import prisma from "./prisma.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { readSession, setSession, clearSession } from "./session.js";
@@ -184,7 +183,7 @@ app.post("/api/auth/google", async (req, res) => {
 
     if (!user) {
       const randomPw = crypto.randomBytes(32).toString("hex");
-      const passwordHash = await hashPassword(randomPw);
+      const passwordHash = hashPassword(randomPw);
 
       user = await prisma.user.create({
         data: {
@@ -197,13 +196,13 @@ app.post("/api/auth/google", async (req, res) => {
       });
     }
 
-    setSession(res, { userId: user.id });
     setSession(res, { userId: user.id, email: user.email, role: user.role });
     return res.json({ ok: true, user });
   } catch (err) {
     return res.status(401).json({ ok: false, error: err?.message || "Invalid Google token" });
   }
 });
+
 // -----------------------------
 // ORDERS (MVP)
 // - Requires authenticated session
@@ -216,18 +215,17 @@ function requireUser(req, res) {
     res.status(401).json({ ok: false, error: "Not authenticated" });
     return null;
   }
-
   return sess;
-  function requireAdmin(req, res) {
-    const sess = requireUser(req, res);
-    if (!sess) return null;
-    if (sess.role !== "admin") {
-      res.status(403).json({ ok: false, error: "Admin only" });
-      return null;
-    }
-    return sess;
-  }
+}
 
+function requireAdmin(req, res) {
+  const sess = requireUser(req, res);
+  if (!sess) return null;
+  if (sess.role !== "admin") {
+    res.status(403).json({ ok: false, error: "Admin only" });
+    return null;
+  }
+  return sess;
 }
 
 function parseQty(v) {
@@ -235,6 +233,116 @@ function parseQty(v) {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.floor(n));
 }
+
+// Create order
+app.post("/api/orders", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+  const items = rawItems
+    .map((it) => ({
+      productId: String(it?.productId || "").trim(),
+      size: String(it?.size || "").trim(),
+      quantity: parseQty(it?.quantity ?? it?.qty),
+    }))
+    .filter((it) => it.productId && it.size && it.quantity > 0);
+
+  if (!items.length) {
+    return res.status(400).json({ ok: false, error: "Cart is empty" });
+  }
+
+  try {
+    const order = await prisma.$transaction(async (tx) => {
+      // Load products in one go (server is source of truth for price)
+      const productIds = Array.from(new Set(items.map((i) => i.productId)));
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, priceJMD: true, isPublished: true, name: true },
+      });
+      const productById = new Map(products.map((p) => [p.id, p]));
+
+      const outOfStock = [];
+
+      for (const it of items) {
+        const p = productById.get(it.productId);
+        if (!p) {
+          outOfStock.push({ productId: it.productId, size: it.size, available: 0, reason: "NOT_FOUND" });
+          continue;
+        }
+
+        // Check inventory (compound unique: productId+size)
+        const inv = await tx.inventory.findUnique({
+          where: { productId_size: { productId: it.productId, size: it.size } },
+          select: { stock: true },
+        });
+
+        const available = Number(inv?.stock ?? 0);
+        if (available < it.quantity) {
+          outOfStock.push({ productId: it.productId, size: it.size, available });
+          continue;
+        }
+
+        // Atomic decrement: only decrement if stock is still >= qty
+        const updated = await tx.inventory.updateMany({
+          where: {
+            productId: it.productId,
+            size: it.size,
+            stock: { gte: it.quantity },
+          },
+          data: { stock: { decrement: it.quantity } },
+        });
+
+        if (updated.count !== 1) {
+          const inv2 = await tx.inventory.findUnique({
+            where: { productId_size: { productId: it.productId, size: it.size } },
+            select: { stock: true },
+          });
+          outOfStock.push({ productId: it.productId, size: it.size, available: Number(inv2?.stock ?? 0) });
+        }
+      }
+
+      if (outOfStock.length) {
+        const err = new Error("OUT_OF_STOCK");
+        err.code = "OUT_OF_STOCK";
+        err.details = outOfStock;
+        throw err;
+      }
+
+      const orderItems = items.map((it) => {
+        const p = productById.get(it.productId);
+        return {
+          productId: it.productId,
+          size: it.size,
+          quantity: it.quantity,
+          unitPrice: Number(p?.priceJMD ?? 0),
+        };
+      });
+
+      const subtotal = orderItems.reduce((sum, li) => sum + li.unitPrice * li.quantity, 0);
+      const total = subtotal;
+
+      return tx.order.create({
+        data: {
+          userId: sess.userId,
+          subtotal,
+          total,
+          currency: "JMD",
+          status: "processing",
+          items: { create: orderItems },
+        },
+        select: { id: true, subtotal: true, total: true, currency: true, status: true, createdAt: true },
+      });
+    });
+
+    return res.status(201).json({ ok: true, order });
+  } catch (err) {
+    if (err?.code === "OUT_OF_STOCK") {
+      return res.status(409).json({ ok: false, code: "OUT_OF_STOCK", items: err.details || [] });
+    }
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to create order" });
+  }
+});
 
 // List my orders (canonical)
 app.get("/api/orders/my", async (req, res) => {
@@ -264,7 +372,6 @@ app.get("/api/orders/my", async (req, res) => {
       },
     });
 
-    // Add compatibility aliases expected by frontend
     const orders = ordersRaw.map((o) => ({
       ...o,
       subtotalJMD: o.subtotal,
@@ -273,12 +380,9 @@ app.get("/api/orders/my", async (req, res) => {
 
     return res.json({ ok: true, orders });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ ok: false, error: err?.message || "Failed to load orders" });
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
   }
 });
-
 
 // Backward-compatible alias (frontend in ZIP calls this)
 app.get("/api/orders/me", async (req, res) => {
@@ -344,7 +448,6 @@ app.get("/api/orders/:id", async (req, res) => {
 
     if (!o) return res.status(404).json({ ok: false, error: "Order not found" });
 
-    // Shape to match frontend expectations
     const order = {
       id: o.id,
       createdAt: o.createdAt,
@@ -366,29 +469,154 @@ app.get("/api/orders/:id", async (req, res) => {
   }
 });
 
-
-
-// Add compatibility aliases expected by frontend
-const orders = ordersRaw.map((o) => ({
-  ...o,
-  subtotalJMD: o.subtotal,
-  totalJMD: o.total,
-}));
-
-return res.json({ ok: true, orders });
-  } catch (err) {
-  return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
-}
-});
-
 // -----------------------------
 // ADMIN (requires admin role)
 // -----------------------------
 
-GET    /api/admin/products
-POST   /api/admin/products
-PATCH  /api/admin/products/:id
-PATCH  /api/admin/inventory
+// GET /api/admin/products
+app.get("/api/admin/products", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const products = await prisma.product.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        priceJMD: true,
+        isPublished: true,
+        createdAt: true,
+        updatedAt: true,
+        images: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            id: true,
+            url: true,
+            alt: true,
+            sortOrder: true,
+            createdAt: true,
+          },
+        },
+        inventory: {
+          orderBy: { size: "asc" },
+          select: {
+            id: true,
+            size: true,
+            stock: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return res.json({ ok: true, products });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err?.message || "Failed to load admin products",
+    });
+  }
+});
+
+// POST /api/admin/products
+app.post("/api/admin/products", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const name = String(req.body?.name || "").trim();
+    const slugRaw = req.body?.slug;
+    const slug = slugRaw === null || slugRaw === undefined ? null : String(slugRaw).trim() || null;
+
+    const descriptionRaw = req.body?.description;
+    const description =
+      descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
+
+    const priceJMDNum = Number(req.body?.priceJMD);
+    const priceJMD = Number.isFinite(priceJMDNum) ? Math.max(0, Math.round(priceJMDNum)) : NaN;
+
+    const isPublished = Boolean(req.body?.isPublished);
+
+    const imagesIn = Array.isArray(req.body?.images) ? req.body.images : [];
+    const inventoryIn = Array.isArray(req.body?.inventory) ? req.body.inventory : [];
+
+    if (!name) return res.status(400).json({ ok: false, error: "name is required" });
+    if (!Number.isFinite(priceJMD)) return res.status(400).json({ ok: false, error: "priceJMD must be a number" });
+
+    const images = imagesIn
+      .map((img) => ({
+        url: String(img?.url || "").trim(),
+        alt: img?.alt === undefined || img?.alt === null ? null : String(img.alt).trim() || null,
+        sortOrder: Number.isFinite(Number(img?.sortOrder)) ? Math.round(Number(img.sortOrder)) : 0,
+      }))
+      .filter((img) => img.url);
+
+    // De-dupe inventory by size (keep last)
+    const invMap = new Map();
+    for (const row of inventoryIn) {
+      const size = String(row?.size || "").trim();
+      if (!size) continue;
+      const stockNum = Number(row?.stock);
+      const stock = Number.isFinite(stockNum) ? Math.max(0, Math.round(stockNum)) : 0;
+      invMap.set(size, stock);
+    }
+    const inventory = Array.from(invMap.entries()).map(([size, stock]) => ({ size, stock }));
+
+    const created = await prisma.product.create({
+      data: {
+        slug,
+        name,
+        description,
+        priceJMD,
+        isPublished,
+        images: images.length ? { create: images } : undefined,
+        inventory: inventory.length ? { create: inventory } : undefined,
+      },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        priceJMD: true,
+        isPublished: true,
+        createdAt: true,
+        updatedAt: true,
+        images: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            id: true,
+            url: true,
+            alt: true,
+            sortOrder: true,
+            createdAt: true,
+          },
+        },
+        inventory: {
+          orderBy: { size: "asc" },
+          select: {
+            id: true,
+            size: true,
+            stock: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return res.status(201).json({ ok: true, product: created });
+  } catch (err) {
+    // Prisma unique errors (e.g., slug unique)
+    const msg = String(err?.message || "");
+    if (msg.includes("Unique constraint") || msg.includes("unique") || err?.code === "P2002") {
+      return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/email/etc)" });
+    }
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to create product" });
+  }
+});
 
 // -----------------------------
 // FRONTEND (same-domain hosting)
