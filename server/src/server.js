@@ -149,6 +149,9 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 // Optional: Google Sign-In (only works if GOOGLE_CLIENT_ID is set)
+// Accepts either:
+// - { credential: "..." }  (Google Identity Services)
+// - { idToken: "..." }     (older/manual testing)
 app.post("/api/auth/google", async (req, res) => {
   if (!googleClient) {
     return res.status(501).json({
@@ -158,20 +161,20 @@ app.post("/api/auth/google", async (req, res) => {
     });
   }
 
-  const idToken = String(req.body?.idToken || "").trim();
-  if (!idToken) {
-    return res.status(400).json({ ok: false, error: "Missing idToken" });
+  const token = String(req.body?.credential || req.body?.idToken || "").trim();
+  if (!token) {
+    return res.status(400).json({ ok: false, error: "Missing credential" });
   }
 
   try {
     const ticket = await googleClient.verifyIdToken({
-      idToken,
+      idToken: token,
       audience: GOOGLE_CLIENT_ID,
     });
 
     const payload = ticket.getPayload();
     const email = String(payload?.email || "").trim().toLowerCase();
-    const name = String(payload?.name || "").trim();
+    const name = String(payload?.name || "").trim() || null;
 
     if (!email) return res.status(400).json({ ok: false, error: "Google token missing email" });
 
@@ -186,12 +189,7 @@ app.post("/api/auth/google", async (req, res) => {
       const passwordHash = hashPassword(randomPw);
 
       user = await prisma.user.create({
-        data: {
-          email,
-          name: name || null,
-          passwordHash,
-          role: "customer",
-        },
+        data: { email, name, passwordHash, role: "customer" },
         select: { id: true, email: true, name: true, role: true, createdAt: true },
       });
     }
@@ -204,10 +202,41 @@ app.post("/api/auth/google", async (req, res) => {
 });
 
 // -----------------------------
-// ORDERS (MVP)
-// - Requires authenticated session
-// - Validates products + per-size inventory
-// - Atomically decrements stock in a DB transaction
+// DEV ONLY: Promote user to admin (remove after use)
+// Protect with DEV_ADMIN_SECRET (Railway env var)
+// -----------------------------
+app.post("/api/dev/make-admin", async (req, res) => {
+  const secret = String(req.body?.secret || "");
+  const email = String(req.body?.email || "").trim().toLowerCase();
+
+  if (!process.env.DEV_ADMIN_SECRET) {
+    return res.status(500).json({ ok: false, error: "DEV_ADMIN_SECRET is not set" });
+  }
+  if (secret !== String(process.env.DEV_ADMIN_SECRET)) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+  if (!email) {
+    return res.status(400).json({ ok: false, error: "Email is required" });
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { email },
+      data: { role: "admin" },
+      select: { id: true, email: true, role: true },
+    });
+
+    // Update session too (useful if you're logged in as this user)
+    setSession(res, { userId: user.id, email: user.email, role: user.role });
+
+    return res.json({ ok: true, user });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to promote user" });
+  }
+});
+
+// -----------------------------
+// HELPERS (auth gates used below)
 // -----------------------------
 function requireUser(req, res) {
   const sess = readSession(req);
@@ -234,7 +263,9 @@ function parseQty(v) {
   return Math.max(0, Math.floor(n));
 }
 
-// Create order
+// -----------------------------
+// ORDERS (MVP)
+// -----------------------------
 app.post("/api/orders", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
@@ -372,6 +403,7 @@ app.get("/api/orders/my", async (req, res) => {
       },
     });
 
+    // Add compatibility aliases expected by frontend
     const orders = ordersRaw.map((o) => ({
       ...o,
       subtotalJMD: o.subtotal,
@@ -448,6 +480,7 @@ app.get("/api/orders/:id", async (req, res) => {
 
     if (!o) return res.status(404).json({ ok: false, error: "Order not found" });
 
+    // Shape to match frontend expectations
     const order = {
       id: o.id,
       createdAt: o.createdAt,
@@ -609,7 +642,6 @@ app.post("/api/admin/products", async (req, res) => {
 
     return res.status(201).json({ ok: true, product: created });
   } catch (err) {
-    // Prisma unique errors (e.g., slug unique)
     const msg = String(err?.message || "");
     if (msg.includes("Unique constraint") || msg.includes("unique") || err?.code === "P2002") {
       return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/email/etc)" });
@@ -619,13 +651,46 @@ app.post("/api/admin/products", async (req, res) => {
 });
 
 // -----------------------------
+// ADMIN PAGE PATHWAY + GATE (server-side)
+// -----------------------------
+app.get("/admin", (req, res) => {
+  const sess = readSession(req);
+  if (!sess?.userId) return res.redirect("/admin/login.html");
+  if (sess.role !== "admin") return res.redirect("/");
+  return res.redirect("/admin/dashboard.html");
+});
+
+app.use("/admin", (req, res, next) => {
+  const p = req.path || "/";
+
+  // Always allow login page (and typical static assets) without admin role
+  const isPublic =
+    p === "/login.html" ||
+    p.endsWith(".css") ||
+    p.endsWith(".js") ||
+    p.endsWith(".png") ||
+    p.endsWith(".jpg") ||
+    p.endsWith(".jpeg") ||
+    p.endsWith(".webp") ||
+    p.endsWith(".svg") ||
+    p.endsWith(".ico");
+
+  if (isPublic) return next();
+
+  const sess = readSession(req);
+  if (!sess?.userId) return res.redirect("/admin/login.html");
+  if (sess.role !== "admin") return res.redirect("/");
+
+  return next();
+});
+
+// -----------------------------
 // FRONTEND (same-domain hosting)
 // -----------------------------
-// Repo layout: /client and /server (this file is /server/src/server.js)
-// Project root is TWO levels up from /server/src
 const projectRoot = path.resolve(__dirname, "..", "..");
 const clientDir = path.join(projectRoot, "client");
 
+// Static files (this comes AFTER admin gate middleware on purpose)
 app.use(express.static(clientDir));
 
 // Serve homepage
