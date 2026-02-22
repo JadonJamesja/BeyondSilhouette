@@ -40,6 +40,7 @@ app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 // -----------------------------
 app.get("/api/health", (req, res) => {
  res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString(), build: "b00a29f" });
+});
 
 // DB connectivity smoke test (Prisma)
 app.get("/api/db/health", async (req, res) => {
