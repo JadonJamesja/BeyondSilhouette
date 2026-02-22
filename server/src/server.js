@@ -39,7 +39,12 @@ app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 // API
 // -----------------------------
 app.get("/api/health", (req, res) => {
- res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString(), build: "b00a29f" });
+  res.json({
+    ok: true,
+    service: "beyond-silhouette",
+    time: new Date().toISOString(),
+    build: "b00a29f",
+  });
 });
 
 // DB connectivity smoke test (Prisma)
@@ -566,8 +571,7 @@ app.post("/api/admin/products", async (req, res) => {
     const slug = slugRaw === null || slugRaw === undefined ? null : String(slugRaw).trim() || null;
 
     const descriptionRaw = req.body?.description;
-    const description =
-      descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
+    const description = descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
 
     const priceJMDNum = Number(req.body?.priceJMD);
     const priceJMD = Number.isFinite(priceJMDNum) ? Math.max(0, Math.round(priceJMDNum)) : NaN;
@@ -647,6 +651,162 @@ app.post("/api/admin/products", async (req, res) => {
       return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/email/etc)" });
     }
     return res.status(500).json({ ok: false, error: err?.message || "Failed to create product" });
+  }
+});
+
+// PATCH /api/admin/products/:id
+// - Updates fields provided in body
+// - If body.images is provided (array), replaces all images
+// - If body.inventory is provided (array), replaces all inventory rows
+app.patch("/api/admin/products/:id", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+
+  const id = String(req.params?.id || "").trim();
+  if (!id) return res.status(400).json({ ok: false, error: "Missing product id" });
+
+  try {
+    const data = {};
+
+    if ("name" in req.body) {
+      const name = String(req.body?.name || "").trim();
+      if (!name) return res.status(400).json({ ok: false, error: "name cannot be empty" });
+      data.name = name;
+    }
+
+    if ("slug" in req.body) {
+      const slugRaw = req.body?.slug;
+      data.slug = slugRaw === null || slugRaw === undefined ? null : String(slugRaw).trim() || null;
+    }
+
+    if ("description" in req.body) {
+      const d = req.body?.description;
+      data.description = d === null || d === undefined ? null : String(d).trim() || null;
+    }
+
+    if ("priceJMD" in req.body) {
+      const priceJMDNum = Number(req.body?.priceJMD);
+      if (!Number.isFinite(priceJMDNum)) {
+        return res.status(400).json({ ok: false, error: "priceJMD must be a number" });
+      }
+      data.priceJMD = Math.max(0, Math.round(priceJMDNum));
+    }
+
+    if ("isPublished" in req.body) {
+      data.isPublished = Boolean(req.body?.isPublished);
+    }
+
+    const imagesIn = Array.isArray(req.body?.images) ? req.body.images : null;
+    const inventoryIn = Array.isArray(req.body?.inventory) ? req.body.inventory : null;
+
+    const product = await prisma.$transaction(async (tx) => {
+      const exists = await tx.product.findUnique({ where: { id }, select: { id: true } });
+      if (!exists) return null;
+
+      if (imagesIn) {
+        await tx.productImage.deleteMany({ where: { productId: id } });
+
+        const images = imagesIn
+          .map((img) => ({
+            productId: id,
+            url: String(img?.url || "").trim(),
+            alt: img?.alt === undefined || img?.alt === null ? null : String(img.alt).trim() || null,
+            sortOrder: Number.isFinite(Number(img?.sortOrder)) ? Math.round(Number(img.sortOrder)) : 0,
+          }))
+          .filter((img) => img.url);
+
+        if (images.length) await tx.productImage.createMany({ data: images });
+      }
+
+      if (inventoryIn) {
+        await tx.inventory.deleteMany({ where: { productId: id } });
+
+        const invMap = new Map();
+        for (const row of inventoryIn) {
+          const size = String(row?.size || "").trim();
+          if (!size) continue;
+          const stockNum = Number(row?.stock);
+          const stock = Number.isFinite(stockNum) ? Math.max(0, Math.round(stockNum)) : 0;
+          invMap.set(size, stock);
+        }
+        const invRows = Array.from(invMap.entries()).map(([size, stock]) => ({ productId: id, size, stock }));
+        if (invRows.length) await tx.inventory.createMany({ data: invRows });
+      }
+
+      if (Object.keys(data).length) {
+        await tx.product.update({ where: { id }, data });
+      }
+
+      return tx.product.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          priceJMD: true,
+          isPublished: true,
+          createdAt: true,
+          updatedAt: true,
+          images: {
+            orderBy: { sortOrder: "asc" },
+            select: { id: true, url: true, alt: true, sortOrder: true, createdAt: true },
+          },
+          inventory: {
+            orderBy: { size: "asc" },
+            select: { id: true, size: true, stock: true, updatedAt: true },
+          },
+        },
+      });
+    });
+
+    if (!product) return res.status(404).json({ ok: false, error: "Product not found" });
+    return res.json({ ok: true, product });
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (msg.includes("Unique constraint") || msg.includes("unique") || err?.code === "P2002") {
+      return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/etc)" });
+    }
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to update product" });
+  }
+});
+
+// PATCH /api/admin/inventory
+// Body: { rows: [{ productId, size, stock }] }
+// Sets absolute stock for each row (bulk upsert).
+app.patch("/api/admin/inventory", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+
+  const rowsIn = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const rows = rowsIn
+    .map((r) => ({
+      productId: String(r?.productId || "").trim(),
+      size: String(r?.size || "").trim(),
+      stock: Number.isFinite(Number(r?.stock)) ? Math.max(0, Math.round(Number(r.stock))) : null,
+    }))
+    .filter((r) => r.productId && r.size && r.stock !== null);
+
+  if (!rows.length) return res.status(400).json({ ok: false, error: "rows[] is required" });
+
+  try {
+    const inventory = await prisma.$transaction(async (tx) => {
+      const out = [];
+      for (const r of rows) {
+        const inv = await tx.inventory.upsert({
+          where: { productId_size: { productId: r.productId, size: r.size } },
+          create: { productId: r.productId, size: r.size, stock: r.stock },
+          update: { stock: r.stock },
+          select: { id: true, productId: true, size: true, stock: true, updatedAt: true },
+        });
+        out.push(inv);
+      }
+      return out;
+    });
+
+    return res.json({ ok: true, inventory });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to update inventory" });
   }
 });
 
