@@ -186,7 +186,7 @@
   }
 
   // -----------------------------
-  // API helper (used for Google login if backend exists)
+  // API helper (server cookie session)
   // -----------------------------
   async function apiJson(path, { method = 'GET', body } = {}) {
     const res = await fetch(path, {
@@ -200,32 +200,144 @@
   }
 
   // -----------------------------
-  // AUTH (LOCAL DEMO)
+  // AUTH (SERVER FIRST, DEMO FALLBACK)
   // -----------------------------
   const Auth = {
+    _serverUser: null, // { id, email, name, role, createdAt, ... } from /api/me
+
+    async bootstrap() {
+      // Try to hydrate auth from server cookie session
+      try {
+        const { ok, data } = await apiJson('/api/me');
+        if (ok && data?.user?.email) {
+          this._serverUser = data.user;
+
+          // Mirror into local users store for UI pages that read from readUsers()
+          const em = String(data.user.email).trim().toLowerCase();
+          const users = readUsers();
+          users[em] = users[em] || {};
+          users[em].email = em;
+          users[em].name = users[em].name || data.user.name || em;
+          users[em].createdAt = users[em].createdAt || data.user.createdAt || nowISO();
+          users[em].role = data.user.role || users[em].role || 'customer';
+          writeUsers(users);
+
+          // Mark session provider as server (cookie is source of truth)
+          writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'server' });
+
+          Cart.mergeGuestIntoUser(em);
+          return true;
+        }
+
+        // Not logged in on server
+        this._serverUser = null;
+        // DO NOT clear local demo session automatically; allow fallback
+        return false;
+      } catch (_) {
+        // If server not reachable or not running API, keep demo behavior
+        this._serverUser = null;
+        return false;
+      }
+    },
+
     currentUser() {
+      // Prefer server user if present
+      if (this._serverUser?.email) {
+        const em = String(this._serverUser.email).trim().toLowerCase();
+        const users = readUsers();
+        // prefer locally-stored user fields if they exist, otherwise server fields
+        return users[em] || {
+          email: em,
+          name: this._serverUser.name || em,
+          createdAt: this._serverUser.createdAt || nowISO(),
+          role: this._serverUser.role || 'customer'
+        };
+      }
+
+      // Demo fallback
       const sess = readSession();
       if (!sess || !sess.email) return null;
       const users = readUsers();
       return users[sess.email] || null;
     },
 
-    register({ fullname, email, password, confirmPassword }) {
+    async registerServer({ fullname, email, password }) {
+      const name = String(fullname || '').trim();
+      const em = String(email || '').trim().toLowerCase();
+      const pw = String(password || '').trim();
+
+      const { ok, data, status } = await apiJson('/api/auth/register', {
+        method: 'POST',
+        body: { name, email: em, password: pw }
+      });
+
+      if (!ok) {
+        const msg = data?.error || `Registration failed (${status})`;
+        throw new Error(msg);
+      }
+
+      // After register, cookie session should be set; bootstrap from /api/me for consistency
+      await this.bootstrap();
+      return data?.user || null;
+    },
+
+    async loginServer({ email, password }) {
+      const em = String(email || '').trim().toLowerCase();
+      const pw = String(password || '').trim();
+
+      const { ok, data, status } = await apiJson('/api/auth/login', {
+        method: 'POST',
+        body: { email: em, password: pw }
+      });
+
+      if (!ok) {
+        const msg = data?.error || `Login failed (${status})`;
+        throw new Error(msg);
+      }
+
+      await this.bootstrap();
+      return data?.user || null;
+    },
+
+    async logoutServer() {
+      // Cookie session clear
+      await apiJson('/api/auth/logout', { method: 'POST' }).catch(() => null);
+      this._serverUser = null;
+      // Also clear demo session so UI resets
+      clearSession();
+    },
+
+    // Public API used by forms (server-first, demo fallback)
+    async register({ fullname, email, password, confirmPassword }) {
       const em = String(email || '').trim().toLowerCase();
       const name = String(fullname || '').trim();
 
-      // Normalize password inputs (fixes false mismatch due to whitespace/autofill)
       const pw = String(password || '').trim();
       const cpw = String(confirmPassword || '').trim();
 
       if (!name || !em || !pw) throw new Error('Please fill in all required fields.');
 
-      // Only enforce confirm if the field exists (non-empty OR explicitly provided)
-      // but always compare trimmed values to avoid false mismatch.
       if (confirmPassword != null && cpw !== '' && pw !== cpw) {
         throw new Error('Passwords do not match.');
       }
 
+      // Try server first
+      try {
+        const u = await this.registerServer({ fullname: name, email: em, password: pw });
+        return u;
+      } catch (err) {
+        // Only fallback if server endpoint is missing/unreachable
+        const msg = String(err?.message || '').toLowerCase();
+        const canFallback =
+          msg.includes('failed to fetch') ||
+          msg.includes('networkerror') ||
+          msg.includes('not found') ||
+          msg.includes('unexpected token');
+
+        if (!canFallback) throw err;
+      }
+
+      // ---- DEMO FALLBACK ----
       const users = readUsers();
       if (users[em]) throw new Error('An account already exists for this email.');
 
@@ -244,10 +356,26 @@
       return users[em];
     },
 
-    login({ email, password }) {
+    async login({ email, password }) {
       const em = String(email || '').trim().toLowerCase();
       const pw = String(password || '').trim();
 
+      // Try server first
+      try {
+        const u = await this.loginServer({ email: em, password: pw });
+        return u;
+      } catch (err) {
+        const msg = String(err?.message || '').toLowerCase();
+        const canFallback =
+          msg.includes('failed to fetch') ||
+          msg.includes('networkerror') ||
+          msg.includes('not found') ||
+          msg.includes('unexpected token');
+
+        if (!canFallback) throw err;
+      }
+
+      // ---- DEMO FALLBACK ----
       const users = readUsers();
       const u = users[em];
 
@@ -260,6 +388,7 @@
     },
 
     updateProfile({ name, currentPassword, newPassword }) {
+      // NOTE: still demo-only in this file (we can add server endpoint later if you want)
       const user = this.currentUser();
       if (!user || !user.email) throw new Error('Please log in to continue.');
 
@@ -283,14 +412,12 @@
         throw new Error('Current password is incorrect.');
       }
 
-      // Update allowed fields only
       u.name = nm;
 
       if (next) {
         u.passwordHash = demoHash(next);
       }
 
-      // Preserve protected fields
       u.email = u.email || em;
       u.createdAt = u.createdAt || user.createdAt || nowISO();
       u.role = u.role || user.role || 'customer';
@@ -298,7 +425,6 @@
       users[em] = u;
       writeUsers(users);
 
-      // Session is keyed by email; keep consistent
       const sess = readSession();
       if (sess && String(sess.email || '').toLowerCase() === em) {
         writeSession(sess);
@@ -307,9 +433,6 @@
       return u;
     },
 
-    // -----------------------------
-    // OPTION B: REQUEST PASSWORD RESET (DEMO)
-    // -----------------------------
     requestPasswordReset(email) {
       const em = String(email || '').trim().toLowerCase();
       if (!em) throw new Error('Please enter your email.');
@@ -328,9 +451,6 @@
       return { code, expiresAt };
     },
 
-    // -----------------------------
-    // OPTION B: RESET PASSWORD (DEMO)
-    // -----------------------------
     resetPassword({ email, code, newPassword }) {
       const em = String(email || '').trim().toLowerCase();
       const cd = String(code || '').trim();
@@ -358,10 +478,8 @@
         throw new Error('Reset code is incorrect.');
       }
 
-      // Update password hash (demo)
       u.passwordHash = demoHash(np);
 
-      // Preserve protected fields
       u.email = u.email || em;
       u.createdAt = u.createdAt || nowISO();
       u.role = u.role || 'customer';
@@ -369,15 +487,23 @@
       users[em] = u;
       writeUsers(users);
 
-      // Single-use token
       delete resets[em];
       writePwResets(resets);
 
       return true;
     },
 
-    logout() {
+    async logout() {
+      // Try server logout first if we appear to be server-authenticated
+      const sess = readSession();
+      if (sess?.provider === 'server' || this._serverUser?.email) {
+        await this.logoutServer();
+        return;
+      }
+
+      // Demo logout
       clearSession();
+      this._serverUser = null;
     }
   };
 
@@ -416,7 +542,6 @@
 
       const existing = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
 
-      // If we can resolve stock for this size, clamp adds to available stock.
       if (base !== null && Number.isFinite(base)) {
         const otherQty = items.reduce((sum, row) => {
           if (row !== existing && String(row.productId) === pid && String(row.size || '') === sz) {
@@ -438,7 +563,6 @@
         return;
       }
 
-      // Fallback: no stock info available, allow add.
       if (existing) {
         existing.qty = Number(existing.qty || 0) + qAdd;
       } else {
@@ -468,7 +592,6 @@
       const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
       const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
 
-      // If we can resolve stock for this size, enforce per-size limits.
       if (base !== null && Number.isFinite(base)) {
         const otherQty = items.reduce((sum, row) => {
           if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
@@ -480,7 +603,6 @@
         const maxAllowed = Math.max(0, base - otherQty);
 
         if (maxAllowed <= 0) {
-          // No stock available for this size => remove line from cart.
           const nextItems = items.filter(row => row !== it);
           this.save(nextItems);
           return 0;
@@ -492,7 +614,6 @@
         return applied;
       }
 
-      // Fallback: no stock info available, allow.
       it.qty = desired;
       this.save(items);
       return desired;
@@ -513,7 +634,6 @@
 
       const userItems = st.cartByUser[email]?.items || [];
       const merged = Array.isArray(userItems) ? userItems.slice() : [];
-
 
       guest.forEach(g => {
         const pid = String(g.productId);
@@ -644,26 +764,8 @@
         return;
       }
 
-      const u = data?.user;
-      if (!u?.email) {
-        toast('Google sign-in failed: missing user email.', { important: true });
-        return;
-      }
-
-      const em = String(u.email).trim().toLowerCase();
-      const users = readUsers();
-      users[em] = users[em] || {};
-      users[em].email = em;
-      users[em].name = users[em].name || u.name || em;
-      users[em].createdAt = users[em].createdAt || u.createdAt || nowISO();
-      users[em].role = users[em].role || u.role || 'customer';
-      writeUsers(users);
-
-      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'google' });
-
-      Cart.mergeGuestIntoUser(em);
-      UI.updateNavAuthState();
-      UI.updateCartBadges();
+      // cookie session should be set by server
+      await Auth.bootstrap();
 
       const rt = safeParse(localStorage.getItem(KEYS.returnTo));
       localStorage.removeItem(KEYS.returnTo);
@@ -799,7 +901,7 @@
   }
 
   // -----------------------------
-  // CART PAGE (supports current IDs and legacy markup)
+  // CART PAGE
   // -----------------------------
   function renderCartIfOnCartPage() {
     if (!page().includes('cart.html')) return;
@@ -1034,7 +1136,7 @@
   }
 
   // -----------------------------
-  // AUTH GATE (LOCAL DEMO)
+  // AUTH GATE (uses Auth.currentUser() which now prefers server session)
   // -----------------------------
   function gateCheckoutAndOrders() {
     const p = page();
@@ -1058,14 +1160,14 @@
     const form = document.querySelector('form');
     if (!form) return;
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const email = (form.querySelector('input[type="email"]')?.value || '').trim();
       const password = (form.querySelector('input[type="password"]')?.value || '').trim();
 
       try {
-        Auth.login({ email, password });
+        await Auth.login({ email, password });
         UI.updateNavAuthState();
         UI.updateCartBadges();
 
@@ -1084,7 +1186,7 @@
     const form = document.querySelector('form');
     if (!form) return;
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
@@ -1099,7 +1201,7 @@
         )?.value || '').trim();
 
       try {
-        Auth.register({ fullname, email, password, confirmPassword });
+        await Auth.register({ fullname, email, password, confirmPassword });
         UI.updateNavAuthState();
         UI.updateCartBadges();
         toast('Account created.');
@@ -1111,7 +1213,7 @@
   }
 
   // -----------------------------
-  // FORGOT PASSWORD (OPTION B)
+  // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
   // -----------------------------
   function bindForgotPasswordForm() {
     if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
@@ -1159,9 +1261,6 @@
     }
   }
 
-  // -----------------------------
-  // RESET PASSWORD (OPTION B)
-  // -----------------------------
   function bindResetPasswordForm() {
     if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
 
@@ -1200,9 +1299,6 @@
     });
   }
 
-  // -----------------------------
-  // EDIT PROFILE (FULL)
-  // -----------------------------
   function bindEditProfileForm() {
     if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
 
@@ -1274,11 +1370,12 @@
   // LOGOUT + ACCOUNT
   // -----------------------------
   function bindLogoutLinks() {
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
       const a = e.target.closest('a[href="logout.html"]');
       if (!a) return;
       e.preventDefault();
-      Auth.logout();
+
+      await Auth.logout();
       UI.updateNavAuthState();
       UI.updateCartBadges();
       toast('Logged out.');
@@ -1302,111 +1399,108 @@
   // -----------------------------
   // ORDERS PAGE
   // -----------------------------
- async function renderOrdersIfOnOrdersPage() {
-  if (page() !== 'orders.html' && page() !== 'orders') return;
+  async function renderOrdersIfOnOrdersPage() {
+    if (page() !== 'orders.html' && page() !== 'orders') return;
 
-  const user = Auth.currentUser();
-  const listEl = $('#ordersList');
-  if (!listEl) return;
+    const user = Auth.currentUser();
+    const listEl = $('#ordersList');
+    if (!listEl) return;
 
-  if (!user || !user.email) {
-    listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
-    return;
-  }
-
-  const fmtDate = (iso) => {
-    const d = iso ? new Date(iso) : null;
-    if (!d || !Number.isFinite(d.getTime())) return '—';
-    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-  };
-
-  const safe = (s) => escapeHtml(String(s || ''));
-
-  const renderList = (orders) => {
-    if (!Array.isArray(orders) || !orders.length) {
-      listEl.innerHTML = `
-        <div class="order-card">
-          <div class="order-row">
-            <strong>No orders yet</strong>
-            <span class="muted">Once you check out, your orders will appear here.</span>
-          </div>
-          <div class="order-row">
-            <a class="btn btn-primary" href="shop-page.html">Go shopping</a>
-          </div>
-        </div>
-      `;
+    if (!user || !user.email) {
+      listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
       return;
     }
 
-    const sorted = orders.slice().sort((a, b) => {
-      const ta = new Date(a?.createdAt || 0).getTime();
-      const tb = new Date(b?.createdAt || 0).getTime();
-      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-    });
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
 
-    listEl.innerHTML = sorted.map(o => {
-      const id = safe(o.id);
-      const status = safe(o.status || 'Placed');
-      const total = money(o.totalJMD || 0);
-      const date = safe(fmtDate(o.createdAt));
+    const safe = (s) => escapeHtml(String(s || ''));
 
-      return `
-        <div class="order-card">
-          <div class="order-row">
-            <strong>Order #</strong> <span>${id}</span>
+    const renderList = (orders) => {
+      if (!Array.isArray(orders) || !orders.length) {
+        listEl.innerHTML = `
+          <div class="order-card">
+            <div class="order-row">
+              <strong>No orders yet</strong>
+              <span class="muted">Once you check out, your orders will appear here.</span>
+            </div>
+            <div class="order-row">
+              <a class="btn btn-primary" href="shop-page.html">Go shopping</a>
+            </div>
           </div>
-          <div class="order-row">
-            <strong>Date</strong> <span>${date}</span>
-          </div>
-          <div class="order-row">
-            <strong>Status</strong> <span>${status}</span>
-          </div>
-          <div class="order-row">
-            <strong>Total</strong> <span>${total}</span>
-          </div>
-          <div class="order-row">
-            <a class="btn btn-ghost" href="receipt.html?order=${encodeURIComponent(o.id || '')}">View receipt</a>
-          </div>
-        </div>
-      `;
-    }).join('');
-  };
+        `;
+        return;
+      }
 
-  // --- PRODUCTION: try backend first ---
-  try {
-    const res = await fetch('/api/orders/me', { credentials: 'include' });
-    const data = await res.json().catch(() => null);
+      const sorted = orders.slice().sort((a, b) => {
+        const ta = new Date(a?.createdAt || 0).getTime();
+        const tb = new Date(b?.createdAt || 0).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
 
-    if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
+      listEl.innerHTML = sorted.map(o => {
+        const id = safe(o.id);
+        const status = safe(o.status || 'Placed');
+        const total = money(o.totalJMD || 0);
+        const date = safe(fmtDate(o.createdAt));
 
-    // Accept either { orders: [...] } or [...]
-    const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+        return `
+          <div class="order-card">
+            <div class="order-row">
+              <strong>Order #</strong> <span>${id}</span>
+            </div>
+            <div class="order-row">
+              <strong>Date</strong> <span>${date}</span>
+            </div>
+            <div class="order-row">
+              <strong>Status</strong> <span>${status}</span>
+            </div>
+            <div class="order-row">
+              <strong>Total</strong> <span>${total}</span>
+            </div>
+            <div class="order-row">
+              <a class="btn btn-ghost" href="receipt.html?order=${encodeURIComponent(o.id || '')}">View receipt</a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    };
+
+    // --- PRODUCTION: try backend first ---
+    try {
+      const res = await fetch('/api/orders/me', { credentials: 'include' });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
+
+      const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+      renderList(orders);
+      return;
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const canFallback =
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('not found') ||
+        msg.includes('unexpected token');
+
+      if (!canFallback) {
+        listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
+        return;
+      }
+    }
+
+    // --- DEMO FALLBACK ---
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
     renderList(orders);
-    return;
-  } catch (err) {
-    const msg = String(err?.message || '').toLowerCase();
-    const canFallback =
-      msg.includes('failed to fetch') ||
-      msg.includes('networkerror') ||
-      msg.includes('not found') ||
-      msg.includes('unexpected token');
-
-    if (!canFallback) {
-      listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
-      return;
-    }
   }
-
-  // --- DEMO FALLBACK ---
-  const st = readState();
-  const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
-  renderList(orders);
-}
-
-
 
   // -----------------------------
-  // CHECKOUT PAGE (DEMO)
+  // CHECKOUT PAGE (DEMO + server order create)
   // -----------------------------
   function renderCheckoutIfOnCheckoutPage() {
     if (page() !== 'checkout.html' && page() !== 'checkout') return;
@@ -1489,7 +1583,6 @@
           return;
         }
 
-        // Always build from "filled" so name/price/image are correct
         const orderItemsResolved = filled.map(it => ({
           productId: String(it.productId),
           size: String(it.size || ''),
@@ -1499,13 +1592,8 @@
           image: String(it.image || '')
         }));
 
-        // Total from the already computed subtotal
-        const totalJMD = Number(subtotal || 0);
-
-        // --- PRODUCTION PATH: try backend first ---
         try {
           const payload = {
-            // keep payload minimal; backend should resolve prices from DB
             items: orderItemsResolved.map(it => ({
               productId: it.productId,
               size: it.size,
@@ -1523,17 +1611,11 @@
           const data = await res.json().catch(() => null);
 
           if (!res.ok) {
-            // If backend exists but returns an error, show it (no demo fallback)
             throw new Error(data?.error || 'Could not place order.');
           }
 
-          // Expect backend to return { orderId } (or { order: { id } })
-          const orderId =
-            String(data?.orderId || data?.order?.id || '').trim();
-
-          if (!orderId) {
-            throw new Error('Order placed but missing order id from server.');
-          }
+          const orderId = String(data?.orderId || data?.order?.id || '').trim();
+          if (!orderId) throw new Error('Order placed but missing order id from server.');
 
           Cart.clear();
           UI.updateCartBadges();
@@ -1541,14 +1623,12 @@
           location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
           return;
         } catch (err) {
-          // If server route doesn't exist (static hosting), fall back to demo.
-          // Only fallback on "failed to fetch" / 404-ish situations.
           const msg = String(err?.message || '');
           const canFallback =
             msg.toLowerCase().includes('failed to fetch') ||
             msg.toLowerCase().includes('networkerror') ||
             msg.toLowerCase().includes('not found') ||
-            msg.toLowerCase().includes('unexpected token'); // bad JSON when no API
+            msg.toLowerCase().includes('unexpected token');
 
           if (!canFallback) {
             toast(msg || 'Could not place order.', { important: true });
@@ -1556,9 +1636,10 @@
           }
         }
 
-        // --- DEMO FALLBACK: localStorage ordersByUser ---
+        // --- DEMO FALLBACK ---
         const now = nowISO();
         const orderId = uid('ord_');
+        const totalJMD = Number(subtotal || 0);
 
         const order = {
           id: orderId,
@@ -1581,122 +1662,137 @@
         location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
       };
     }
-
   }
 
   async function renderReceiptIfOnReceiptPage() {
-  if (page() !== 'receipt.html' && page() !== 'receipt') return;
+    if (page() !== 'receipt.html' && page() !== 'receipt') return;
 
-  const user = Auth.currentUser();
-  if (!user || !user.email) {
-    location.href = 'login.html';
-    return;
-  }
-
-  const params = new URLSearchParams(location.search);
-  const orderId = String(params.get('order') || '').trim();
-
-  const setText = (id, value) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = String(value == null ? '' : value);
-  };
-
-  const fmtDate = (iso) => {
-    const d = iso ? new Date(iso) : null;
-    if (!d || !Number.isFinite(d.getTime())) return '—';
-    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-  };
-
-  const renderOrder = (order) => {
-    if (!order) {
-      setText('rcptOrderId', '—');
-      setText('rcptOrderDate', '—');
-      setText('rcptOrderStatus', '—');
-      const itemsEl = document.getElementById('rcptItems');
-      if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+    const user = Auth.currentUser();
+    if (!user || !user.email) {
+      location.href = 'login.html';
       return;
     }
 
-    setText('rcptOrderId', `#${order.id || ''}`);
-    setText('rcptOrderDate', fmtDate(order.createdAt));
-    setText('rcptOrderStatus', order.status || 'Placed');
-    setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+    const params = new URLSearchParams(location.search);
+    const orderId = String(params.get('order') || '').trim();
 
-    const items = Array.isArray(order.items) ? order.items : [];
-    setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
-    setText('rcptTotal', money(order.totalJMD || 0));
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value == null ? '' : value);
+    };
 
-    const tbody = document.getElementById('rcptItems');
-    if (tbody) {
-      if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
-      } else {
-        tbody.innerHTML = items.map(it => {
-          const nm = escapeHtml(it?.name || 'Item');
-          const sz = escapeHtml(it?.size || '—');
-          const qty = Number(it?.qty || 0);
-          const price = Number(it?.price || 0);
-          const line = price * qty;
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
 
-          return `
-            <tr>
-              <td>${nm}</td>
-              <td>${sz}</td>
-              <td class="right">${qty}</td>
-              <td class="right">${escapeHtml(money(price))}</td>
-              <td class="right">${escapeHtml(money(line))}</td>
-            </tr>
-          `;
-        }).join('');
+    const renderOrder = (order) => {
+      if (!order) {
+        setText('rcptOrderId', '—');
+        setText('rcptOrderDate', '—');
+        setText('rcptOrderStatus', '—');
+        const itemsEl = document.getElementById('rcptItems');
+        if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+        return;
       }
+
+      setText('rcptOrderId', `#${order.id || ''}`);
+      setText('rcptOrderDate', fmtDate(order.createdAt));
+      setText('rcptOrderStatus', order.status || 'Placed');
+      setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+
+      const items = Array.isArray(order.items) ? order.items : [];
+      setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
+      setText('rcptTotal', money(order.totalJMD || 0));
+
+      const tbody = document.getElementById('rcptItems');
+      if (tbody) {
+        if (!items.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
+        } else {
+          tbody.innerHTML = items.map(it => {
+            const nm = escapeHtml(it?.name || 'Item');
+            const sz = escapeHtml(it?.size || '—');
+            const qty = Number(it?.qty || 0);
+            const price = Number(it?.price || 0);
+            const line = price * qty;
+
+            return `
+              <tr>
+                <td>${nm}</td>
+                <td>${sz}</td>
+                <td class="right">${qty}</td>
+                <td class="right">${escapeHtml(money(price))}</td>
+                <td class="right">${escapeHtml(money(line))}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    };
+
+    try {
+      if (!orderId) throw new Error('Missing order id.');
+
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { credentials: 'include' });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) throw new Error(data?.error || 'Could not load receipt.');
+
+      const order = data?.order ? data.order : data;
+      renderOrder(order);
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const canFallback =
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('not found') ||
+        msg.includes('unexpected token');
+
+      if (!canFallback) {
+        renderOrder(null);
+        toast(err?.message || 'Could not load receipt.', { important: true });
+        return;
+      }
+
+      const st = readState();
+      const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+      const order = orders.find(o => String(o?.id || '') === orderId) || null;
+      renderOrder(order);
     }
-  };
 
-  // --- PRODUCTION: try backend first ---
-  try {
-    if (!orderId) throw new Error('Missing order id.');
-
-    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { credentials: 'include' });
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) throw new Error(data?.error || 'Could not load receipt.');
-
-    // Accept either { order: {...} } or {...}
-    const order = data?.order ? data.order : data;
-    renderOrder(order);
-  } catch (err) {
-    const msg = String(err?.message || '').toLowerCase();
-    const canFallback =
-      msg.includes('failed to fetch') ||
-      msg.includes('networkerror') ||
-      msg.includes('not found') ||
-      msg.includes('unexpected token');
-
-    if (!canFallback) {
-      renderOrder(null);
-      toast(err?.message || 'Could not load receipt.', { important: true });
-      return;
+    const printBtn = document.getElementById('printReceiptBtn');
+    if (printBtn && !printBtn.dataset.bound) {
+      printBtn.dataset.bound = '1';
+      printBtn.addEventListener('click', () => window.print());
     }
-
-    // --- DEMO FALLBACK ---
-    const st = readState();
-    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
-    const order = orders.find(o => String(o?.id || '') === orderId) || null;
-    renderOrder(order);
   }
 
-  const printBtn = document.getElementById('printReceiptBtn');
-  if (printBtn && !printBtn.dataset.bound) {
-    printBtn.dataset.bound = '1';
-    printBtn.addEventListener('click', () => window.print());
+  // -----------------------------
+  // DEV-ONLY: PROMOTE USER TO ADMIN (SERVER + DEMO)
+  // -----------------------------
+  async function promoteToAdmin({ email, secret }) {
+    const em = String(email || '').trim().toLowerCase();
+    const sec = String(secret || '').trim();
+    if (!em) throw new Error('promoteToAdmin: email is required.');
+    if (!sec) throw new Error('promoteToAdmin: secret is required.');
+
+    const { ok, status, data } = await apiJson('/api/dev/make-admin', {
+      method: 'POST',
+      body: { email: em, secret: sec }
+    });
+
+    if (!ok) {
+      throw new Error(data?.error || `Failed to promote (${status})`);
+    }
+
+    await Auth.bootstrap();
+    UI.updateNavAuthState();
+    return data;
   }
-}
 
-
-
-  // -----------------------------
-  // DEV-ONLY: PROMOTE USER TO ADMIN (OPTION B)
-  // -----------------------------
+  // (kept) DEMO local promotion
   function makeAdmin(email) {
     const em = String(email || '').trim().toLowerCase();
     if (!em) throw new Error('makeAdmin(email): email is required.');
@@ -1718,8 +1814,12 @@
   // -----------------------------
   // INIT
   // -----------------------------
-  function init() {
+  async function init() {
     UI.ensureHeaderFooter();
+
+    // IMPORTANT: hydrate from server cookie session FIRST
+    await Auth.bootstrap();
+
     UI.updateNavAuthState();
     UI.updateCartBadges();
     UI.bindLoginDropdown();
@@ -1748,7 +1848,7 @@
     renderReceiptIfOnReceiptPage();
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => { init(); });
 
   // Expose tiny API (debug / future admin)
   BS.Auth = Auth;
@@ -1758,5 +1858,6 @@
 
   // Expose DEV-only admin promotion
   BS.makeAdmin = makeAdmin;
+  BS.promoteToAdmin = promoteToAdmin;
 
 })();
