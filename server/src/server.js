@@ -39,12 +39,7 @@ app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 // API
 // -----------------------------
 app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "beyond-silhouette",
-    time: new Date().toISOString(),
-    build: "b00a29f",
-  });
+  res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString() });
 });
 
 // DB connectivity smoke test (Prisma)
@@ -236,6 +231,10 @@ app.post("/api/dev/make-admin", async (req, res) => {
 
     return res.json({ ok: true, user });
   } catch (err) {
+    // Prisma "Record to update not found" => P2025
+    if (err?.code === "P2025" || String(err?.message || "").includes("Record to update not found")) {
+      return res.status(404).json({ ok: false, error: "User not found. Create the account first, then promote." });
+    }
     return res.status(500).json({ ok: false, error: err?.message || "Failed to promote user" });
   }
 });
@@ -571,7 +570,8 @@ app.post("/api/admin/products", async (req, res) => {
     const slug = slugRaw === null || slugRaw === undefined ? null : String(slugRaw).trim() || null;
 
     const descriptionRaw = req.body?.description;
-    const description = descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
+    const description =
+      descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
 
     const priceJMDNum = Number(req.body?.priceJMD);
     const priceJMD = Number.isFinite(priceJMDNum) ? Math.max(0, Math.round(priceJMDNum)) : NaN;
@@ -655,9 +655,7 @@ app.post("/api/admin/products", async (req, res) => {
 });
 
 // PATCH /api/admin/products/:id
-// - Updates fields provided in body
-// - If body.images is provided (array), replaces all images
-// - If body.inventory is provided (array), replaces all inventory rows
+// Updates basic product fields + optional full replace of images/inventory arrays.
 app.patch("/api/admin/products/:id", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
@@ -668,57 +666,55 @@ app.patch("/api/admin/products/:id", async (req, res) => {
   try {
     const data = {};
 
-    if ("name" in req.body) {
-      const name = String(req.body?.name || "").trim();
-      if (!name) return res.status(400).json({ ok: false, error: "name cannot be empty" });
-      data.name = name;
+    // Optional fields
+    if (req.body?.slug !== undefined) {
+      const slugRaw = req.body.slug;
+      data.slug = slugRaw === null ? null : String(slugRaw).trim() || null;
     }
-
-    if ("slug" in req.body) {
-      const slugRaw = req.body?.slug;
-      data.slug = slugRaw === null || slugRaw === undefined ? null : String(slugRaw).trim() || null;
+    if (req.body?.name !== undefined) data.name = String(req.body.name || "").trim();
+    if (req.body?.description !== undefined) {
+      const dRaw = req.body.description;
+      data.description = dRaw === null ? null : String(dRaw).trim() || null;
     }
-
-    if ("description" in req.body) {
-      const d = req.body?.description;
-      data.description = d === null || d === undefined ? null : String(d).trim() || null;
+    if (req.body?.priceJMD !== undefined) {
+      const n = Number(req.body.priceJMD);
+      if (!Number.isFinite(n)) return res.status(400).json({ ok: false, error: "priceJMD must be a number" });
+      data.priceJMD = Math.max(0, Math.round(n));
     }
+    if (req.body?.isPublished !== undefined) data.isPublished = Boolean(req.body.isPublished);
 
-    if ("priceJMD" in req.body) {
-      const priceJMDNum = Number(req.body?.priceJMD);
-      if (!Number.isFinite(priceJMDNum)) {
-        return res.status(400).json({ ok: false, error: "priceJMD must be a number" });
-      }
-      data.priceJMD = Math.max(0, Math.round(priceJMDNum));
-    }
+    const imagesIn = req.body?.images;
+    const inventoryIn = req.body?.inventory;
 
-    if ("isPublished" in req.body) {
-      data.isPublished = Boolean(req.body?.isPublished);
-    }
-
-    const imagesIn = Array.isArray(req.body?.images) ? req.body.images : null;
-    const inventoryIn = Array.isArray(req.body?.inventory) ? req.body.inventory : null;
-
-    const product = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const exists = await tx.product.findUnique({ where: { id }, select: { id: true } });
-      if (!exists) return null;
+      if (!exists) {
+        const err = new Error("NOT_FOUND");
+        err.code = "NOT_FOUND";
+        throw err;
+      }
 
-      if (imagesIn) {
+      // Optional full replace: images
+      if (Array.isArray(imagesIn)) {
         await tx.productImage.deleteMany({ where: { productId: id } });
 
         const images = imagesIn
           .map((img) => ({
-            productId: id,
             url: String(img?.url || "").trim(),
             alt: img?.alt === undefined || img?.alt === null ? null : String(img.alt).trim() || null,
             sortOrder: Number.isFinite(Number(img?.sortOrder)) ? Math.round(Number(img.sortOrder)) : 0,
           }))
           .filter((img) => img.url);
 
-        if (images.length) await tx.productImage.createMany({ data: images });
+        if (images.length) {
+          await tx.productImage.createMany({
+            data: images.map((im) => ({ ...im, productId: id })),
+          });
+        }
       }
 
-      if (inventoryIn) {
+      // Optional full replace: inventory
+      if (Array.isArray(inventoryIn)) {
         await tx.inventory.deleteMany({ where: { productId: id } });
 
         const invMap = new Map();
@@ -729,15 +725,21 @@ app.patch("/api/admin/products/:id", async (req, res) => {
           const stock = Number.isFinite(stockNum) ? Math.max(0, Math.round(stockNum)) : 0;
           invMap.set(size, stock);
         }
-        const invRows = Array.from(invMap.entries()).map(([size, stock]) => ({ productId: id, size, stock }));
-        if (invRows.length) await tx.inventory.createMany({ data: invRows });
+        const inventory = Array.from(invMap.entries()).map(([size, stock]) => ({ size, stock }));
+
+        if (inventory.length) {
+          await tx.inventory.createMany({
+            data: inventory.map((r) => ({ ...r, productId: id })),
+          });
+        }
       }
 
+      // Update core fields (if any)
       if (Object.keys(data).length) {
         await tx.product.update({ where: { id }, data });
       }
 
-      return tx.product.findUnique({
+      const product = await tx.product.findUnique({
         where: { id },
         select: {
           id: true,
@@ -758,11 +760,13 @@ app.patch("/api/admin/products/:id", async (req, res) => {
           },
         },
       });
+
+      return product;
     });
 
-    if (!product) return res.status(404).json({ ok: false, error: "Product not found" });
-    return res.json({ ok: true, product });
+    return res.json({ ok: true, product: result });
   } catch (err) {
+    if (err?.code === "NOT_FOUND") return res.status(404).json({ ok: false, error: "Product not found" });
     const msg = String(err?.message || "");
     if (msg.includes("Unique constraint") || msg.includes("unique") || err?.code === "P2002") {
       return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/etc)" });
@@ -772,39 +776,41 @@ app.patch("/api/admin/products/:id", async (req, res) => {
 });
 
 // PATCH /api/admin/inventory
-// Body: { rows: [{ productId, size, stock }] }
-// Sets absolute stock for each row (bulk upsert).
+// Bulk upsert inventory rows: [{ productId, size, stock }] OR { items: [...] }
 app.patch("/api/admin/inventory", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
 
-  const rowsIn = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const rowsIn = Array.isArray(req.body?.items) ? req.body.items : Array.isArray(req.body) ? req.body : [];
   const rows = rowsIn
     .map((r) => ({
       productId: String(r?.productId || "").trim(),
       size: String(r?.size || "").trim(),
-      stock: Number.isFinite(Number(r?.stock)) ? Math.max(0, Math.round(Number(r.stock))) : null,
+      stock: Number.isFinite(Number(r?.stock)) ? Math.max(0, Math.round(Number(r.stock))) : NaN,
     }))
-    .filter((r) => r.productId && r.size && r.stock !== null);
+    .filter((r) => r.productId && r.size);
 
-  if (!rows.length) return res.status(400).json({ ok: false, error: "rows[] is required" });
+  if (!rows.length) return res.status(400).json({ ok: false, error: "No inventory rows provided" });
+  if (rows.some((r) => !Number.isFinite(r.stock))) {
+    return res.status(400).json({ ok: false, error: "stock must be a number" });
+  }
 
   try {
-    const inventory = await prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx) => {
       const out = [];
       for (const r of rows) {
-        const inv = await tx.inventory.upsert({
+        const rec = await tx.inventory.upsert({
           where: { productId_size: { productId: r.productId, size: r.size } },
-          create: { productId: r.productId, size: r.size, stock: r.stock },
           update: { stock: r.stock },
+          create: { productId: r.productId, size: r.size, stock: r.stock },
           select: { id: true, productId: true, size: true, stock: true, updatedAt: true },
         });
-        out.push(inv);
+        out.push(rec);
       }
       return out;
     });
 
-    return res.json({ ok: true, inventory });
+    return res.json({ ok: true, items: updated });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err?.message || "Failed to update inventory" });
   }
