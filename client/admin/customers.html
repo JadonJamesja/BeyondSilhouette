@@ -10,37 +10,41 @@
 </head>
 
 <body class="admin">
-  <aside class="sidebar">
+  <aside class="sidebar" aria-label="Admin sidebar">
     <div class="sidebar-top">
-      <div class="brand">
-        <div class="brand-mark">BS</div>
-        <div class="brand-text">
-          <div class="brand-title">Beyond Silhouette</div>
-          <div class="brand-sub">Admin Panel</div>
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
         </div>
-      </div>
+      </a>
 
-      <button class="icon-btn" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
+      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar"
+        aria-label="Toggle sidebar">☰</button>
     </div>
 
     <nav class="nav">
-      <a class="nav-link" href="./dashboard.html">Dashboard</a>
-      <a class="nav-link" href="./products.html">Products</a>
-      <a class="nav-link" href="./orders.html">Orders</a>
-      <a class="nav-link active" href="./customers.html">Customers</a>
-      <a class="nav-link" href="./settings.html">Settings</a>
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
     </nav>
 
     <div class="sidebar-bottom">
-      <div class="admin-chip">
-        <div class="dot"></div>
-        <div>
-          <div class="chip-title" data-ui="adminName">Admin</div>
-          <div class="chip-sub muted">Online</div>
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
         </div>
       </div>
 
-      <button class="btn btn-ghost full" data-action="logout">Logout</button>
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
     </div>
   </aside>
 
@@ -53,8 +57,9 @@
 
       <div class="topbar-actions">
         <input class="input input-sm" id="customerSearch" placeholder="Search name / email…" />
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Filter opened (demo).">Filter</button>
-        <button class="btn btn-ghost" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+          data-toast="Filter opened (demo).">Filter</button>
+        <button class="btn btn-ghost" type="button" data-action="toggle-theme">Theme</button>
       </div>
     </header>
 

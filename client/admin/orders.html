@@ -48,7 +48,7 @@
     </div>
   </aside>
 
-  <div class="content">
+  <main class="main">
     <header class="topbar">
       <div class="topbar-left">
         <h1 class="h2">Orders</h1>
@@ -95,7 +95,7 @@
     </section>
 
     <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
-  </div>
+  </main>
 
   <!-- Order Details Modal -->
   <div class="modal-overlay" id="orderModal" hidden>
@@ -105,28 +105,19 @@
         <button class="btn btn-ghost btn-sm" type="button" id="orderModalClose" aria-label="Close">✕</button>
       </div>
 
-      <!-- Order Details Modal -->
-      <div class="modal-overlay" id="orderModal" hidden>
-        <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
-          <div class="modal-head">
-            <div class="modal-title" id="orderModalTitle">Order</div>
-            <button class="btn btn-ghost btn-sm" type="button" id="orderModalClose" aria-label="Close">✕</button>
-          </div>
+      <div class="modal-body">
+        <div class="modal-meta" id="orderModalMeta"></div>
 
-          <div class="modal-body">
-            <div class="modal-meta" id="orderModalMeta"></div>
+        <h3 class="section-title">History</h3>
+        <div id="orderModalHistory"></div>
 
-            <h3 class="section-title">History</h3>
-            <div id="orderModalHistory"></div>
-
-            <h3 class="section-title">Items</h3>
-            <div id="orderModalItems"></div>
-          </div>
-        </div>
+        <h3 class="section-title">Items</h3>
+        <div id="orderModalItems"></div>
       </div>
+    </div>
+  </div>
 
-
-<script src="./admin.js"></script>
+  <script src="./admin.js"></script>
 </body>
 
 </html>
