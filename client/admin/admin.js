@@ -296,29 +296,131 @@
     });
   }
 
-  /* ================= Products store helpers ================= */
-  function readProductsRaw() {
-    const raw = localStorage.getItem(SITE.products);
-    const arr = raw ? safeParse(raw) : null;
-    return Array.isArray(arr) ? arr : [];
+  // ===== PRODUCTS (DB-backed instead of bs_products_v1 localStorage) =====
+
+  async function apiAdminJSON(path, opts = {}) {
+    const res = await fetch(path, {
+      credentials: "include",
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.headers || {}),
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+    return data;
   }
 
-  function writeProductsRaw(products) {
-    localStorage.setItem(SITE.products, JSON.stringify(Array.isArray(products) ? products : []));
+  async function apiListAdminProducts() {
+    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
+    return Array.isArray(data?.products) ? data.products : [];
   }
 
-  function productIsPublished(p) {
-    return !!(p && p.isActive !== false && String(p.status || '').toLowerCase() === 'published');
+  async function apiCreateAdminProduct(payload) {
+    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return data?.product || null;
   }
 
-  function getCoverUrl(p) {
-    if (!p) return '';
-    if (p.media && typeof p.media === 'object' && typeof p.media.coverUrl === 'string') return p.media.coverUrl;
-    return '';
+  async function apiUpdateAdminProduct(id, payload) {
+    const data = await apiAdminJSON(
+      `https://bs-api-live.up.railway.app/api/admin/products/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    );
+    return data?.product || null;
   }
 
+  // DB -> UI shape (admin UI expects title/status/media/stockBySize)
+  function toUIProduct(db) {
+    const inv = Array.isArray(db?.inventory) ? db.inventory : [];
+    const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
+    for (const row of inv) {
+      const k = String(row?.size || "").trim().toUpperCase();
+      if (k in stockBySize) stockBySize[k] = Number(row?.stock || 0);
+    }
+
+    const images = Array.isArray(db?.images) ? db.images : [];
+    const coverUrl = images[0]?.url ? String(images[0].url) : "";
+
+    return {
+      id: db.id,
+      title: db.name || "",
+      description: db.description || "",
+      priceJMD: db.priceJMD ?? 0,
+      status: db.isPublished ? "published" : "draft",
+      media: { coverUrl },
+      stockBySize,
+    };
+  }
+
+  // UI -> DB payload (backend expects name/isPublished)
+  function toDBPayload(ui) {
+    const name = String(ui?.title || "").trim();
+    const description = String(ui?.description || "").trim();
+    const priceJMD = Number(ui?.priceJMD || 0);
+    const isPublished = String(ui?.status || "draft") === "published";
+
+    const coverUrl = String(ui?.media?.coverUrl || "").trim();
+    const images = coverUrl ? [{ url: coverUrl, alt: name || null, sortOrder: 0 }] : [];
+
+    const sb = ui?.stockBySize || {};
+    const inventory = ["S", "M", "L", "XL"].map((size) => ({
+      size,
+      stock: Number(sb[size] || 0),
+    }));
+
+    return { name, description, priceJMD, isPublished, images, inventory };
+  }
+
+  // Replaces old readProductsRaw()
+  async function readProductsRaw() {
+    const dbProducts = await apiListAdminProducts();
+    return dbProducts.map(toUIProduct);
+  }
+
+  // Old writeProductsRaw becomes no-op (DB is truth)
+  function writeProductsRaw(_) { }
+
+  // Replaces old upsertProduct()
+  async function upsertProduct(product) {
+    const ui = product || {};
+    const payload = toDBPayload(ui);
+
+    if (!payload.name) throw new Error("Title is required.");
+
+    if (!ui.id) {
+      const created = await apiCreateAdminProduct(payload);
+      if (!created) throw new Error("Create failed.");
+      return toUIProduct(created);
+    }
+
+    const updated = await apiUpdateAdminProduct(ui.id, payload);
+    if (!updated) throw new Error("Update failed.");
+    return toUIProduct(updated);
+  }
+
+  // Replaces old setPublished()
+  (async () => {
+    try {
+      await setPublishedUI(p.id, kind !== "published");
+      toast(kind === "published" ? "Unpublished ✅" : "Published ✅");
+      if (String(editingId || "") === String(p.id)) {
+        if (status) status.value = (kind === "published") ? "draft" : "published";
+        renderTextPreview();
+      }
+    } catch (err) {
+      toast(err && err.message ? err.message : "Could not update publish state.");
+    }
+  })();
   /* ================= Products Manager (products.html) ================= */
-  function initProductsManager() {
+  async function initProductsManager() {
     const form = qs('#productForm');
     if (!form) return;
 
@@ -465,151 +567,72 @@
       renderTextPreview();
     }
 
-    function upsertProduct({ forceStatus } = {}) {
-      const title = (name?.value || '').trim();
-      if (!title) throw new Error('Please enter a product name.');
+    // --- DB/API-backed save/publish/delete/list for Products page ---
 
-      const products = readProductsRaw();
+    async function saveCurrentProduct({ forceStatus } = {}) {
+      const title = (name?.value || "").trim();
+      if (!title) throw new Error("Please enter a product name.");
 
-      const desiredStatus = forceStatus || (String(status?.value || '').toLowerCase() === 'published' ? 'published' : 'draft');
+      const desiredStatus =
+        forceStatus ||
+        (String(status?.value || "").toLowerCase() === "published" ? "published" : "draft");
+
       const stockBySize = readStockBySizeFromForm();
-      const sizes = ['S', 'M', 'L', 'XL'];
 
-      const coverUrl = (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : coverDataUrl;
+      // NOTE: your current UI stores images as dataURLs.
+      // For now we will store the FIRST image dataUrl as coverUrl.
+      // (Not ideal long-term, but it gets DB-backed products working immediately.)
+      const coverUrl =
+        (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : (coverDataUrl || "");
 
-      const isNew = !editingId;
-      const id = isNew ? uid('prod_') : editingId;
-
-      const existingIdx = products.findIndex(x => String(x && x.id) === String(id));
-      const existing = existingIdx >= 0 ? (products[existingIdx] || {}) : {};
-
-      const next = {
-        ...existing,
-        id,
-        slug: existing.slug || slugify(title) || id,
-        status: desiredStatus,
+      const payloadUI = {
+        id: editingId || null,
         title,
-        description: String(desc?.value || ''),
+        description: String(desc?.value || ""),
         priceJMD: toPriceJMD(price?.value),
-        sizes: Array.isArray(existing.sizes) && existing.sizes.length ? existing.sizes : sizes,
-        stockBySize,
-        media: {
-          ...(existing.media && typeof existing.media === 'object' ? existing.media : {}),
-          coverUrl: coverUrl || (existing.media && existing.media.coverUrl) || ''
-        },
-        updatedAt: nowISO(),
-        createdAt: existing.createdAt || nowISO(),
-        isActive: (existing.isActive === false) ? false : true,
+        status: desiredStatus,
+        media: { coverUrl },
+        stockBySize
       };
 
-      if (existingIdx >= 0) products[existingIdx] = next;
-      else products.unshift(next);
+      // IMPORTANT: call the OUTER async upsertProduct() (DB-backed).
+      // We named this saveCurrentProduct to avoid shadowing.
+      const saved = await upsertProduct(payloadUI);
 
-      writeProductsRaw(products);
-      editingId = id;
-      coverDataUrl = getCoverUrl(next) || '';
-      toast(desiredStatus === 'published' ? 'Published.' : 'Saved as draft.');
-      renderLists();
+      // Update editor state from saved result
+      editingId = String(saved.id || "");
+      if (status) status.value = String(saved.status || "draft");
+      coverDataUrl = (saved.media && saved.media.coverUrl) ? String(saved.media.coverUrl) : coverDataUrl;
+
+      toast(desiredStatus === "published" ? "Published to DB ✅" : "Saved to DB ✅");
+      await renderLists();
+      return saved;
     }
 
-    function deleteCurrent() {
+    async function deleteCurrent() {
+      // You do not have a server delete endpoint yet.
+      // Don’t fake-delete locally (it will confuse production).
       if (!editingId) {
-        toast('No product selected.');
+        toast("No product selected.");
         return;
       }
-      const products = readProductsRaw();
-      const next = products.filter(p => String(p && p.id) !== String(editingId));
-      writeProductsRaw(next);
-      toast('Deleted.');
-      clearForm();
-      renderLists();
+      toast("Delete is not implemented on the server yet.");
     }
 
-    function setPublished(id, yes) {
-      const products = readProductsRaw();
-      const idx = products.findIndex(p => String(p && p.id) === String(id));
-      if (idx < 0) return;
-      const p = products[idx] || {};
-      p.status = yes ? 'published' : 'draft';
-      p.updatedAt = nowISO();
-      products[idx] = p;
-      writeProductsRaw(products);
-      renderLists();
+    async function setPublishedUI(id, yes) {
+      // IMPORTANT: call the OUTER async setPublished() (DB-backed).
+      await setPublished(id, !!yes);
+      await renderLists();
     }
 
-    function renderListInto(el, items, kind) {
-      if (!el) return;
-      el.innerHTML = '';
+    async function renderLists() {
+      const products = await readProductsRaw();
 
-      if (!items.length) {
-        const empty = document.createElement('div');
-        empty.className = 'list-item';
-        empty.innerHTML = `
-          <div>
-            <div class="list-title">No ${escapeHtml(kind)}</div>
-            <div class="muted">Create a product to see it here.</div>
-          </div>
-          <div class="row"></div>
-        `;
-        el.appendChild(empty);
-        return;
-      }
+      const drafts = products.filter((p) => p && String(p.status || "").toLowerCase() !== "published");
+      const published = products.filter((p) => p && String(p.status || "").toLowerCase() === "published");
 
-      items.forEach(p => {
-        const row = document.createElement('div');
-        row.className = 'list-item';
-
-        const title = String(p.title || 'Untitled');
-        const stock = p.stockBySize && typeof p.stockBySize === 'object'
-          ? (toInt(p.stockBySize.S) + toInt(p.stockBySize.M) + toInt(p.stockBySize.L) + toInt(p.stockBySize.XL))
-          : 0;
-
-        const meta = (kind === 'published')
-          ? `Published • Stock: ${stock}`
-          : `Draft • Stock: ${stock}`;
-
-        row.innerHTML = `
-          <div>
-            <div class="list-title">${escapeHtml(title)}</div>
-            <div class="muted">${escapeHtml(meta)}</div>
-          </div>
-          <div class="row"></div>
-        `;
-
-        const actions = qs('.row', row);
-
-        const edit = document.createElement('button');
-        edit.type = 'button';
-        edit.className = 'btn btn-ghost btn-sm';
-        edit.textContent = 'Edit';
-        edit.addEventListener('click', () => loadProductIntoForm(p));
-
-        const pub = document.createElement('button');
-        pub.type = 'button';
-        pub.className = (kind === 'published') ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm';
-        pub.textContent = (kind === 'published') ? 'Unpublish' : 'Publish';
-        pub.addEventListener('click', () => {
-          setPublished(p.id, kind !== 'published');
-          toast(kind === 'published' ? 'Unpublished.' : 'Published.');
-          if (String(editingId || '') === String(p.id)) {
-            if (status) status.value = (kind === 'published') ? 'draft' : 'published';
-            renderTextPreview();
-          }
-        });
-
-        actions && actions.appendChild(edit);
-        actions && actions.appendChild(pub);
-
-        el.appendChild(row);
-      });
-    }
-
-    function renderLists() {
-      const products = readProductsRaw();
-      const drafts = products.filter(p => p && !productIsPublished(p));
-      const published = products.filter(p => p && productIsPublished(p));
-      renderListInto(draftsList, drafts, 'drafts');
-      renderListInto(publishedList, published, 'published');
+      renderListInto(draftsList, drafts, "drafts");
+      renderListInto(publishedList, published, "published");
     }
 
     // Bind input -> preview
@@ -638,8 +661,10 @@
       saveDraftBtn.dataset.bound = '1';
       saveDraftBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        try { upsertProduct({ forceStatus: 'draft' }); }
-        catch (err) { toast(err && err.message ? err.message : 'Could not save.'); }
+        (async () => {
+          try { await saveCurrentProduct({ forceStatus: "draft" }); }
+          catch (err) { toast(err && err.message ? err.message : "Could not save."); }
+        })();
       });
     }
 
@@ -647,8 +672,10 @@
       publishBtn.dataset.bound = '1';
       publishBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        try { upsertProduct({ forceStatus: 'published' }); }
-        catch (err) { toast(err && err.message ? err.message : 'Could not publish.'); }
+        (async () => {
+          try { await saveCurrentProduct({ forceStatus: "published" }); }
+          catch (err) { toast(err && err.message ? err.message : "Could not publish."); }
+        })();
       });
     }
 
@@ -679,7 +706,7 @@
 
     // Initial
     renderTextPreview();
-    renderLists();
+    await renderLists();
   }
 
   /* ================= Orders helpers (REAL) ================= */
@@ -830,10 +857,10 @@
         const stKey = st.toLowerCase();
         const stClass =
           stKey === 'delivered' ? 'chip-delivered' :
-          stKey === 'shipped' ? 'chip-shipped' :
-          stKey === 'processing' ? 'chip-processing' :
-          stKey === 'cancelled' ? 'chip-cancelled' :
-          'chip-placed';
+            stKey === 'shipped' ? 'chip-shipped' :
+              stKey === 'processing' ? 'chip-processing' :
+                stKey === 'cancelled' ? 'chip-cancelled' :
+                  'chip-placed';
 
         const statusHtml = `<span class="chip chip-status ${stClass}">${escapeHtml(st)}</span>`;
         const total = escapeHtml(formatJ(r.totalJMD));
@@ -885,11 +912,11 @@
       modalHistory.innerHTML = `
         <div class="panel" style="display:grid; gap:10px;">
           ${items.map(h => {
-            const when = escapeHtml(formatDateShort(h.at));
-            const by = escapeHtml(h.by || 'admin');
-            const from = escapeHtml(h.from || '—');
-            const to = escapeHtml(h.to || '—');
-            return `
+        const when = escapeHtml(formatDateShort(h.at));
+        const by = escapeHtml(h.by || 'admin');
+        const from = escapeHtml(h.from || '—');
+        const to = escapeHtml(h.to || '—');
+        return `
               <div class="meta-row" style="align-items:flex-start;">
                 <div style="display:grid; gap:4px;">
                   <div><strong>${from}</strong> → <strong>${to}</strong></div>
@@ -897,7 +924,7 @@
                 </div>
               </div>
             `;
-          }).join('')}
+      }).join('')}
         </div>
       `;
     }
@@ -951,12 +978,12 @@
               </thead>
               <tbody>
                 ${row.items.map(it => {
-                  const nm = escapeHtml(it.name || it.title || 'Item');
-                  const sz = escapeHtml(it.size || '—');
-                  const qty = toInt(it.qty || it.quantity || 0);
-                  const price = Number(it.price || 0);
-                  const line = price * qty;
-                  return `
+          const nm = escapeHtml(it.name || it.title || 'Item');
+          const sz = escapeHtml(it.size || '—');
+          const qty = toInt(it.qty || it.quantity || 0);
+          const price = Number(it.price || 0);
+          const line = price * qty;
+          return `
                     <tr>
                       <td>${nm}</td>
                       <td>${sz}</td>
@@ -965,7 +992,7 @@
                       <td class="right">${escapeHtml(formatJ(line))}</td>
                     </tr>
                   `;
-                }).join('')}
+        }).join('')}
               </tbody>
             </table>
           </div>
@@ -1388,11 +1415,11 @@
         cusModalOrders.innerHTML = `
           <div class="modal-orders">
             ${recent.map(o => {
-              const oid = String(o.id || '');
-              const when = formatDateShort(o.createdAt);
-              const st = String(o.status || 'Placed');
-              const tot = formatJ(o.totalJMD);
-              return `
+          const oid = String(o.id || '');
+          const when = formatDateShort(o.createdAt);
+          const st = String(o.status || 'Placed');
+          const tot = formatJ(o.totalJMD);
+          return `
                 <div class="modal-order-row">
                   <div class="modal-order-main">
                     <div class="modal-order-title">#${escapeHtml(oid || '—')}</div>
@@ -1405,7 +1432,7 @@
                   </div>
                 </div>
               `;
-            }).join('')}
+        }).join('')}
           </div>
         `;
       }
@@ -1437,11 +1464,11 @@
       ordModalHistory.innerHTML = `
         <div class="panel" style="display:grid; gap:10px;">
           ${items.map(h => {
-            const when = escapeHtml(formatDateShort(h.at));
-            const by = escapeHtml(h.by || 'admin');
-            const from = escapeHtml(h.from || '—');
-            const to = escapeHtml(h.to || '—');
-            return `
+        const when = escapeHtml(formatDateShort(h.at));
+        const by = escapeHtml(h.by || 'admin');
+        const from = escapeHtml(h.from || '—');
+        const to = escapeHtml(h.to || '—');
+        return `
               <div class="meta-row" style="align-items:flex-start;">
                 <div style="display:grid; gap:4px;">
                   <div><strong>${from}</strong> → <strong>${to}</strong></div>
@@ -1449,7 +1476,7 @@
                 </div>
               </div>
             `;
-          }).join('')}
+      }).join('')}
         </div>
       `;
     }
@@ -1502,12 +1529,12 @@
               </thead>
               <tbody>
                 ${items.map(it => {
-                  const nm = escapeHtml(it.name || it.title || 'Item');
-                  const sz = escapeHtml(it.size || '—');
-                  const qty = toInt(it.qty || it.quantity || 0);
-                  const price = Number(it.price || 0);
-                  const line = price * qty;
-                  return `
+          const nm = escapeHtml(it.name || it.title || 'Item');
+          const sz = escapeHtml(it.size || '—');
+          const qty = toInt(it.qty || it.quantity || 0);
+          const price = Number(it.price || 0);
+          const line = price * qty;
+          return `
                     <tr>
                       <td>${nm}</td>
                       <td>${sz}</td>
@@ -1516,7 +1543,7 @@
                       <td class="right">${escapeHtml(formatJ(line))}</td>
                     </tr>
                   `;
-                }).join('')}
+        }).join('')}
               </tbody>
             </table>
           </div>
