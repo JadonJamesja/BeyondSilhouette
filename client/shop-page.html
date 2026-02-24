@@ -11,7 +11,7 @@
 
 <body id="shop-page">
 
-    <!-- HEADER -->
+  <!-- HEADER -->
   <header id="site-header">
     <div class="container header-container">
       <nav id="main-nav">
@@ -53,7 +53,8 @@
   <main class="shop-container">
     <h2 class="section-title">Shop Collection</h2>
 
-    <div id="productsGrid" class="products-grid">
+    <!-- ✅ This is what main.js expects: [data-products] -->
+    <div id="productsGrid" class="products-grid" data-products>
       <!-- products rendered by JS -->
     </div>
   </main>
@@ -63,8 +64,9 @@
     <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
   </footer>
 
-  <script src="js/main.js"></script>
+  <!-- ✅ Load store first (so main.js can use it) -->
   <script src="js/products-store.js"></script>
+  <script src="js/main.js"></script>
 </body>
 
 </html>
