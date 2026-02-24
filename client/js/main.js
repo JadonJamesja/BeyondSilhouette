@@ -926,7 +926,7 @@
 
       if (p) {
         return {
-          name: p.name || it.name || 'Item',
+          name: p.title || p.name || it.name || 'Item',
           image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
           price: Number(p.priceJMD || it.price || 0)
         };
@@ -1519,7 +1519,7 @@
       const p = Products.findById(pid);
       if (p) {
         return {
-          name: p.name || it.name || 'Item',
+          name: p.title || p.name || it.name || 'Item',
           image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
           price: Number(p.priceJMD || it.price || 0)
         };
