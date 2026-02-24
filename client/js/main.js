@@ -650,29 +650,30 @@
   };
 
   // -----------------------------
-  // PRODUCTS STORE ADAPTER
+  // PRODUCTS STORE (API-backed)
   // -----------------------------
-  const Products = {
-    readAll() {
-      if (window.BSProducts && typeof window.BSProducts.readAll === 'function') {
-        return window.BSProducts.readAll();
+  const Products = (() => {
+    let _cache = [];
+
+    return {
+      setAll(products) {
+        _cache = Array.isArray(products) ? products : [];
+      },
+
+      readAll() {
+        return _cache;
+      },
+
+      listPublished() {
+        return _cache.filter(p => p?.status === "published");
+      },
+
+      findById(id) {
+        const pid = String(id || "");
+        return _cache.find(p => String(p?.id) === pid) || null;
       }
-      return [];
-    },
-
-    listPublished() {
-      if (window.BSProducts && typeof window.BSProducts.listPublished === 'function') {
-        return window.BSProducts.listPublished();
-      }
-      return this.readAll().filter(p => p?.isPublished);
-    },
-
-    findById(id) {
-      const pid = String(id || '');
-      return this.readAll().find(p => String(p?.id) === pid) || null;
-    }
-  };
-
+    };
+  })();
   // -----------------------------
   // ORDERS (LOCAL DEMO)
   // -----------------------------
@@ -792,69 +793,30 @@
   // -----------------------------
   // SHOP: RENDER FROM STORE
   // -----------------------------
-  function renderShopFromStore() {
-    if (page() !== 'shop-page.html' && page() !== 'shop-page') return;
+  async function renderShopFromStore() {
+    const container = document.querySelector("[data-products]");
+    if (!container) return;
 
-    const grid = $('#productsGrid');
-    if (!grid) return;
+    container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-    const products = Products.listPublished();
-    const cartItems = Cart.load();
-    const cartQtyByKey = new Map();
-    cartItems.forEach(it => {
-      const key = `${String(it.productId)}::${String(it.size || '')}`;
-      cartQtyByKey.set(key, (cartQtyByKey.get(key) || 0) + Number(it.qty || 0));
-    });
+    try {
+      const res = await fetch("/api/products", { credentials: "omit" });
+      const data = await res.json();
 
-    grid.innerHTML = products.map((p, idx) => {
-      const sizes = Array.isArray(p.sizes) && p.sizes.length ? p.sizes : ['S', 'M', 'L', 'XL'];
-      const baseStockBySize = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
+      if (data?.ok && Array.isArray(data.products)) {
+        Products.setAll(data.products);
+        renderProducts(container, data.products);
+        return;
+      }
+    } catch (err) {
+      console.warn("API products failed, falling back to localStorage.");
+    }
 
-      const remainingBySize = {};
-      sizes.forEach(s => {
-        const base = Number(baseStockBySize?.[s] ?? 0);
-        const inCart = Number(cartQtyByKey.get(`${String(p.id)}::${String(s)}`) || 0);
-        remainingBySize[s] = Math.max(0, base - inCart);
-      });
-
-      const totalRemaining = Object.values(remainingBySize).reduce((sum, n) => sum + Number(n || 0), 0);
-      const cover = p.media?.coverUrl || '';
-      const sizeSelectId = `size-${p.id}-${idx}`;
-
-      const sizeOptions = sizes.map(s => {
-        const r = Number(remainingBySize[s] || 0);
-        const disabled = r <= 0 ? 'disabled' : '';
-        const label = r <= 0 ? `${escapeHtml(s)} (Out)` : escapeHtml(s);
-        return `<option value="${escapeHtml(s)}" ${disabled}>${label}</option>`;
-      }).join('');
-
-      const stockLine = totalRemaining > 0
-        ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalRemaining || 0)}</span></p>`
-        : `<p class="stock">New stock coming soon.</p>`;
-
-      const displayName = String(p.title || p.name || '').trim();
-
-      return `
-  <div class="product-card" data-product-id="${escapeHtml(p.id)}">
-    <img src="${escapeHtml(cover)}" alt="${escapeHtml(displayName || 'Product')}" />
-    <h3>${escapeHtml(displayName)}</h3>
-    <p class="price">${money(p.priceJMD || 0)}</p>
-
-          <div class="row">
-            <select id="${escapeHtml(sizeSelectId)}" class="product-size-select" ${totalRemaining <= 0 ? 'disabled' : ''}>
-              <option value="">Select size</option>
-              ${sizeOptions}
-            </select>
-          </div>
-
-          <button class="btn add-to-cart" ${totalRemaining <= 0 ? 'disabled aria-disabled="true"' : ''}>
-            Add to Cart
-          </button>
-
-          ${stockLine}
-        </div>
-      `;
-    }).join('');
+    // Fallback to localStorage (safe deploy)
+    const raw = localStorage.getItem("bs_products_v1");
+    const products = raw ? JSON.parse(raw) : [];
+    Products.setAll(products);
+    renderProducts(container, products);
   }
 
   function bindAddToCart() {
