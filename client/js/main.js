@@ -794,30 +794,55 @@
   // SHOP: RENDER FROM STORE
   // -----------------------------
   async function renderShopFromStore() {
-    const container = document.querySelector("[data-products]");
-    if (!container) return;
+  const container = document.querySelector("[data-products]");
+  if (!container) return;
 
-    container.innerHTML = `<div class="muted">Loading products…</div>`;
+  container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-    try {
-      const res = await fetch("/api/products", { credentials: "omit" });
-      const data = await res.json();
+  // 1) Try same-origin first (works if you proxy API or serve frontend from same host)
+  const sameOriginUrl = "/api/products";
 
-      if (data?.ok && Array.isArray(data.products)) {
-        Products.setAll(data.products);
-        renderProducts(container, data.products);
-        return;
-      }
-    } catch (err) {
-      console.warn("API products failed, falling back to localStorage.");
+  // 2) Fallback to Railway API (works for static hosting)
+  const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
+
+  async function tryFetch(url) {
+    const res = await fetch(url, { credentials: "omit" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data || data.ok !== true || !Array.isArray(data.products)) {
+      throw new Error("Bad response shape");
     }
+    return data.products;
+  }
 
-    // Fallback to localStorage (safe deploy)
+  try {
+    const products = await tryFetch(sameOriginUrl);
+    Products.setAll(products);
+    renderProducts(container, products);
+    return;
+  } catch (e1) {
+    // ignore, fallback to Railway
+  }
+
+  try {
+    const products = await tryFetch(railwayUrl);
+    Products.setAll(products);
+    renderProducts(container, products);
+    return;
+  } catch (e2) {
+    console.warn("Products fetch failed (same-origin + Railway).", e2);
+  }
+
+  // Final fallback to localStorage (so you never show nothing)
+  try {
     const raw = localStorage.getItem("bs_products_v1");
     const products = raw ? JSON.parse(raw) : [];
     Products.setAll(products);
     renderProducts(container, products);
+  } catch {
+    container.innerHTML = `<div class="muted">No products available.</div>`;
   }
+}
 
   function bindAddToCart() {
     document.addEventListener('click', (e) => {
