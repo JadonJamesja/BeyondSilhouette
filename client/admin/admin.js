@@ -22,7 +22,8 @@
 
   const ADMIN = {
     theme: 'bs_admin_theme',
-    settings: 'bs_admin_settings_v1'
+    settings: 'bs_admin_settings_v1',
+    sidebar: 'bs_admin_sidebar_v1' // NEW: persist desktop collapse across pages
   };
 
   const qs = (sel, root = document) => root.querySelector(sel);
@@ -116,6 +117,58 @@
     const next = readTheme() === 'dark' ? 'light' : 'dark';
     applyTheme(next);
     toast(`Theme: ${next}`);
+  }
+
+  /* ================= Sidebar persistence + active nav ================= */
+  function readSidebarPref() {
+    return localStorage.getItem(ADMIN.sidebar) === 'collapsed';
+  }
+
+  function writeSidebarPref(isCollapsed) {
+    if (isCollapsed) localStorage.setItem(ADMIN.sidebar, 'collapsed');
+    else localStorage.removeItem(ADMIN.sidebar);
+  }
+
+  function applySidebarPref() {
+    if (!document.body) return;
+
+    // Mobile uses overlay drawer; never persist overlay-open
+    const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 920px)').matches);
+
+    // Always clear mobile overlay state on load + breakpoint changes
+    document.body.classList.remove('sidebar-open');
+
+    if (isMobile) {
+      document.body.classList.remove('sidebar-collapsed');
+      return;
+    }
+
+    if (readSidebarPref()) document.body.classList.add('sidebar-collapsed');
+    else document.body.classList.remove('sidebar-collapsed');
+  }
+
+  function bindSidebarMediaListener() {
+    if (!window.matchMedia) return;
+    const mql = window.matchMedia('(max-width: 920px)');
+    const onChange = () => applySidebarPref();
+    if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onChange);
+    else if (typeof mql.addListener === 'function') mql.addListener(onChange);
+  }
+
+  function highlightActiveNav() {
+    const path = location.pathname.replace(/\\/g, '/');
+    const current = (path.split('/').pop() || '').toLowerCase();
+
+    qsa('nav.nav a.nav-item[href]').forEach(a => {
+      const href = (a.getAttribute('href') || '').split('/').pop().toLowerCase();
+      if (href && href === current) {
+        a.classList.add('active');
+        a.setAttribute('aria-current', 'page');
+      } else {
+        a.classList.remove('active');
+        a.removeAttribute('aria-current');
+      }
+    });
   }
 
   /* ================= Admin settings ================= */
@@ -223,6 +276,7 @@
           document.body.classList.toggle('sidebar-open');
         } else {
           document.body.classList.toggle('sidebar-collapsed');
+          writeSidebarPref(document.body.classList.contains('sidebar-collapsed'));
         }
         return;
       }
@@ -918,7 +972,7 @@
         `;
       }
 
-      // ✅ History (this is what you were missing)
+      // History (if present)
       renderHistoryInto(row);
 
       modal.hidden = false;
@@ -1469,7 +1523,7 @@
         `;
       }
 
-      // ✅ History (optional if #orderModalHistory exists on this page)
+      // History (optional if #orderModalHistory exists on this page)
       renderOrderHistoryIntoModal(row);
 
       ordModal.hidden = false;
@@ -1649,6 +1703,12 @@
   applyTheme(readTheme());
   setYear();
   requireAdminGate();
+
+  // NEW: consistent sidebar + active link on ALL admin pages
+  applySidebarPref();
+  bindSidebarMediaListener();
+  highlightActiveNav();
+
   hydrateAdminName();
   bindDelegatedActions();
   initProductsManager();
