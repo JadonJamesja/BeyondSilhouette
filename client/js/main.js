@@ -832,11 +832,13 @@
         ? `<p class="stock">In Stock: <span class="stock-count">${Number(totalRemaining || 0)}</span></p>`
         : `<p class="stock">New stock coming soon.</p>`;
 
+      const displayName = String(p.title || p.name || '').trim();
+
       return `
-        <div class="product-card" data-product-id="${escapeHtml(p.id)}">
-          <img src="${escapeHtml(cover)}" alt="${escapeHtml(p.name || 'Product')}" />
-          <h3>${escapeHtml(p.name || '')}</h3>
-          <p class="price">${money(p.priceJMD || 0)}</p>
+  <div class="product-card" data-product-id="${escapeHtml(p.id)}">
+    <img src="${escapeHtml(cover)}" alt="${escapeHtml(displayName || 'Product')}" />
+    <h3>${escapeHtml(displayName)}</h3>
+    <p class="price">${money(p.priceJMD || 0)}</p>
 
           <div class="row">
             <select id="${escapeHtml(sizeSelectId)}" class="product-size-select" ${totalRemaining <= 0 ? 'disabled' : ''}>
