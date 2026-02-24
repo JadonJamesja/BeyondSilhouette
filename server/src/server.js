@@ -65,6 +65,76 @@ app.get("/api/db/health", async (req, res) => {
 });
 
 // -----------------------------
+// PUBLIC PRODUCTS (for shop)
+// -----------------------------
+app.get("/api/products", async (req, res) => {
+  // Public endpoint: allow simple cross-origin GET (safe for products)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  try {
+    const products = await prisma.product.findMany({
+      where: { isPublished: true },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        priceJMD: true,
+        isPublished: true,
+        createdAt: true,
+        updatedAt: true,
+        images: {
+          orderBy: { sortOrder: "asc" },
+          select: { url: true, alt: true, sortOrder: true },
+        },
+        inventory: {
+          orderBy: { size: "asc" },
+          select: { size: true, stock: true },
+        },
+      },
+    });
+
+    const mapped = products.map((p) => {
+      const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
+
+      for (const row of p.inventory || []) {
+        const k = String(row.size || "").trim().toUpperCase();
+        if (k === "S" || k === "M" || k === "L" || k === "XL") {
+          stockBySize[k] = Number.isFinite(Number(row.stock))
+            ? Math.max(0, Math.round(Number(row.stock)))
+            : 0;
+        }
+      }
+
+      const coverUrl =
+        p.images && p.images.length > 0 ? String(p.images[0].url) : "";
+
+      return {
+        id: p.id,
+        slug: p.slug || null,
+        title: p.name, // frontend expects title
+        description: p.description || "",
+        priceJMD: p.priceJMD,
+        status: p.isPublished ? "published" : "draft",
+        sizes: ["S", "M", "L", "XL"],
+        stockBySize,
+        media: { coverUrl },
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      };
+    });
+
+    return res.json({ ok: true, products: mapped });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err?.message || "Failed to load products",
+    });
+  }
+});
+// -----------------------------
 // AUTH (backend foundation)
 // -----------------------------
 app.get("/api/me", async (req, res) => {
