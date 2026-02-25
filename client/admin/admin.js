@@ -12,701 +12,766 @@
 
 (function () {
   'use strict';
+}
+)();
+const SITE = {
+  session: 'bs_session_v1',
+  users: 'bs_users_v1',
+  products: 'bs_products_v1',
+  state: 'bs_state_v1'
+};
 
-  const SITE = {
-    session: 'bs_session_v1',
-    users: 'bs_users_v1',
-    products: 'bs_products_v1',
-    state: 'bs_state_v1'
-  };
+const ADMIN = {
+  theme: 'bs_admin_theme',
+  settings: 'bs_admin_settings_v1',
+  sidebar: 'bs_admin_sidebar_v1' // NEW: persist desktop collapse across pages
+};
 
-  const ADMIN = {
-    theme: 'bs_admin_theme',
-    settings: 'bs_admin_settings_v1',
-    sidebar: 'bs_admin_sidebar_v1' // NEW: persist desktop collapse across pages
-  };
+const qs = (sel, root = document) => root.querySelector(sel);
+const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  const qs = (sel, root = document) => root.querySelector(sel);
-  const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+/* ================= Core utils ================= */
+function safeParse(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
 
-  /* ================= Core utils ================= */
-  function safeParse(s) {
-    try { return JSON.parse(s); } catch { return null; }
+function escapeHtml(s) {
+  return String(s || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function toInt(v) {
+  const n = Number(String(v == null ? '' : v).replace(/[^\d-]/g, ''));
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function toPriceJMD(v) {
+  const n = Number(String(v == null ? '' : v).replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+function formatJ(n) {
+  const num = Math.round(Number(n || 0));
+  return 'J$ ' + num.toLocaleString('en-JM', { maximumFractionDigits: 0 });
+}
+
+function toast(message) {
+  let el = qs('.toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.textContent = String(message || '');
+  el.classList.add('show');
+  window.clearTimeout(toast._t);
+  toast._t = window.setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function setYear() {
+  const year = new Date().getFullYear();
+  qsa('[data-ui="year"]').forEach(n => (n.textContent = String(year)));
+}
+
+function nowISO() {
+  return new Date().toISOString();
+}
+
+function uid(prefix = 'prod_') {
+  return prefix + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+}
+
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function formatDateShort(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || !Number.isFinite(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+}
+
+/* ================= Theme (persisted) ================= */
+function readTheme() {
+  const raw = localStorage.getItem(ADMIN.theme);
+  const t = String(raw || '').trim().toLowerCase();
+  return (t === 'light' || t === 'dark') ? t : 'dark';
+}
+
+function applyTheme(theme) {
+  const t = (String(theme || '').toLowerCase() === 'light') ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem(ADMIN.theme, t);
+}
+
+function toggleTheme() {
+  const next = readTheme() === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  toast(`Theme: ${next}`);
+}
+
+/* ================= Sidebar persistence + active nav ================= */
+function readSidebarPref() {
+  return localStorage.getItem(ADMIN.sidebar) === 'collapsed';
+}
+
+function writeSidebarPref(isCollapsed) {
+  if (isCollapsed) localStorage.setItem(ADMIN.sidebar, 'collapsed');
+  else localStorage.removeItem(ADMIN.sidebar);
+}
+
+function applySidebarPref() {
+  if (!document.body) return;
+
+  // Mobile uses overlay drawer; never persist overlay-open
+  const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 920px)').matches);
+
+  // Always clear mobile overlay state on load + breakpoint changes
+  document.body.classList.remove('sidebar-open');
+
+  if (isMobile) {
+    document.body.classList.remove('sidebar-collapsed');
+    return;
   }
 
-  function escapeHtml(s) {
-    return String(s || '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
+  if (readSidebarPref()) document.body.classList.add('sidebar-collapsed');
+  else document.body.classList.remove('sidebar-collapsed');
+}
 
-  function toInt(v) {
-    const n = Number(String(v == null ? '' : v).replace(/[^\d-]/g, ''));
-    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
-  }
+function bindSidebarMediaListener() {
+  if (!window.matchMedia) return;
+  const mql = window.matchMedia('(max-width: 920px)');
+  const onChange = () => applySidebarPref();
+  if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onChange);
+  else if (typeof mql.addListener === 'function') mql.addListener(onChange);
+}
 
-  function toPriceJMD(v) {
-    const n = Number(String(v == null ? '' : v).replace(/[^\d.]/g, ''));
-    return Number.isFinite(n) ? Math.max(0, n) : 0;
-  }
+function highlightActiveNav() {
+  const path = location.pathname.replace(/\\/g, '/');
+  const current = (path.split('/').pop() || '').toLowerCase();
 
-  function formatJ(n) {
-    const num = Math.round(Number(n || 0));
-    return 'J$ ' + num.toLocaleString('en-JM', { maximumFractionDigits: 0 });
-  }
-
-  function toast(message) {
-    let el = qs('.toast');
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'toast';
-      el.setAttribute('role', 'status');
-      el.setAttribute('aria-live', 'polite');
-      document.body.appendChild(el);
+  qsa('nav.nav a.nav-item[href]').forEach(a => {
+    const href = (a.getAttribute('href') || '').split('/').pop().toLowerCase();
+    if (href && href === current) {
+      a.classList.add('active');
+      a.setAttribute('aria-current', 'page');
+    } else {
+      a.classList.remove('active');
+      a.removeAttribute('aria-current');
     }
-    el.textContent = String(message || '');
-    el.classList.add('show');
-    window.clearTimeout(toast._t);
-    toast._t = window.setTimeout(() => el.classList.remove('show'), 2200);
+  });
+}
+
+/* ================= Admin settings ================= */
+function readAdminSettings() {
+  const raw = localStorage.getItem(ADMIN.settings);
+  const obj = raw ? (safeParse(raw) || {}) : {};
+  const lowStockThreshold = Number(obj.lowStockThreshold);
+  return {
+    lowStockThreshold: Number.isFinite(lowStockThreshold) ? Math.max(0, Math.floor(lowStockThreshold)) : 3
+  };
+}
+
+function writeAdminSettings(next) {
+  const obj = next && typeof next === 'object' ? next : {};
+  localStorage.setItem(ADMIN.settings, JSON.stringify(obj));
+}
+
+/* ================= Site auth (source of truth) ================= */
+function readSiteSession() {
+  const raw = localStorage.getItem(SITE.session);
+  return raw ? (safeParse(raw) || null) : null;
+}
+
+function readSiteUsers() {
+  const raw = localStorage.getItem(SITE.users);
+  const obj = raw ? (safeParse(raw) || {}) : {};
+  return (obj && typeof obj === 'object') ? obj : {};
+}
+
+function getCurrentUser() {
+  const sess = readSiteSession();
+  if (!sess || !sess.email) return null;
+  const users = readSiteUsers();
+  return users[String(sess.email).trim().toLowerCase()] || null;
+}
+
+function isLoggedIn() {
+  const u = getCurrentUser();
+  return !!(u && u.email);
+}
+
+function isAdmin() {
+  const u = getCurrentUser();
+  return !!(u && String(u.role || '').toLowerCase() === 'admin');
+}
+
+function logoutSite() {
+  localStorage.removeItem(SITE.session);
+}
+
+function inAdminFolder() {
+  const path = location.pathname.replace(/\\/g, '/');
+  return path.includes('/admin/');
+}
+
+function isAdminLoginPage() {
+  const path = location.pathname.replace(/\\/g, '/').toLowerCase();
+  return path.endsWith('/admin/login.html') || path.endsWith('/admin/login');
+}
+
+function requireAdminGate() {
+  if (!inAdminFolder()) return;
+
+  if (!isLoggedIn()) {
+    // Admin pages do NOT have their own login — use site login
+    location.href = '../login.html';
+    return;
   }
 
-  function setYear() {
-    const year = new Date().getFullYear();
-    qsa('[data-ui="year"]').forEach(n => (n.textContent = String(year)));
+  if (!isAdmin()) {
+    location.href = '../index.html';
+    return;
   }
 
-  function nowISO() {
-    return new Date().toISOString();
+  // If admin is logged in, never stay on /admin/login
+  if (isAdminLoginPage()) {
+    location.href = './dashboard.html';
   }
+}
 
-  function uid(prefix = 'prod_') {
-    return prefix + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
-  }
+function hydrateAdminName() {
+  const u = getCurrentUser();
+  const display = (u && (u.name || u.email)) ? String(u.name || u.email) : 'Admin';
+  qsa('[data-ui="adminName"]').forEach(n => (n.textContent = display));
+}
 
-  function slugify(s) {
-    return String(s || '')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
+/* ================= Sidebar + delegated actions ================= */
+function bindDelegatedActions() {
+  document.addEventListener('click', (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
+    if (!el) return;
 
-  function formatDateShort(iso) {
-    const d = iso ? new Date(iso) : null;
-    if (!d || !Number.isFinite(d.getTime())) return '—';
-    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-  }
+    const action = el.getAttribute('data-action');
+    if (!action) return;
 
-  /* ================= Theme (persisted) ================= */
-  function readTheme() {
-    const raw = localStorage.getItem(ADMIN.theme);
-    const t = String(raw || '').trim().toLowerCase();
-    return (t === 'light' || t === 'dark') ? t : 'dark';
-  }
-
-  function applyTheme(theme) {
-    const t = (String(theme || '').toLowerCase() === 'light') ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', t);
-    localStorage.setItem(ADMIN.theme, t);
-  }
-
-  function toggleTheme() {
-    const next = readTheme() === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    toast(`Theme: ${next}`);
-  }
-
-  /* ================= Sidebar persistence + active nav ================= */
-  function readSidebarPref() {
-    return localStorage.getItem(ADMIN.sidebar) === 'collapsed';
-  }
-
-  function writeSidebarPref(isCollapsed) {
-    if (isCollapsed) localStorage.setItem(ADMIN.sidebar, 'collapsed');
-    else localStorage.removeItem(ADMIN.sidebar);
-  }
-
-  function applySidebarPref() {
-    if (!document.body) return;
-
-    // Mobile uses overlay drawer; never persist overlay-open
-    const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 920px)').matches);
-
-    // Always clear mobile overlay state on load + breakpoint changes
-    document.body.classList.remove('sidebar-open');
-
-    if (isMobile) {
-      document.body.classList.remove('sidebar-collapsed');
+    if (action === 'toggle-theme') {
+      e.preventDefault();
+      toggleTheme();
       return;
     }
 
-    if (readSidebarPref()) document.body.classList.add('sidebar-collapsed');
-    else document.body.classList.remove('sidebar-collapsed');
-  }
-
-  function bindSidebarMediaListener() {
-    if (!window.matchMedia) return;
-    const mql = window.matchMedia('(max-width: 920px)');
-    const onChange = () => applySidebarPref();
-    if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onChange);
-    else if (typeof mql.addListener === 'function') mql.addListener(onChange);
-  }
-
-  function highlightActiveNav() {
-    const path = location.pathname.replace(/\\/g, '/');
-    const current = (path.split('/').pop() || '').toLowerCase();
-
-    qsa('nav.nav a.nav-item[href]').forEach(a => {
-      const href = (a.getAttribute('href') || '').split('/').pop().toLowerCase();
-      if (href && href === current) {
-        a.classList.add('active');
-        a.setAttribute('aria-current', 'page');
+    if (action === 'toggle-sidebar') {
+      e.preventDefault();
+      if (window.matchMedia && window.matchMedia('(max-width: 920px)').matches) {
+        document.body.classList.toggle('sidebar-open');
       } else {
-        a.classList.remove('active');
-        a.removeAttribute('aria-current');
+        document.body.classList.toggle('sidebar-collapsed');
+        writeSidebarPref(document.body.classList.contains('sidebar-collapsed'));
       }
-    });
-  }
+      return;
+    }
 
-  /* ================= Admin settings ================= */
-  function readAdminSettings() {
-    const raw = localStorage.getItem(ADMIN.settings);
-    const obj = raw ? (safeParse(raw) || {}) : {};
-    const lowStockThreshold = Number(obj.lowStockThreshold);
-    return {
-      lowStockThreshold: Number.isFinite(lowStockThreshold) ? Math.max(0, Math.floor(lowStockThreshold)) : 3
-    };
-  }
-
-  function writeAdminSettings(next) {
-    const obj = next && typeof next === 'object' ? next : {};
-    localStorage.setItem(ADMIN.settings, JSON.stringify(obj));
-  }
-
-  /* ================= Site auth (source of truth) ================= */
-  function readSiteSession() {
-    const raw = localStorage.getItem(SITE.session);
-    return raw ? (safeParse(raw) || null) : null;
-  }
-
-  function readSiteUsers() {
-    const raw = localStorage.getItem(SITE.users);
-    const obj = raw ? (safeParse(raw) || {}) : {};
-    return (obj && typeof obj === 'object') ? obj : {};
-  }
-
-  function getCurrentUser() {
-    const sess = readSiteSession();
-    if (!sess || !sess.email) return null;
-    const users = readSiteUsers();
-    return users[String(sess.email).trim().toLowerCase()] || null;
-  }
-
-  function isLoggedIn() {
-    const u = getCurrentUser();
-    return !!(u && u.email);
-  }
-
-  function isAdmin() {
-    const u = getCurrentUser();
-    return !!(u && String(u.role || '').toLowerCase() === 'admin');
-  }
-
-  function logoutSite() {
-    localStorage.removeItem(SITE.session);
-  }
-
-  function inAdminFolder() {
-    const path = location.pathname.replace(/\\/g, '/');
-    return path.includes('/admin/');
-  }
-
-  function isAdminLoginPage() {
-    const path = location.pathname.replace(/\\/g, '/').toLowerCase();
-    return path.endsWith('/admin/login.html') || path.endsWith('/admin/login');
-  }
-
-  function requireAdminGate() {
-    if (!inAdminFolder()) return;
-
-    if (!isLoggedIn()) {
-      // Admin pages do NOT have their own login — use site login
+    if (action === 'logout') {
+      e.preventDefault();
+      logoutSite();
       location.href = '../login.html';
       return;
     }
 
-    if (!isAdmin()) {
-      location.href = '../index.html';
+    if (action === 'toast') {
+      e.preventDefault();
+      toast(el.getAttribute('data-toast') || 'Done.');
       return;
     }
+  });
+}
 
-    // If admin is logged in, never stay on /admin/login
-    if (isAdminLoginPage()) {
-      location.href = './dashboard.html';
-    }
-  }
+// ===== PRODUCTS (DB-backed instead of bs_products_v1 localStorage) =====
 
-  function hydrateAdminName() {
-    const u = getCurrentUser();
-    const display = (u && (u.name || u.email)) ? String(u.name || u.email) : 'Admin';
-    qsa('[data-ui="adminName"]').forEach(n => (n.textContent = display));
-  }
+async function apiAdminJSON(path, opts = {}) {
+  const res = await fetch(path, {
+    credentials: "include",
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
 
-  /* ================= Sidebar + delegated actions ================= */
-  function bindDelegatedActions() {
-    document.addEventListener('click', (e) => {
-      const el = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
-      if (!el) return;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
 
-      const action = el.getAttribute('data-action');
-      if (!action) return;
+async function apiListAdminProducts() {
+  const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
+  return Array.isArray(data?.products) ? data.products : [];
+}
 
-      if (action === 'toggle-theme') {
-        e.preventDefault();
-        toggleTheme();
-        return;
-      }
+async function apiCreateAdminProduct(payload) {
+  const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return data?.product || null;
+}
 
-      if (action === 'toggle-sidebar') {
-        e.preventDefault();
-        if (window.matchMedia && window.matchMedia('(max-width: 920px)').matches) {
-          document.body.classList.toggle('sidebar-open');
-        } else {
-          document.body.classList.toggle('sidebar-collapsed');
-          writeSidebarPref(document.body.classList.contains('sidebar-collapsed'));
-        }
-        return;
-      }
-
-      if (action === 'logout') {
-        e.preventDefault();
-        logoutSite();
-        location.href = '../login.html';
-        return;
-      }
-
-      if (action === 'toast') {
-        e.preventDefault();
-        toast(el.getAttribute('data-toast') || 'Done.');
-        return;
-      }
-    });
-  }
-
-  // ===== PRODUCTS (DB-backed instead of bs_products_v1 localStorage) =====
-
-  async function apiAdminJSON(path, opts = {}) {
-    const res = await fetch(path, {
-      credentials: "include",
-      ...opts,
-      headers: {
-        "Content-Type": "application/json",
-        ...(opts.headers || {}),
-      },
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-    return data;
-  }
-
-  async function apiListAdminProducts() {
-    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
-    return Array.isArray(data?.products) ? data.products : [];
-  }
-
-  async function apiCreateAdminProduct(payload) {
-    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", {
-      method: "POST",
+async function apiUpdateAdminProduct(id, payload) {
+  const data = await apiAdminJSON(
+    `https://bs-api-live.up.railway.app/api/admin/products/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
       body: JSON.stringify(payload),
-    });
-    return data?.product || null;
-  }
-
-  async function apiUpdateAdminProduct(id, payload) {
-    const data = await apiAdminJSON(
-      `https://bs-api-live.up.railway.app/api/admin/products/${encodeURIComponent(id)}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      }
-    );
-    return data?.product || null;
-  }
-
-  // DB -> UI shape (admin UI expects title/status/media/stockBySize)
-  function toUIProduct(db) {
-    const inv = Array.isArray(db?.inventory) ? db.inventory : [];
-    const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
-    for (const row of inv) {
-      const k = String(row?.size || "").trim().toUpperCase();
-      if (k in stockBySize) stockBySize[k] = Number(row?.stock || 0);
     }
+  );
+  return data?.product || null;
+}
 
-    const images = Array.isArray(db?.images) ? db.images : [];
-    const coverUrl = images[0]?.url ? String(images[0].url) : "";
+// DB -> UI shape (admin UI expects title/status/media/stockBySize)
+function toUIProduct(db) {
+  const inv = Array.isArray(db?.inventory) ? db.inventory : [];
+  const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
+  for (const row of inv) {
+    const k = String(row?.size || "").trim().toUpperCase();
+    if (k in stockBySize) stockBySize[k] = Number(row?.stock || 0);
+  }
 
+  const images = Array.isArray(db?.images) ? db.images : [];
+  const coverUrl = images[0]?.url ? String(images[0].url) : "";
+
+  return {
+    id: db.id,
+    title: db.name || "",
+    description: db.description || "",
+    priceJMD: db.priceJMD ?? 0,
+    status: db.isPublished ? "published" : "draft",
+    media: { coverUrl },
+    stockBySize,
+  };
+}
+
+// UI -> DB payload (backend expects name/isPublished)
+function toDBPayload(ui) {
+  const name = String(ui?.title || "").trim();
+  const description = String(ui?.description || "").trim();
+  const priceJMD = Number(ui?.priceJMD || 0);
+  const isPublished = String(ui?.status || "draft") === "published";
+
+  const coverUrl = String(ui?.media?.coverUrl || "").trim();
+  const images = coverUrl ? [{ url: coverUrl, alt: name || null, sortOrder: 0 }] : [];
+
+  const sb = ui?.stockBySize || {};
+  const inventory = ["S", "M", "L", "XL"].map((size) => ({
+    size,
+    stock: Number(sb[size] || 0),
+  }));
+
+  return { name, description, priceJMD, isPublished, images, inventory };
+}
+
+// Replaces old readProductsRaw()
+async function readProductsRaw() {
+  const dbProducts = await apiListAdminProducts();
+  return dbProducts.map(toUIProduct);
+}
+
+// Old writeProductsRaw becomes no-op (DB is truth)
+function writeProductsRaw(_) { }
+
+// Replaces old upsertProduct()
+async function upsertProduct(product) {
+  const ui = product || {};
+  const payload = toDBPayload(ui);
+
+  if (!payload.name) throw new Error("Title is required.");
+
+  if (!ui.id) {
+    const created = await apiCreateAdminProduct(payload);
+    if (!created) throw new Error("Create failed.");
+    return toUIProduct(created);
+  }
+
+  const updated = await apiUpdateAdminProduct(ui.id, payload);
+  if (!updated) throw new Error("Update failed.");
+  return toUIProduct(updated);
+}
+// Publish/unpublish via PATCH (DB-backed)
+async function setPublished(id, yes) {
+  const pid = String(id || '').trim();
+  if (!pid) throw new Error('Missing product id.');
+
+  // Minimal PATCH that only toggles publish
+  const payload = { isPublished: !!yes };
+
+  const data = await apiAdminJSON(
+    `https://bs-api-live.up.railway.app/api/admin/products/${encodeURIComponent(pid)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!data?.product) throw new Error("Publish update failed.");
+  return toUIProduct(data.product);
+}
+
+
+/* ================= Products Manager (products.html) ================= */
+async function initProductsManager() {
+  const form = qs('#productForm');
+  if (!form) return;
+
+  const name = qs('input[name="name"]', form);
+  const desc = qs('textarea[name="description"]', form);
+  const price = qs('input[name="price"]', form);
+  const status = qs('select[name="status"]', form);
+  const sS = qs('input[name="stockS"]', form);
+  const sM = qs('input[name="stockM"]', form);
+  const sL = qs('input[name="stockL"]', form);
+  const sXL = qs('input[name="stockXL"]', form);
+
+  const totalBadge = qs('#stockTotalBadge');
+
+  const pvStatus = qs('#previewStatus');
+  const pvName = qs('#previewName');
+  const pvDesc = qs('#previewDesc');
+  const pvPrice = qs('#previewPrice');
+  const pvStock = qs('#previewStock');
+  const pvMedia = qs('#previewMedia');
+
+  const fileInput = qs('#productImages');
+  const imageGrid = qs('#imageGrid');
+
+  // Buttons (existing UI)
+  const saveDraftBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'save draft');
+  const deleteBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'delete');
+  const publishBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'publish');
+
+  const topNewBtn = qsa('.topbar-actions button').find(b => (b.textContent || '').toLowerCase().includes('new product'));
+  const topOpenShopBtn = qsa('.topbar-actions button').find(b => (b.textContent || '').toLowerCase().includes('open shop'));
+
+  // Lists (existing UI has two .list blocks in the Preview card)
+  const listBlocks = qsa('.card .list');
+  const draftsList = listBlocks[0] || null;
+  const publishedList = listBlocks[1] || null;
+
+  // Editor state
+  let editingId = null;
+  let images = []; // [{ name, dataUrl }]
+  let coverDataUrl = '';
+
+  function totalStock() {
+    return toInt(sS?.value) + toInt(sM?.value) + toInt(sL?.value) + toInt(sXL?.value);
+  }
+
+  function readStockBySizeFromForm() {
     return {
-      id: db.id,
-      title: db.name || "",
-      description: db.description || "",
-      priceJMD: db.priceJMD ?? 0,
-      status: db.isPublished ? "published" : "draft",
-      media: { coverUrl },
-      stockBySize,
+      S: toInt(sS?.value),
+      M: toInt(sM?.value),
+      L: toInt(sL?.value),
+      XL: toInt(sXL?.value),
     };
   }
 
-  // UI -> DB payload (backend expects name/isPublished)
-  function toDBPayload(ui) {
-    const name = String(ui?.title || "").trim();
-    const description = String(ui?.description || "").trim();
-    const priceJMD = Number(ui?.priceJMD || 0);
-    const isPublished = String(ui?.status || "draft") === "published";
+  function renderTextPreview() {
+    const tName = (name?.value || '—').trim() || '—';
+    const tDesc = (desc?.value || '—').trim() || '—';
+    const tPrice = formatJ(toPriceJMD(price?.value));
+    const tStatus = (String(status?.value || '').toLowerCase() === 'published') ? 'Published' : 'Draft';
+    const tStock = totalStock();
 
-    const coverUrl = String(ui?.media?.coverUrl || "").trim();
-    const images = coverUrl ? [{ url: coverUrl, alt: name || null, sortOrder: 0 }] : [];
-
-    const sb = ui?.stockBySize || {};
-    const inventory = ["S", "M", "L", "XL"].map((size) => ({
-      size,
-      stock: Number(sb[size] || 0),
-    }));
-
-    return { name, description, priceJMD, isPublished, images, inventory };
+    if (pvName) pvName.textContent = tName;
+    if (pvDesc) pvDesc.textContent = tDesc;
+    if (pvPrice) pvPrice.textContent = tPrice;
+    if (pvStatus) pvStatus.textContent = tStatus;
+    if (pvStock) pvStock.textContent = 'Stock: ' + tStock;
+    if (totalBadge) totalBadge.textContent = 'Total: ' + tStock;
   }
 
-  // Replaces old readProductsRaw()
-  async function readProductsRaw() {
-    const dbProducts = await apiListAdminProducts();
-    return dbProducts.map(toUIProduct);
+  async function readFiles(files) {
+    const arr = Array.from(files || []);
+    return Promise.all(arr.map(f => new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve({ name: f.name, dataUrl: String(r.result || '') });
+      r.onerror = () => reject(new Error('read failed'));
+      r.readAsDataURL(f);
+    })));
   }
 
-  // Old writeProductsRaw becomes no-op (DB is truth)
-  function writeProductsRaw(_) { }
+  function renderImages(list) {
+    if (imageGrid) imageGrid.innerHTML = '';
 
-  // Replaces old upsertProduct()
-  async function upsertProduct(product) {
-    const ui = product || {};
-    const payload = toDBPayload(ui);
-
-    if (!payload.name) throw new Error("Title is required.");
-
-    if (!ui.id) {
-      const created = await apiCreateAdminProduct(payload);
-      if (!created) throw new Error("Create failed.");
-      return toUIProduct(created);
-    }
-
-    const updated = await apiUpdateAdminProduct(ui.id, payload);
-    if (!updated) throw new Error("Update failed.");
-    return toUIProduct(updated);
-  }
-
-  // Replaces old setPublished()
-  (async () => {
-    try {
-      await setPublishedUI(p.id, kind !== "published");
-      toast(kind === "published" ? "Unpublished ✅" : "Published ✅");
-      if (String(editingId || "") === String(p.id)) {
-        if (status) status.value = (kind === "published") ? "draft" : "published";
-        renderTextPreview();
-      }
-    } catch (err) {
-      toast(err && err.message ? err.message : "Could not update publish state.");
-    }
-  })();
-  /* ================= Products Manager (products.html) ================= */
-  async function initProductsManager() {
-    const form = qs('#productForm');
-    if (!form) return;
-
-    const name = qs('input[name="name"]', form);
-    const desc = qs('textarea[name="description"]', form);
-    const price = qs('input[name="price"]', form);
-    const status = qs('select[name="status"]', form);
-    const sS = qs('input[name="stockS"]', form);
-    const sM = qs('input[name="stockM"]', form);
-    const sL = qs('input[name="stockL"]', form);
-    const sXL = qs('input[name="stockXL"]', form);
-
-    const totalBadge = qs('#stockTotalBadge');
-
-    const pvStatus = qs('#previewStatus');
-    const pvName = qs('#previewName');
-    const pvDesc = qs('#previewDesc');
-    const pvPrice = qs('#previewPrice');
-    const pvStock = qs('#previewStock');
-    const pvMedia = qs('#previewMedia');
-
-    const fileInput = qs('#productImages');
-    const imageGrid = qs('#imageGrid');
-
-    // Buttons (existing UI)
-    const saveDraftBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'save draft');
-    const deleteBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'delete');
-    const publishBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'publish');
-
-    const topNewBtn = qsa('.topbar-actions button').find(b => (b.textContent || '').toLowerCase().includes('new product'));
-    const topOpenShopBtn = qsa('.topbar-actions button').find(b => (b.textContent || '').toLowerCase().includes('open shop'));
-
-    // Lists (existing UI has two .list blocks in the Preview card)
-    const listBlocks = qsa('.card .list');
-    const draftsList = listBlocks[0] || null;
-    const publishedList = listBlocks[1] || null;
-
-    // Editor state
-    let editingId = null;
-    let images = []; // [{ name, dataUrl }]
-    let coverDataUrl = '';
-
-    function totalStock() {
-      return toInt(sS?.value) + toInt(sM?.value) + toInt(sL?.value) + toInt(sXL?.value);
-    }
-
-    function readStockBySizeFromForm() {
-      return {
-        S: toInt(sS?.value),
-        M: toInt(sM?.value),
-        L: toInt(sL?.value),
-        XL: toInt(sXL?.value),
-      };
-    }
-
-    function renderTextPreview() {
-      const tName = (name?.value || '—').trim() || '—';
-      const tDesc = (desc?.value || '—').trim() || '—';
-      const tPrice = formatJ(toPriceJMD(price?.value));
-      const tStatus = (String(status?.value || '').toLowerCase() === 'published') ? 'Published' : 'Draft';
-      const tStock = totalStock();
-
-      if (pvName) pvName.textContent = tName;
-      if (pvDesc) pvDesc.textContent = tDesc;
-      if (pvPrice) pvPrice.textContent = tPrice;
-      if (pvStatus) pvStatus.textContent = tStatus;
-      if (pvStock) pvStock.textContent = 'Stock: ' + tStock;
-      if (totalBadge) totalBadge.textContent = 'Total: ' + tStock;
-    }
-
-    async function readFiles(files) {
-      const arr = Array.from(files || []);
-      return Promise.all(arr.map(f => new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve({ name: f.name, dataUrl: String(r.result || '') });
-        r.onerror = () => reject(new Error('read failed'));
-        r.readAsDataURL(f);
-      })));
-    }
-
-    function renderImages(list) {
-      if (imageGrid) imageGrid.innerHTML = '';
-
-      (list || []).forEach((img, idx) => {
-        const tile = document.createElement('div');
-        tile.className = 'image-tile';
-        tile.innerHTML = `
+    (list || []).forEach((img, idx) => {
+      const tile = document.createElement('div');
+      tile.className = 'image-tile';
+      tile.innerHTML = `
           <img alt="Product image ${idx + 1}" src="${img.dataUrl}">
           <div class="meta">${escapeHtml(img.name)}</div>
         `;
-        imageGrid && imageGrid.appendChild(tile);
-      });
-
-      if (pvMedia) {
-        pvMedia.innerHTML = '';
-        const first = list && list[0] ? list[0] : null;
-        const url = first ? first.dataUrl : coverDataUrl;
-        if (url) {
-          const im = document.createElement('img');
-          im.src = url;
-          im.alt = 'Preview image';
-          pvMedia.appendChild(im);
-        } else {
-          pvMedia.innerHTML = '<span class="muted">No image</span>';
-        }
-      }
-    }
-
-    function clearForm() {
-      editingId = null;
-      images = [];
-      coverDataUrl = '';
-      if (name) name.value = '';
-      if (desc) desc.value = '';
-      if (price) price.value = '';
-      if (status) status.value = 'draft';
-      if (sS) sS.value = '';
-      if (sM) sM.value = '';
-      if (sL) sL.value = '';
-      if (sXL) sXL.value = '';
-      if (fileInput) fileInput.value = '';
-      if (imageGrid) imageGrid.innerHTML = '';
-      if (pvMedia) pvMedia.innerHTML = '<span class="muted">No image</span>';
-      renderTextPreview();
-    }
-
-    function loadProductIntoForm(p) {
-      if (!p) return;
-      editingId = String(p.id || '');
-      if (name) name.value = String(p.title || '');
-      if (desc) desc.value = String(p.description || '');
-      if (price) price.value = String(Number(p.priceJMD || 0));
-      if (status) status.value = String(p.status || 'draft').toLowerCase() === 'published' ? 'published' : 'draft';
-
-      const stock = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
-      if (sS) sS.value = String(toInt(stock.S));
-      if (sM) sM.value = String(toInt(stock.M));
-      if (sL) sL.value = String(toInt(stock.L));
-      if (sXL) sXL.value = String(toInt(stock.XL));
-
-      coverDataUrl = getCoverUrl(p) || '';
-      images = coverDataUrl ? [{ name: 'cover', dataUrl: coverDataUrl }] : [];
-      renderImages(images);
-      renderTextPreview();
-    }
-
-    // --- DB/API-backed save/publish/delete/list for Products page ---
-
-    async function saveCurrentProduct({ forceStatus } = {}) {
-      const title = (name?.value || "").trim();
-      if (!title) throw new Error("Please enter a product name.");
-
-      const desiredStatus =
-        forceStatus ||
-        (String(status?.value || "").toLowerCase() === "published" ? "published" : "draft");
-
-      const stockBySize = readStockBySizeFromForm();
-
-      // NOTE: your current UI stores images as dataURLs.
-      // For now we will store the FIRST image dataUrl as coverUrl.
-      // (Not ideal long-term, but it gets DB-backed products working immediately.)
-      const coverUrl =
-        (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : (coverDataUrl || "");
-
-      const payloadUI = {
-        id: editingId || null,
-        title,
-        description: String(desc?.value || ""),
-        priceJMD: toPriceJMD(price?.value),
-        status: desiredStatus,
-        media: { coverUrl },
-        stockBySize
-      };
-
-      // IMPORTANT: call the OUTER async upsertProduct() (DB-backed).
-      // We named this saveCurrentProduct to avoid shadowing.
-      const saved = await upsertProduct(payloadUI);
-
-      // Update editor state from saved result
-      editingId = String(saved.id || "");
-      if (status) status.value = String(saved.status || "draft");
-      coverDataUrl = (saved.media && saved.media.coverUrl) ? String(saved.media.coverUrl) : coverDataUrl;
-
-      toast(desiredStatus === "published" ? "Published to DB ✅" : "Saved to DB ✅");
-      await renderLists();
-      return saved;
-    }
-
-    async function deleteCurrent() {
-      // You do not have a server delete endpoint yet.
-      // Don’t fake-delete locally (it will confuse production).
-      if (!editingId) {
-        toast("No product selected.");
-        return;
-      }
-      toast("Delete is not implemented on the server yet.");
-    }
-
-    async function setPublishedUI(id, yes) {
-      // IMPORTANT: call the OUTER async setPublished() (DB-backed).
-      await setPublished(id, !!yes);
-      await renderLists();
-    }
-
-    async function renderLists() {
-      const products = await readProductsRaw();
-
-      const drafts = products.filter((p) => p && String(p.status || "").toLowerCase() !== "published");
-      const published = products.filter((p) => p && String(p.status || "").toLowerCase() === "published");
-
-      renderListInto(draftsList, drafts, "drafts");
-      renderListInto(publishedList, published, "published");
-    }
-
-    // Bind input -> preview
-    ['input', 'change'].forEach(evt => {
-      [name, desc, price, status, sS, sM, sL, sXL].forEach(el => {
-        if (!el) return;
-        el.addEventListener(evt, renderTextPreview);
-      });
+      imageGrid && imageGrid.appendChild(tile);
     });
 
-    // Bind image picker
-    if (fileInput) {
-      fileInput.addEventListener('change', async () => {
-        try {
-          images = await readFiles(fileInput.files);
-          coverDataUrl = (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : coverDataUrl;
-          renderImages(images);
-        } catch {
-          toast('Could not read images. Try smaller files.');
-        }
-      });
+    if (pvMedia) {
+      pvMedia.innerHTML = '';
+      const first = list && list[0] ? list[0] : null;
+      const url = first ? first.dataUrl : coverDataUrl;
+      if (url) {
+        const im = document.createElement('img');
+        im.src = url;
+        im.alt = 'Preview image';
+        pvMedia.appendChild(im);
+      } else {
+        pvMedia.innerHTML = '<span class="muted">No image</span>';
+      }
     }
+  }
 
-    // Override buttons with real actions
-    if (saveDraftBtn && !saveDraftBtn.dataset.bound) {
-      saveDraftBtn.dataset.bound = '1';
-      saveDraftBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        (async () => {
-          try { await saveCurrentProduct({ forceStatus: "draft" }); }
-          catch (err) { toast(err && err.message ? err.message : "Could not save."); }
-        })();
-      });
-    }
-
-    if (publishBtn && !publishBtn.dataset.bound) {
-      publishBtn.dataset.bound = '1';
-      publishBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        (async () => {
-          try { await saveCurrentProduct({ forceStatus: "published" }); }
-          catch (err) { toast(err && err.message ? err.message : "Could not publish."); }
-        })();
-      });
-    }
-
-    if (deleteBtn && !deleteBtn.dataset.bound) {
-      deleteBtn.dataset.bound = '1';
-      deleteBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        deleteCurrent();
-      });
-    }
-
-    if (topNewBtn && !topNewBtn.dataset.bound) {
-      topNewBtn.dataset.bound = '1';
-      topNewBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        clearForm();
-        toast('New product.');
-      });
-    }
-
-    if (topOpenShopBtn && !topOpenShopBtn.dataset.bound) {
-      topOpenShopBtn.dataset.bound = '1';
-      topOpenShopBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        location.href = '../shop-page.html';
-      });
-    }
-
-    // Initial
+  function clearForm() {
+    editingId = null;
+    images = [];
+    coverDataUrl = '';
+    if (name) name.value = '';
+    if (desc) desc.value = '';
+    if (price) price.value = '';
+    if (status) status.value = 'draft';
+    if (sS) sS.value = '';
+    if (sM) sM.value = '';
+    if (sL) sL.value = '';
+    if (sXL) sXL.value = '';
+    if (fileInput) fileInput.value = '';
+    if (imageGrid) imageGrid.innerHTML = '';
+    if (pvMedia) pvMedia.innerHTML = '<span class="muted">No image</span>';
     renderTextPreview();
+  }
+
+  function loadProductIntoForm(p) {
+    if (!p) return;
+    editingId = String(p.id || '');
+    if (name) name.value = String(p.title || '');
+    if (desc) desc.value = String(p.description || '');
+    if (price) price.value = String(Number(p.priceJMD || 0));
+    if (status) status.value = String(p.status || 'draft').toLowerCase() === 'published' ? 'published' : 'draft';
+
+    const stock = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
+    if (sS) sS.value = String(toInt(stock.S));
+    if (sM) sM.value = String(toInt(stock.M));
+    if (sL) sL.value = String(toInt(stock.L));
+    if (sXL) sXL.value = String(toInt(stock.XL));
+
+    coverDataUrl = (p && p.media && p.media.coverUrl) ? String(p.media.coverUrl) : '';
+    images = coverDataUrl ? [{ name: 'cover', dataUrl: coverDataUrl }] : [];
+    renderImages(images);
+    renderTextPreview();
+  }
+
+  // --- DB/API-backed save/publish/delete/list for Products page ---
+
+  async function saveCurrentProduct({ forceStatus } = {}) {
+    const title = (name?.value || "").trim();
+    if (!title) throw new Error("Please enter a product name.");
+
+    const desiredStatus =
+      forceStatus ||
+      (String(status?.value || "").toLowerCase() === "published" ? "published" : "draft");
+
+    const stockBySize = readStockBySizeFromForm();
+
+    // NOTE: your current UI stores images as dataURLs.
+    // For now we will store the FIRST image dataUrl as coverUrl.
+    // (Not ideal long-term, but it gets DB-backed products working immediately.)
+    const coverUrl =
+      (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : (coverDataUrl || "");
+
+    const payloadUI = {
+      id: editingId || null,
+      title,
+      description: String(desc?.value || ""),
+      priceJMD: toPriceJMD(price?.value),
+      status: desiredStatus,
+      media: { coverUrl },
+      stockBySize
+    };
+
+    // IMPORTANT: call the OUTER async upsertProduct() (DB-backed).
+    // We named this saveCurrentProduct to avoid shadowing.
+    const saved = await upsertProduct(payloadUI);
+
+    // Update editor state from saved result
+    editingId = String(saved.id || "");
+    if (status) status.value = String(saved.status || "draft");
+    coverDataUrl = (saved.media && saved.media.coverUrl) ? String(saved.media.coverUrl) : coverDataUrl;
+
+    toast(desiredStatus === "published" ? "Published to DB ✅" : "Saved to DB ✅");
     await renderLists();
+    return saved;
+  }
+
+  async function deleteCurrent() {
+    // You do not have a server delete endpoint yet.
+    // Don’t fake-delete locally (it will confuse production).
+    if (!editingId) {
+      toast("No product selected.");
+      return;
+    }
+    toast("Delete is not implemented on the server yet.");
+  }
+
+  async function setPublishedUI(id, yes) {
+    // IMPORTANT: call the OUTER async setPublished() (DB-backed).
+    await setPublished(id, !!yes);
+    await renderLists();
+  }
+
+  function renderListInto(listEl, items, kind) {
+    if (!listEl) return;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      listEl.innerHTML = `<div class="muted" style="padding:12px;">No ${kind} products.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = items.map((p) => {
+      const title = escapeHtml(p.title || "Untitled");
+      const price = formatJ(p.priceJMD || 0);
+      const badge = (String(p.status || "").toLowerCase() === "published")
+        ? `<span class="chip chip-ok">Published</span>`
+        : `<span class="chip">Draft</span>`;
+
+      return `
+      <div class="list-item" data-id="${escapeHtml(p.id)}" style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+        <div style="min-width:0;">
+          <div class="list-title">${title}</div>
+          <div class="muted" style="font-size:12.5px;">${escapeHtml(price)}</div>
+        </div>
+        <div class="row" style="gap:10px;">
+          ${badge}
+          <button type="button" class="btn btn-ghost btn-sm" data-action="edit">Edit</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="toggle">
+            ${kind === "published" ? "Unpublish" : "Publish"}
+          </button>
+        </div>
+      </div>
+    `;
+    }).join("");
+
+    // Bind actions
+    qsa(".list-item", listEl).forEach((row) => {
+      const id = row.getAttribute("data-id");
+
+      const editBtn = qs('[data-action="edit"]', row);
+      if (editBtn) {
+        editBtn.addEventListener("click", () => {
+          const p = items.find(x => String(x.id) === String(id));
+          if (!p) return;
+          loadProductIntoForm(p);
+          toast("Loaded.");
+        });
+      }
+
+      const toggleBtn = qs('[data-action="toggle"]', row);
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", () => {
+          (async () => {
+            try {
+              await setPublishedUI(id, kind !== "published");
+              toast(kind === "published" ? "Unpublished ✅" : "Published ✅");
+            } catch (err) {
+              toast(err?.message || "Could not update publish state.");
+            }
+          })();
+        });
+      }
+    });
+  }
+
+  async function renderLists() {
+    const products = await readProductsRaw();
+
+    const drafts = products.filter((p) => p && String(p.status || "").toLowerCase() !== "published");
+    const published = products.filter((p) => p && String(p.status || "").toLowerCase() === "published");
+
+    renderListInto(draftsList, drafts, "drafts");
+    renderListInto(publishedList, published, "published");
+  }
+
+  // Bind input -> preview (run once)
+  ['input', 'change'].forEach(evt => {
+    [name, desc, price, status, sS, sM, sL, sXL].forEach(el => {
+      if (!el) return;
+      el.addEventListener(evt, renderTextPreview);
+    });
+  });
+
+  // Bind image picker (run once)
+  if (fileInput) {
+    fileInput.addEventListener('change', async () => {
+      try {
+        images = await readFiles(fileInput.files);
+        coverDataUrl = (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : coverDataUrl;
+        renderImages(images);
+      } catch {
+        toast('Could not read images. Try smaller files.');
+      }
+    });
+  }
+
+  // Override buttons with real actions (run once)
+  if (saveDraftBtn && !saveDraftBtn.dataset.bound) {
+    saveDraftBtn.dataset.bound = '1';
+    saveDraftBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      (async () => {
+        try { await saveCurrentProduct({ forceStatus: "draft" }); }
+        catch (err) { toast(err && err.message ? err.message : "Could not save."); }
+      })();
+    });
+  }
+
+  if (publishBtn && !publishBtn.dataset.bound) {
+    publishBtn.dataset.bound = '1';
+    publishBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      (async () => {
+        try { await saveCurrentProduct({ forceStatus: "published" }); }
+        catch (err) { toast(err && err.message ? err.message : "Could not publish."); }
+      })();
+    });
+  }
+
+  if (deleteBtn && !deleteBtn.dataset.bound) {
+    deleteBtn.dataset.bound = '1';
+    deleteBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      deleteCurrent();
+    });
+  }
+
+  if (topNewBtn && !topNewBtn.dataset.bound) {
+    topNewBtn.dataset.bound = '1';
+    topNewBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearForm();
+      toast('New product.');
+    });
+  }
+
+  if (topOpenShopBtn && !topOpenShopBtn.dataset.bound) {
+    topOpenShopBtn.dataset.bound = '1';
+    topOpenShopBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      location.href = '../shop-page.html';
+    });
   }
 
   /* ================= Orders helpers (REAL) ================= */
@@ -1132,7 +1197,18 @@
     const tbody = qs('#recentOrdersTbody');
 
     const users = readSiteUsers();
-    const products = readProductsRaw();
+    const products = [];
+    readProductsRaw()
+      .then((list) => {
+        products.splice(0, products.length, ...(Array.isArray(list) ? list : []));
+        // Re-render after products load
+        const r = defaultRange();
+        setInputsFromRange(r);
+        renderForRange(r);
+      })
+      .catch(() => {
+        // ignore; dashboard can still render without product counts
+      });
     const settings = readAdminSettings();
 
     function fmtDate(d) {
@@ -1743,4 +1819,4 @@
   initOrders();
   initCustomers();
   initSettings();
-})();
+}) ();
