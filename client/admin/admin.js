@@ -694,24 +694,15 @@ async function initProductsManager() {
   }
 
  async function renderLists() {
-  // show loading state but DO NOT wipe permanently
   if (draftsList) draftsList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
   if (publishedList) publishedList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
 
-  let products = [];
-  try {
-    products = await readProductsRaw(); // MUST return UI-shaped products [{id,title,status,...}]
-    // cache last known good list so refresh never “goes blank” due to UI bugs
-    localStorage.setItem("bs_admin_products_cache", JSON.stringify(products));
-  } catch (err) {
-    // fallback to cache
-    const cached = localStorage.getItem("bs_admin_products_cache");
-    products = cached ? JSON.parse(cached) : [];
-    toast(err?.message || "Failed to load products from API. Showing last cached list.");
-  }
+  // Always fetch from DB on page load/refresh
+  const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
+  const db = Array.isArray(data?.products) ? data.products : [];
 
-  // Debug (remove later if you want)
-  console.log("[admin products] loaded:", products.length, products);
+  // Convert DB -> your UI shape
+  const products = db.map(toUIProduct);
 
   const drafts = products.filter(p => String(p?.status || "").toLowerCase() !== "published");
   const published = products.filter(p => String(p?.status || "").toLowerCase() === "published");
