@@ -331,3 +331,24 @@
 .product-actions .add-to-cart{
   width:100%;
 }
+/* Make size select + button feel more premium + unified */
+#shop-page .product-card .product-size-select{
+  width: 100%;
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(50,74,189,0.55);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.06);
+}
+
+#shop-page .product-card .product-size-select:focus{
+  outline: none;
+  border-color: rgba(50,74,189,0.9);
+  box-shadow: 0 0 0 3px rgba(50,74,189,0.15);
+}
+
+/* Stock line should read like a label */
+#shop-page .product-card .stock{
+  margin: 10px 0 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}

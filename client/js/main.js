@@ -793,14 +793,11 @@
   // -----------------------------
   // SHOP: RENDER FROM STORE
   // -----------------------------
-function renderProducts(container, products) {
+ function renderProducts(container, products) {
   if (!container) return;
 
   const list = Array.isArray(products) ? products : [];
-  if (!list.length) {
-    container.innerHTML = `<div class="muted">No products available.</div>`;
-    return;
-  }
+  const SIZES = ["S", "M", "L", "XL"];
 
   function fmtJmd(n) {
     const v = Number(n || 0);
@@ -815,36 +812,70 @@ function renderProducts(container, products) {
     return String(p?.media?.coverUrl || p?.coverUrl || "").trim();
   }
 
-  function buildSizeOptions(stockBySize) {
-    const sb = stockBySize && typeof stockBySize === "object" ? stockBySize : {};
-    const sizes = ["S", "M", "L", "XL"];
-    const available = sizes.filter((s) => Number(sb[s] || 0) > 0);
+  function normalizeStockBySize(p) {
+    const sb = (p && p.stockBySize && typeof p.stockBySize === "object") ? p.stockBySize : {};
+    return { S: Number(sb.S || 0), M: Number(sb.M || 0), L: Number(sb.L || 0), XL: Number(sb.XL || 0) };
+  }
 
+  function totalStock(sb) {
+    return SIZES.reduce((sum, s) => sum + Number(sb[s] || 0), 0);
+  }
+
+  function stockClass(total) {
+    if (total <= 0) return "stock-soon"; // reuse your "soon" styling for sold out / none
+    if (total <= 3) return "stock-low";
+    if (total <= 10) return "stock-medium";
+    return "stock-high";
+  }
+
+  function buildSizeOptions(sb) {
+    const available = SIZES.filter((s) => Number(sb[s] || 0) > 0);
     return {
       available,
       html: available.map((s) => `<option value="${s}">${s}</option>`).join("")
     };
   }
 
+  if (!list.length) {
+    container.innerHTML = `
+      <div class="product-card">
+        <h3>New stock coming soon.</h3>
+        <div class="stock stock-soon">Check back shortly.</div>
+      </div>
+    `;
+    return;
+  }
+
   container.innerHTML = list.map((p) => {
     const id = String(p?.id || "");
-    const title = getTitle(p);
-    const coverUrl = getCoverUrl(p);
+    const title = getTitle(p) || "Product";
+    const cover = getCoverUrl(p);
     const priceText = fmtJmd(p?.priceJMD);
 
-    const stockBySize = p?.stockBySize || {};
-    const { available, html } = buildSizeOptions(stockBySize);
+    const sb = normalizeStockBySize(p);
+    const total = totalStock(sb);
+    const sClass = stockClass(total);
+    const { available, html } = buildSizeOptions(sb);
     const soldOut = available.length === 0;
+
+    const stockText =
+      total <= 0 ? "New stock coming soon." :
+      total <= 3 ? "Low stock" :
+      total <= 10 ? "Limited stock" :
+      "In stock";
 
     return `
       <div class="product-card"
-           data-product-id="${id}"
+           data-product-id="${escapeHtml(id)}"
            data-title="${escapeHtml(title)}"
-           data-cover="${escapeHtml(coverUrl)}"
-           data-pricejmd="${String(Number(p?.priceJMD || 0))}">
-        <img src="${coverUrl}" alt="${escapeHtml(title || "Product")}" />
-        <h3>${escapeHtml(title || "Product")}</h3>
+           data-cover="${escapeHtml(cover)}"
+           data-pricejmd="${String(Number(p?.priceJMD || 0))}"
+           data-stock='${escapeHtml(JSON.stringify(sb))}'>
+        <img src="${cover}" alt="${escapeHtml(title)}" />
+        <h3>${escapeHtml(title)}</h3>
         <p class="price">${escapeHtml(priceText)}</p>
+
+        <div class="stock ${sClass}">${escapeHtml(stockText)}</div>
 
         <div class="product-actions">
           <select class="product-size-select" ${soldOut ? "disabled" : ""} aria-label="Select size">
@@ -861,57 +892,57 @@ function renderProducts(container, products) {
   }).join("");
 }
   async function renderShopFromStore() {
-  const container = document.getElementById("productsGrid");
-  if (!container) return;
+    const container = document.getElementById("productsGrid");
+    if (!container) return;
 
-  container.innerHTML = `<div class="muted">Loading products…</div>`;
+    container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-  // 1) Try same-origin first (works if you proxy API or serve frontend from same host)
-  const sameOriginUrl = "/api/products";
+    // 1) Try same-origin first (works if you proxy API or serve frontend from same host)
+    const sameOriginUrl = "/api/products";
 
-  // 2) Fallback to Railway API (works for static hosting)
-  const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
+    // 2) Fallback to Railway API (works for static hosting)
+    const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
 
-  async function tryFetch(url) {
-    const res = await fetch(url, { credentials: "omit" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data || data.ok !== true || !Array.isArray(data.products)) {
-      throw new Error("Bad response shape");
+    async function tryFetch(url) {
+      const res = await fetch(url, { credentials: "omit" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data || data.ok !== true || !Array.isArray(data.products)) {
+        throw new Error("Bad response shape");
+      }
+      return data.products;
     }
-    return data.products;
+
+    try {
+      const products = await tryFetch(sameOriginUrl);
+      Products.setAll(products);
+      renderProducts(container, products);
+      return;
+    } catch (e1) {
+      // ignore, fallback to Railway
+    }
+
+    try {
+      const products = await tryFetch(railwayUrl);
+      Products.setAll(products);
+      renderProducts(container, products);
+      return;
+    } catch (e2) {
+      console.warn("Products fetch failed (same-origin + Railway).", e2);
+    }
+
+    // Final fallback to localStorage (so you never show nothing)
+    try {
+      const raw = localStorage.getItem("bs_products_v1");
+      const products = raw ? JSON.parse(raw) : [];
+      Products.setAll(products);
+      renderProducts(container, products);
+    } catch {
+      container.innerHTML = `<div class="muted">No products available.</div>`;
+    }
   }
 
-  try {
-    const products = await tryFetch(sameOriginUrl);
-    Products.setAll(products);
-    renderProducts(container, products);
-    return;
-  } catch (e1) {
-    // ignore, fallback to Railway
-  }
-
-  try {
-    const products = await tryFetch(railwayUrl);
-    Products.setAll(products);
-    renderProducts(container, products);
-    return;
-  } catch (e2) {
-    console.warn("Products fetch failed (same-origin + Railway).", e2);
-  }
-
-  // Final fallback to localStorage (so you never show nothing)
-  try {
-    const raw = localStorage.getItem("bs_products_v1");
-    const products = raw ? JSON.parse(raw) : [];
-    Products.setAll(products);
-    renderProducts(container, products);
-  } catch {
-    container.innerHTML = `<div class="muted">No products available.</div>`;
-  }
-}
-
- function bindAddToCart() {
+  function bindAddToCart() {
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".add-to-cart");
     if (!btn) return;
@@ -919,79 +950,77 @@ function renderProducts(container, products) {
     const card = btn.closest(".product-card");
     if (!card) return;
 
-    const productId = card.getAttribute("data-product-id");
-    const title = card.getAttribute("data-title") || "";
-    const coverUrl = card.getAttribute("data-cover") || "";
+    const productId = String(card.getAttribute("data-product-id") || "");
+    const title = String(card.getAttribute("data-title") || "Product");
+    const coverUrl = String(card.getAttribute("data-cover") || "");
     const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
 
     const sizeSelect = card.querySelector(".product-size-select");
-    const size = String(sizeSelect?.value || "").trim();
+    const size = String(sizeSelect?.value || "").trim().toUpperCase();
 
     if (!size) {
       toast?.("Please select a size.") || alert("Please select a size.");
       return;
     }
 
-    // Find the product from your Products store if available (best for stock)
-    const p = (window.Products && typeof Products.getById === "function")
-      ? Products.getById(productId)
-      : null;
+    let stockBySize = {};
+    try {
+      stockBySize = JSON.parse(card.getAttribute("data-stock") || "{}");
+    } catch {
+      stockBySize = {};
+    }
 
-    const stockBySize = p?.stockBySize || {};
-    const currentStock = Number(stockBySize[size] || 0);
-
-    if (currentStock <= 0) {
+    const currentStock = Number(stockBySize?.[size] ?? 0);
+    if (!Number.isFinite(currentStock) || currentStock <= 0) {
       toast?.("That size is out of stock.") || alert("That size is out of stock.");
       return;
     }
 
-    // Add to cart (ensure fields cart page expects)
+    // ✅ Create cart item with fields your cart UI expects (prevents "undefined")
     const item = {
-      id: productId,
-      title: title,                 // prevents "undefined"
-      priceJMD: Number.isFinite(priceJMD) ? priceJMD : Number(p?.priceJMD || 0),
+      productId,      // keep compatibility with existing cart schema
+      id: productId,  // extra safety in case another renderer uses `id`
+      title,
+      name: title,
+      coverUrl,
+      priceJMD: Number.isFinite(priceJMD) ? priceJMD : 0,
       size,
-      qty: 1,
-      coverUrl: coverUrl || String(p?.media?.coverUrl || ""),
+      qty: 1
     };
 
-    // Use your existing Cart API if present, otherwise local fallback
+    // Use existing Cart API if present
     if (window.Cart && typeof Cart.add === "function") {
       Cart.add(item);
     } else {
-      // fallback minimal localStorage cart
+      // fallback cart (minimal)
       const key = "bs_cart_v1";
       const cart = JSON.parse(localStorage.getItem(key) || "[]");
-      const idx = cart.findIndex(x => x.id === item.id && x.size === item.size);
-      if (idx >= 0) cart[idx].qty += 1;
+      const idx = cart.findIndex(x => String(x.productId || x.id) === productId && String(x.size || "") === size);
+      if (idx >= 0) cart[idx].qty = Number(cart[idx].qty || 0) + 1;
       else cart.push(item);
       localStorage.setItem(key, JSON.stringify(cart));
     }
 
-    // Decrement stock (UI + store) so stock verification stays consistent
-    if (p && p.stockBySize) {
-      p.stockBySize[size] = Math.max(0, Number(p.stockBySize[size] || 0) - 1);
-      if (typeof Products.update === "function") Products.update(p);
+    // Decrement for UI-only stock display
+    stockBySize[size] = Math.max(0, currentStock - 1);
+    card.setAttribute("data-stock", JSON.stringify(stockBySize));
+
+    // If size hit 0, remove option
+    if (Number(stockBySize[size]) <= 0 && sizeSelect) {
+      const opt = sizeSelect.querySelector(`option[value="${size}"]`);
+      if (opt) opt.remove();
+      sizeSelect.value = "";
     }
 
-    // Refresh only this card's size options if store is available
-    if (p && sizeSelect) {
-      // If stock hit 0 for that size, remove it from options and reset selection
-      if (Number(p.stockBySize[size] || 0) <= 0) {
-        const opt = sizeSelect.querySelector(`option[value="${size}"]`);
-        if (opt) opt.remove();
-        sizeSelect.value = "";
-      }
-      // If no sizes left, disable controls
-      const hasAny = ["S", "M", "L", "XL"].some(s => Number(p.stockBySize[s] || 0) > 0);
-      if (!hasAny) {
-        sizeSelect.disabled = true;
-        btn.disabled = true;
-        btn.textContent = "Sold Out";
-      }
+    // If no sizes left, disable
+    const sizes = ["S","M","L","XL"];
+    const total = sizes.reduce((sum, s) => sum + Number(stockBySize[s] || 0), 0);
+    if (total <= 0) {
+      btn.disabled = true;
+      btn.textContent = "Sold Out";
+      if (sizeSelect) sizeSelect.disabled = true;
     }
 
-    // Update cart badge if you have a function for it
     if (typeof updateCartCount === "function") updateCartCount();
 
     toast?.("Added to cart ✅") || null;
