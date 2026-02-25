@@ -793,7 +793,7 @@
   // -----------------------------
   // SHOP: RENDER FROM STORE
   // -----------------------------
-  function renderProducts(container, products) {
+ function renderProducts(container, products) {
   if (!container) return;
 
   const list = Array.isArray(products) ? products : [];
@@ -802,17 +802,48 @@
     return;
   }
 
+  function fmtJmd(n) {
+    const v = Number(n || 0);
+    return `JMD ${Number.isFinite(v) ? v.toLocaleString("en-JM") : "0"}`;
+  }
+
+  function sizeOptions(stockBySize) {
+    const sb = stockBySize && typeof stockBySize === "object" ? stockBySize : {};
+    const sizes = ["S", "M", "L", "XL"];
+    const available = sizes.filter((s) => Number(sb[s] || 0) > 0);
+
+    return {
+      available,
+      html: available.map((s) => `<option value="${s}">${s}</option>`).join("")
+    };
+  }
+
   container.innerHTML = list.map((p) => {
+    const id = String(p?.id || "");
     const cover = (p?.media?.coverUrl) ? String(p.media.coverUrl) : "";
     const name = String(p?.title || p?.name || "").trim();
-    const priceNum = Number(p?.priceJMD ?? 0);
-    const price = Number.isFinite(priceNum) ? priceNum.toLocaleString("en-JM") : "0";
+    const price = fmtJmd(p?.priceJMD);
+
+    const stockBySize = p?.stockBySize || {};
+    const { available, html } = sizeOptions(stockBySize);
+    const isSoldOut = available.length === 0;
 
     return `
-      <div class="product-card" data-product-id="${String(p?.id || "")}">
-        <img src="${cover}" alt="${name || "Product"}" />
-        <h3>${name}</h3>
-        <p class="price">JMD ${price}</p>
+      <div class="product-card" data-product-id="${id}">
+        <img src="${cover}" alt="${escapeHtml(name || "Product")}" />
+        <h3>${escapeHtml(name || "Product")}</h3>
+        <p class="price">${escapeHtml(price)}</p>
+
+        <div class="product-actions" style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+          <select class="product-size-select" ${isSoldOut ? "disabled" : ""} aria-label="Select size">
+            <option value="">Size</option>
+            ${html}
+          </select>
+
+          <button class="btn add-to-cart" type="button" ${isSoldOut ? "disabled" : ""}>
+            ${isSoldOut ? "Sold Out" : "Add to Cart"}
+          </button>
+        </div>
       </div>
     `;
   }).join("");
