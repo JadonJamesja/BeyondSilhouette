@@ -12,8 +12,7 @@
 
 (function () {
   'use strict';
-}
-)();
+
 const SITE = {
   session: 'bs_session_v1',
   users: 'bs_users_v1',
@@ -1819,4 +1818,4 @@ async function initProductsManager() {
   initOrders();
   initCustomers();
   initSettings();
-}) ();
+})();
