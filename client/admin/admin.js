@@ -764,15 +764,16 @@ async function initProductsManager() {
     });
   }
 
-  if (topOpenShopBtn && !topOpenShopBtn.dataset.bound) {
-    topOpenShopBtn.dataset.bound = '1';
-    topOpenShopBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      location.href = '../shop-page.html';
-    });
+    if (topOpenShopBtn && !topOpenShopBtn.dataset.bound) {
+      topOpenShopBtn.dataset.bound = '1';
+      topOpenShopBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        location.href = '../shop-page.html';
+      });
+    }
   }
-
-  /* ================= Orders helpers (REAL) ================= */
+  
+    /* ================= Orders helpers (REAL) ================= */
   function readState() {
     const raw = localStorage.getItem(SITE.state);
     const st = raw ? (safeParse(raw) || {}) : {};
@@ -1800,27 +1801,11 @@ async function initProductsManager() {
     hydrate();
   }
 
-  /* ================= Init ================= */
-  applyTheme(readTheme());
-  setYear();
-  requireAdminGate();
-
-  // NEW: consistent sidebar + active link on ALL admin pages
-  applySidebarPref();
-  bindSidebarMediaListener();
-  highlightActiveNav();
-
-  hydrateAdminName();
-  bindDelegatedActions();
-  initProductsManager();
-  initDashboard();
-  initOrders();
-  initCustomers();
-  initSettings();
-} // end initProductsManager
+/* ================= App Boot ================= */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Run init only after DOM exists
+
+  // Core setup
   applyTheme(readTheme());
   setYear();
   requireAdminGate();
@@ -1832,10 +1817,11 @@ document.addEventListener('DOMContentLoaded', () => {
   hydrateAdminName();
   bindDelegatedActions();
 
-  // Page initializers
+  // Page-specific inits
   initProductsManager();
   initDashboard();
   initOrders();
   initCustomers();
   initSettings();
+
 });
