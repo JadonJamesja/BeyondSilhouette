@@ -10,8 +10,7 @@
    - Customers page wired to real site users + orders
 */
 
-(function () {
-  'use strict';
+'use strict';
 
 const SITE = {
   session: 'bs_session_v1',
@@ -1818,4 +1817,25 @@ async function initProductsManager() {
   initOrders();
   initCustomers();
   initSettings();
-})();
+} // end initProductsManager
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Run init only after DOM exists
+  applyTheme(readTheme());
+  setYear();
+  requireAdminGate();
+
+  applySidebarPref();
+  bindSidebarMediaListener();
+  highlightActiveNav();
+
+  hydrateAdminName();
+  bindDelegatedActions();
+
+  // Page initializers
+  initProductsManager();
+  initDashboard();
+  initOrders();
+  initCustomers();
+  initSettings();
+});
