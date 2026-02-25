@@ -319,3 +319,15 @@
     background: #ffffff;
     color: #000000;
 }
+/* Shop product controls: size ABOVE add-to-cart */
+.product-actions{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:10px;
+}
+
+.product-actions .product-size-select,
+.product-actions .add-to-cart{
+  width:100%;
+}
