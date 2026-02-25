@@ -793,7 +793,7 @@
   // -----------------------------
   // SHOP: RENDER FROM STORE
   // -----------------------------
- function renderProducts(container, products) {
+function renderProducts(container, products) {
   if (!container) return;
 
   const list = Array.isArray(products) ? products : [];
@@ -807,7 +807,15 @@
     return `JMD ${Number.isFinite(v) ? v.toLocaleString("en-JM") : "0"}`;
   }
 
-  function sizeOptions(stockBySize) {
+  function getTitle(p) {
+    return String(p?.title || p?.name || "").trim();
+  }
+
+  function getCoverUrl(p) {
+    return String(p?.media?.coverUrl || p?.coverUrl || "").trim();
+  }
+
+  function buildSizeOptions(stockBySize) {
     const sb = stockBySize && typeof stockBySize === "object" ? stockBySize : {};
     const sizes = ["S", "M", "L", "XL"];
     const available = sizes.filter((s) => Number(sb[s] || 0) > 0);
@@ -820,28 +828,32 @@
 
   container.innerHTML = list.map((p) => {
     const id = String(p?.id || "");
-    const cover = (p?.media?.coverUrl) ? String(p.media.coverUrl) : "";
-    const name = String(p?.title || p?.name || "").trim();
-    const price = fmtJmd(p?.priceJMD);
+    const title = getTitle(p);
+    const coverUrl = getCoverUrl(p);
+    const priceText = fmtJmd(p?.priceJMD);
 
     const stockBySize = p?.stockBySize || {};
-    const { available, html } = sizeOptions(stockBySize);
-    const isSoldOut = available.length === 0;
+    const { available, html } = buildSizeOptions(stockBySize);
+    const soldOut = available.length === 0;
 
     return `
-      <div class="product-card" data-product-id="${id}">
-        <img src="${cover}" alt="${escapeHtml(name || "Product")}" />
-        <h3>${escapeHtml(name || "Product")}</h3>
-        <p class="price">${escapeHtml(price)}</p>
+      <div class="product-card"
+           data-product-id="${id}"
+           data-title="${escapeHtml(title)}"
+           data-cover="${escapeHtml(coverUrl)}"
+           data-pricejmd="${String(Number(p?.priceJMD || 0))}">
+        <img src="${coverUrl}" alt="${escapeHtml(title || "Product")}" />
+        <h3>${escapeHtml(title || "Product")}</h3>
+        <p class="price">${escapeHtml(priceText)}</p>
 
-        <div class="product-actions" style="display:flex;gap:10px;align-items:center;margin-top:10px;">
-          <select class="product-size-select" ${isSoldOut ? "disabled" : ""} aria-label="Select size">
-            <option value="">Size</option>
+        <div class="product-actions">
+          <select class="product-size-select" ${soldOut ? "disabled" : ""} aria-label="Select size">
+            <option value="">Select size</option>
             ${html}
           </select>
 
-          <button class="btn add-to-cart" type="button" ${isSoldOut ? "disabled" : ""}>
-            ${isSoldOut ? "Sold Out" : "Add to Cart"}
+          <button class="btn add-to-cart" type="button" ${soldOut ? "disabled" : ""}>
+            ${soldOut ? "Sold Out" : "Add to Cart"}
           </button>
         </div>
       </div>
@@ -899,50 +911,92 @@
   }
 }
 
-  function bindAddToCart() {
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('.add-to-cart');
-      if (!btn) return;
+ function bindAddToCart() {
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".add-to-cart");
+    if (!btn) return;
 
-      const card = btn.closest('.product-card');
-      if (!card) return;
+    const card = btn.closest(".product-card");
+    if (!card) return;
 
-      const productId = String(card.getAttribute('data-product-id') || '');
-      const product = Products.findById(productId);
-      if (!product) {
-        toast('This product is unavailable right now.', { important: true });
-        return;
+    const productId = card.getAttribute("data-product-id");
+    const title = card.getAttribute("data-title") || "";
+    const coverUrl = card.getAttribute("data-cover") || "";
+    const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
+
+    const sizeSelect = card.querySelector(".product-size-select");
+    const size = String(sizeSelect?.value || "").trim();
+
+    if (!size) {
+      toast?.("Please select a size.") || alert("Please select a size.");
+      return;
+    }
+
+    // Find the product from your Products store if available (best for stock)
+    const p = (window.Products && typeof Products.getById === "function")
+      ? Products.getById(productId)
+      : null;
+
+    const stockBySize = p?.stockBySize || {};
+    const currentStock = Number(stockBySize[size] || 0);
+
+    if (currentStock <= 0) {
+      toast?.("That size is out of stock.") || alert("That size is out of stock.");
+      return;
+    }
+
+    // Add to cart (ensure fields cart page expects)
+    const item = {
+      id: productId,
+      title: title,                 // prevents "undefined"
+      priceJMD: Number.isFinite(priceJMD) ? priceJMD : Number(p?.priceJMD || 0),
+      size,
+      qty: 1,
+      coverUrl: coverUrl || String(p?.media?.coverUrl || ""),
+    };
+
+    // Use your existing Cart API if present, otherwise local fallback
+    if (window.Cart && typeof Cart.add === "function") {
+      Cart.add(item);
+    } else {
+      // fallback minimal localStorage cart
+      const key = "bs_cart_v1";
+      const cart = JSON.parse(localStorage.getItem(key) || "[]");
+      const idx = cart.findIndex(x => x.id === item.id && x.size === item.size);
+      if (idx >= 0) cart[idx].qty += 1;
+      else cart.push(item);
+      localStorage.setItem(key, JSON.stringify(cart));
+    }
+
+    // Decrement stock (UI + store) so stock verification stays consistent
+    if (p && p.stockBySize) {
+      p.stockBySize[size] = Math.max(0, Number(p.stockBySize[size] || 0) - 1);
+      if (typeof Products.update === "function") Products.update(p);
+    }
+
+    // Refresh only this card's size options if store is available
+    if (p && sizeSelect) {
+      // If stock hit 0 for that size, remove it from options and reset selection
+      if (Number(p.stockBySize[size] || 0) <= 0) {
+        const opt = sizeSelect.querySelector(`option[value="${size}"]`);
+        if (opt) opt.remove();
+        sizeSelect.value = "";
       }
-
-      const size = card.querySelector('.product-size-select')?.value || '';
-      if (!size) {
-        toast('Please select a size before adding to cart.', { important: true });
-        return;
+      // If no sizes left, disable controls
+      const hasAny = ["S", "M", "L", "XL"].some(s => Number(p.stockBySize[s] || 0) > 0);
+      if (!hasAny) {
+        sizeSelect.disabled = true;
+        btn.disabled = true;
+        btn.textContent = "Sold Out";
       }
+    }
 
-      const stockBySize = product.stockBySize || {};
-      const base = Number(stockBySize?.[size] ?? 0);
+    // Update cart badge if you have a function for it
+    if (typeof updateCartCount === "function") updateCartCount();
 
-      const inCart = Cart.load().reduce((sum, it) => {
-        if (String(it.productId) === String(productId) && String(it.size || '') === String(size)) {
-          return sum + Number(it.qty || 0);
-        }
-        return sum;
-      }, 0);
-
-      const remaining = Math.max(0, base - inCart);
-      if (remaining <= 0) {
-        toast('Not enough stock available for this size.', { important: true });
-        return;
-      }
-
-      Cart.add(productId, size, 1);
-      UI.updateCartBadges();
-      toast(`Added to cart: ${product.name}`);
-
-      renderShopFromStore();
-    });
-  }
+    toast?.("Added to cart ✅") || null;
+  });
+}
 
   // -----------------------------
   // CART PAGE
