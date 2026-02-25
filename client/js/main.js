@@ -793,8 +793,32 @@
   // -----------------------------
   // SHOP: RENDER FROM STORE
   // -----------------------------
+  function renderProducts(container, products) {
+  if (!container) return;
+
+  const list = Array.isArray(products) ? products : [];
+  if (!list.length) {
+    container.innerHTML = `<div class="muted">No products available.</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map((p) => {
+    const cover = (p?.media?.coverUrl) ? String(p.media.coverUrl) : "";
+    const name = String(p?.title || p?.name || "").trim();
+    const priceNum = Number(p?.priceJMD ?? 0);
+    const price = Number.isFinite(priceNum) ? priceNum.toLocaleString("en-JM") : "0";
+
+    return `
+      <div class="product-card" data-product-id="${String(p?.id || "")}">
+        <img src="${cover}" alt="${name || "Product"}" />
+        <h3>${name}</h3>
+        <p class="price">JMD ${price}</p>
+      </div>
+    `;
+  }).join("");
+}
   async function renderShopFromStore() {
-  const container = document.querySelector("[data-products]");
+  const container = document.getElementById("productsGrid");
   if (!container) return;
 
   container.innerHTML = `<div class="muted">Loading products…</div>`;
