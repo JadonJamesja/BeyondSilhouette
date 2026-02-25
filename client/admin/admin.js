@@ -693,15 +693,32 @@ async function initProductsManager() {
     });
   }
 
-  async function renderLists() {
-    const products = await readProductsRaw();
+ async function renderLists() {
+  // show loading state but DO NOT wipe permanently
+  if (draftsList) draftsList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
+  if (publishedList) publishedList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
 
-    const drafts = products.filter((p) => p && String(p.status || "").toLowerCase() !== "published");
-    const published = products.filter((p) => p && String(p.status || "").toLowerCase() === "published");
-
-    renderListInto(draftsList, drafts, "drafts");
-    renderListInto(publishedList, published, "published");
+  let products = [];
+  try {
+    products = await readProductsRaw(); // MUST return UI-shaped products [{id,title,status,...}]
+    // cache last known good list so refresh never “goes blank” due to UI bugs
+    localStorage.setItem("bs_admin_products_cache", JSON.stringify(products));
+  } catch (err) {
+    // fallback to cache
+    const cached = localStorage.getItem("bs_admin_products_cache");
+    products = cached ? JSON.parse(cached) : [];
+    toast(err?.message || "Failed to load products from API. Showing last cached list.");
   }
+
+  // Debug (remove later if you want)
+  console.log("[admin products] loaded:", products.length, products);
+
+  const drafts = products.filter(p => String(p?.status || "").toLowerCase() !== "published");
+  const published = products.filter(p => String(p?.status || "").toLowerCase() === "published");
+
+  renderListInto(draftsList, drafts, "drafts");
+  renderListInto(publishedList, published, "published");
+}
 
   // Bind input -> preview (run once)
   ['input', 'change'].forEach(evt => {
