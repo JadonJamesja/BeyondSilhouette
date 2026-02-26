@@ -768,7 +768,7 @@
       allAccountLinks.forEach(a => a.style.display = user ? '' : 'none');
       allOrdersLinks.forEach(a => a.style.display = user ? '' : 'none');
       allLogoutLinks.forEach(a => a.style.display = user ? '' : 'none');
-      
+
       const adminLinks = $$('.admin-link');
       const isAdmin = !!(user && String(user.role || '').toLowerCase() === 'admin');
       adminLinks.forEach(a => a.style.display = isAdmin ? '' : 'none');
@@ -898,7 +898,7 @@
         ${options}
       </select>
 
-      <button class="add-to-cart" type="button" ${soldOut ? "disabled" : ""}>
+     <button class="btn btn--primary add-to-cart" type="button" ${soldOut ? "disabled" : ""}>
         ${soldOut ? "Sold Out" : "Add to cart"}
       </button>
     </div>
@@ -948,16 +948,10 @@
       console.warn("Products fetch failed.", e2);
     }
 
-    // Final fallback to localStorage
-    try {
-      const raw = localStorage.getItem("bs_products_v1");
-      const products = raw ? JSON.parse(raw) : [];
-      Products.setAll(products);
-      renderProducts(container, Products.listPublished());
-    } catch {
-      container.innerHTML = `<div class="muted">No products available.</div>`;
-    }
+    
+   container.innerHTML = `<div class="muted">No products available.</div>`;
   }
+  
   function bindAddToCart() {
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".add-to-cart");
@@ -1041,7 +1035,7 @@
 
       if (typeof updateCartCount === "function") updateCartCount();
 
-      toast("Added to cart.");
+      toast(`Added to cart: ${title || 'Item'}.`);
       UI.updateCartBadges();
     });
   }
@@ -1975,7 +1969,7 @@
 
     bindGoogleSignInIfPresent();
 
-    renderShopFromStore();
+    await renderShopFromStore();
     bindAddToCart();
 
     renderCartIfOnCartPage();
