@@ -28,6 +28,90 @@ const ADMIN = {
 const qs = (sel, root = document) => root.querySelector(sel);
 const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+/* ================= Admin Auth (DB-backed via /api/me) ================= */
+
+let __ME_CACHE = null;
+
+function inAdminFolder() {
+  const p = location.pathname.replace(/\\/g, '/').toLowerCase();
+  return p.includes('/admin/');
+}
+
+function isAdminLoginPage() {
+  const p = location.pathname.replace(/\\/g, '/').toLowerCase();
+  return p.endsWith('/admin/login.html') || p.endsWith('/admin/login');
+}
+
+async function apiJSON(path, opts = {}) {
+  const res = await fetch(path, {
+    credentials: 'include',
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(opts.headers || {})
+    }
+  });
+
+  const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
+
+async function fetchMe({ force = false } = {}) {
+  if (!force && __ME_CACHE) return __ME_CACHE;
+
+  const { res, data } = await apiJSON('/api/me', { method: 'GET' });
+
+  if (!res.ok) {
+    __ME_CACHE = null;
+    return null;
+  }
+
+  const user = data && data.user ? data.user : null;
+  __ME_CACHE = user && typeof user === 'object' ? user : null;
+  return __ME_CACHE;
+}
+
+function isAdminUser(user) {
+  return !!(user && String(user.role || '').toLowerCase() === 'admin');
+}
+
+async function requireAdminGate() {
+  if (!inAdminFolder()) return;
+
+  const me = await fetchMe();
+
+  if (!me) {
+    location.href = '../login.html';
+    return;
+  }
+
+  if (!isAdminUser(me)) {
+    location.href = '../index.html';
+    return;
+  }
+
+  if (isAdminLoginPage()) {
+    location.href = './dashboard.html';
+  }
+}
+
+async function hydrateAdminName() {
+  const me = __ME_CACHE || (await fetchMe());
+  const display =
+    me && (me.name || me.email)
+      ? String(me.name || me.email)
+      : 'Admin';
+
+  qsa('[data-ui="adminName"]').forEach((n) => {
+    n.textContent = display;
+  });
+}
+
+async function logoutSite() {
+  await apiJSON('/api/auth/logout', { method: 'POST' }).catch(() => null);
+  __ME_CACHE = null;
+}
+
 /* ================= Core utils ================= */
 function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
@@ -210,14 +294,6 @@ function bindDelegatedActions() {
       }
       return;
     }
-
-   if (action === 'logout') {
-  e.preventDefault();
-  Promise.resolve(logoutSite()).finally(() => {
-    location.href = '../login.html';
-  });
-  return;
-}
 
     if (action === 'toast') {
       e.preventDefault();
