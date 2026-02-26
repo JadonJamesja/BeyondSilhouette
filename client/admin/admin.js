@@ -185,73 +185,12 @@ function writeAdminSettings(next) {
   localStorage.setItem(ADMIN.settings, JSON.stringify(obj));
 }
 
-/* ================= Site auth (source of truth) ================= */
-function readSiteSession() {
-  const raw = localStorage.getItem(SITE.session);
-  return raw ? (safeParse(raw) || null) : null;
-}
-
-function readSiteUsers() {
-  const raw = localStorage.getItem(SITE.users);
-  const obj = raw ? (safeParse(raw) || {}) : {};
-  return (obj && typeof obj === 'object') ? obj : {};
-}
-
-function getCurrentUser() {
-  const sess = readSiteSession();
-  if (!sess || !sess.email) return null;
-  const users = readSiteUsers();
-  return users[String(sess.email).trim().toLowerCase()] || null;
-}
-
-function isLoggedIn() {
-  const u = getCurrentUser();
-  return !!(u && u.email);
-}
-
-function isAdmin() {
-  const u = getCurrentUser();
-  return !!(u && String(u.role || '').toLowerCase() === 'admin');
-}
-
-function logoutSite() {
-  localStorage.removeItem(SITE.session);
-}
-
-function inAdminFolder() {
-  const path = location.pathname.replace(/\\/g, '/');
-  return path.includes('/admin/');
-}
-
-function isAdminLoginPage() {
-  const path = location.pathname.replace(/\\/g, '/').toLowerCase();
-  return path.endsWith('/admin/login.html') || path.endsWith('/admin/login');
-}
-
-function requireAdminGate() {
-  if (!inAdminFolder()) return;
-
-  if (!isLoggedIn()) {
-    // Admin pages do NOT have their own login — use site login
+if (action === 'logout') {
+  e.preventDefault();
+  logoutSite().finally(() => {
     location.href = '../login.html';
-    return;
-  }
-
-  if (!isAdmin()) {
-    location.href = '../index.html';
-    return;
-  }
-
-  // If admin is logged in, never stay on /admin/login
-  if (isAdminLoginPage()) {
-    location.href = './dashboard.html';
-  }
-}
-
-function hydrateAdminName() {
-  const u = getCurrentUser();
-  const display = (u && (u.name || u.email)) ? String(u.name || u.email) : 'Admin';
-  qsa('[data-ui="adminName"]').forEach(n => (n.textContent = display));
+  });
+  return;
 }
 
 /* ================= Sidebar + delegated actions ================= */
@@ -281,11 +220,12 @@ function bindDelegatedActions() {
     }
 
     if (action === 'logout') {
-      e.preventDefault();
-      logoutSite();
-      location.href = '../login.html';
-      return;
-    }
+  e.preventDefault();
+  logoutSite().finally(() => {
+    location.href = '../login.html';
+  });
+  return;
+}
 
     if (action === 'toast') {
       e.preventDefault();
@@ -1814,24 +1754,28 @@ function initSettings() {
 /* ================= App Boot ================= */
 
 document.addEventListener('DOMContentLoaded', () => {
+  (async () => {
+    // Core setup
+    applyTheme(readTheme());
+    setYear();
 
-  // Core setup
-  applyTheme(readTheme());
-  setYear();
-  requireAdminGate();
+    // Auth gate (DB session via /api/me)
+    await requireAdminGate();
 
-  applySidebarPref();
-  bindSidebarMediaListener();
-  highlightActiveNav();
+    applySidebarPref();
+    bindSidebarMediaListener();
+    highlightActiveNav();
 
-  hydrateAdminName();
-  bindDelegatedActions();
+    await hydrateAdminName();
+    bindDelegatedActions();
 
-  // Page-specific inits
-  initProductsManager();
-  initDashboard();
-  initOrders();
-  initCustomers();
-  initSettings();
-
+    // Page-specific inits
+    initProductsManager();
+    initDashboard();
+    initOrders();
+    initCustomers();
+    initSettings();
+  })().catch((err) => {
+    console.error(err);
+  });
 });
