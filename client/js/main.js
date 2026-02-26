@@ -64,28 +64,30 @@
     const style = document.createElement('style');
     style.id = 'bs-toast-style';
     style.textContent = `
-      .bs-toast{
-        position:fixed;
-        left:50%;
-        bottom:24px;
-        transform:translateX(-50%);
-        background:rgba(0,0,0,.88);
-        color:#fff;
-        padding:10px 14px;
-        border-radius:12px;
-        font-size:14px;
-        z-index:999999;
-        opacity:0;
-        transition:opacity .2s ease, transform .2s ease;
-        pointer-events:none;
-        max-width:min(92vw,520px);
-        text-align:center;
-      }
-      .bs-toast.show{
-        opacity:1;
-        transform:translateX(-50%) translateY(-6px);
-      }
-    `;
+  .bs-toast{
+    position:fixed;
+    left:50%;
+    bottom:24px;
+    transform:translateX(-50%);
+    background:#fff;
+    color:#111;
+    border:1px solid #111;
+    padding:10px 14px;
+    border-radius:12px;
+    font-size:14px;
+    z-index:999999;
+    opacity:0;
+    transition:opacity .2s ease, transform .2s ease;
+    pointer-events:none;
+    max-width:min(92vw,520px);
+    text-align:center;
+    box-shadow:0 10px 30px rgba(0,0,0,.18);
+  }
+  .bs-toast.show{
+    opacity:1;
+    transform:translateX(-50%) translateY(-6px);
+  }
+`;
     document.head.appendChild(style);
   }
 
@@ -655,9 +657,60 @@
   const Products = (() => {
     let _cache = [];
 
+    function buildStockBySize(p) {
+      // Prefer existing stockBySize if present
+      if (p && p.stockBySize && typeof p.stockBySize === 'object') return p.stockBySize;
+
+      // API-backed: inventory is [{ size, stock }]
+      const inv = Array.isArray(p?.inventory) ? p.inventory : [];
+      const map = {};
+      inv.forEach((row) => {
+        const size = String(row?.size || '').trim();
+        const stock = Number(row?.stock ?? 0);
+        if (!size) return;
+        map[size] = Number.isFinite(stock) ? stock : 0;
+      });
+      return map;
+    }
+
+    function pickCoverUrl(p) {
+      // API-backed: images is [{ url, alt, sortOrder }]
+      if (Array.isArray(p?.images) && p.images.length) {
+        const first = p.images
+          .slice()
+          .sort((a, b) => Number(a?.sortOrder ?? 0) - Number(b?.sortOrder ?? 0))[0];
+        if (first?.url) return String(first.url);
+      }
+
+      // Older shapes
+      if (p?.media?.coverUrl) return String(p.media.coverUrl);
+      if (p?.coverUrl) return String(p.coverUrl);
+
+      return '';
+    }
+
+    function normalize(p) {
+      const name = String(p?.title || p?.name || '').trim();
+      const coverUrl = pickCoverUrl(p);
+      const stockBySize = buildStockBySize(p);
+
+      // Make a consistent “published” signal across old/new shapes
+      const isPublished = (p?.isPublished === true) || (p?.status === 'published');
+
+      return {
+        ...p,
+        name: name || p?.name || p?.title || '',
+        title: p?.title || name || '',
+        isPublished,
+        status: isPublished ? 'published' : (p?.status || 'draft'),
+        media: p?.media || { coverUrl },
+        stockBySize
+      };
+    }
+
     return {
       setAll(products) {
-        _cache = Array.isArray(products) ? products : [];
+        _cache = (Array.isArray(products) ? products : []).map(normalize);
       },
 
       readAll() {
@@ -665,7 +718,8 @@
       },
 
       listPublished() {
-        return _cache.filter(p => p?.status === "published");
+        // API uses isPublished, old demo used status
+        return _cache.filter(p => p?.isPublished === true || p?.status === 'published');
       },
 
       findById(id) {
@@ -714,6 +768,10 @@
       allAccountLinks.forEach(a => a.style.display = user ? '' : 'none');
       allOrdersLinks.forEach(a => a.style.display = user ? '' : 'none');
       allLogoutLinks.forEach(a => a.style.display = user ? '' : 'none');
+      
+      const adminLinks = $$('.admin-link');
+      const isAdmin = !!(user && String(user.role || '').toLowerCase() === 'admin');
+      adminLinks.forEach(a => a.style.display = isAdmin ? '' : 'none');
     },
 
     ensureHeaderFooter() {
@@ -793,114 +851,72 @@
   // -----------------------------
   // SHOP: RENDER FROM STORE
   // -----------------------------
- function renderProducts(container, products) {
-  if (!container) return;
+  function renderProducts(container, products) {
+    if (!container) return;
 
-  const list = Array.isArray(products) ? products : [];
-  const SIZES = ["S", "M", "L", "XL"];
+    const list = Array.isArray(products) ? products : [];
+    if (!list.length) {
+      container.innerHTML = `<div class="muted">No products available.</div>`;
+      return;
+    }
 
-  function fmtJmd(n) {
-    const v = Number(n || 0);
-    return `JMD ${Number.isFinite(v) ? v.toLocaleString("en-JM") : "0"}`;
+    const SIZES = ["S", "M", "L", "XL"];
+
+    container.innerHTML = list.map((p) => {
+      const id = String(p?.id || "");
+      const cover = String(p?.media?.coverUrl || "");
+      const name = String(p?.title || p?.name || "").trim();
+      const priceNum = Number(p?.priceJMD ?? 0);
+      const price = Number.isFinite(priceNum) ? priceNum.toLocaleString("en-JM") : "0";
+
+      const sb = (p && p.stockBySize && typeof p.stockBySize === "object") ? p.stockBySize : {};
+      const options = SIZES
+        .filter(sz => Number(sb?.[sz] ?? 0) > 0)
+        .map(sz => `<option value="${sz}">${sz}</option>`)
+        .join("");
+
+      const soldOut = !options;
+
+      const stockJson = escapeHtml(JSON.stringify(sb || {}));
+
+      return `
+  <div
+    class="product-card"
+    data-product-id="${escapeHtml(id)}"
+    data-title="${escapeHtml(name)}"
+    data-cover="${escapeHtml(cover)}"
+    data-pricejmd="${escapeHtml(String(priceNum || 0))}"
+    data-stock="${stockJson}"
+  >
+    <img src="${escapeHtml(cover)}" alt="${escapeHtml(name || "Product")}" />
+    <h3>${escapeHtml(name)}</h3>
+    <p class="price">JMD ${escapeHtml(price)}</p>
+
+    <div class="product-actions">
+      <select class="product-size-select" ${soldOut ? "disabled" : ""} aria-label="Select size">
+        <option value="">Select size</option>
+        ${options}
+      </select>
+
+      <button class="add-to-cart" type="button" ${soldOut ? "disabled" : ""}>
+        ${soldOut ? "Sold Out" : "Add to cart"}
+      </button>
+    </div>
+  </div>
+`;
+    }).join("");
   }
-
-  function getTitle(p) {
-    return String(p?.title || p?.name || "").trim();
-  }
-
-  function getCoverUrl(p) {
-    return String(p?.media?.coverUrl || p?.coverUrl || "").trim();
-  }
-
-  function normalizeStockBySize(p) {
-    const sb = (p && p.stockBySize && typeof p.stockBySize === "object") ? p.stockBySize : {};
-    return { S: Number(sb.S || 0), M: Number(sb.M || 0), L: Number(sb.L || 0), XL: Number(sb.XL || 0) };
-  }
-
-  function totalStock(sb) {
-    return SIZES.reduce((sum, s) => sum + Number(sb[s] || 0), 0);
-  }
-
-  function stockClass(total) {
-    if (total <= 0) return "stock-soon"; // reuse your "soon" styling for sold out / none
-    if (total <= 3) return "stock-low";
-    if (total <= 10) return "stock-medium";
-    return "stock-high";
-  }
-
-  function buildSizeOptions(sb) {
-    const available = SIZES.filter((s) => Number(sb[s] || 0) > 0);
-    return {
-      available,
-      html: available.map((s) => `<option value="${s}">${s}</option>`).join("")
-    };
-  }
-
-  if (!list.length) {
-    container.innerHTML = `
-      <div class="product-card">
-        <h3>New stock coming soon.</h3>
-        <div class="stock stock-soon">Check back shortly.</div>
-      </div>
-    `;
-    return;
-  }
-
-  container.innerHTML = list.map((p) => {
-    const id = String(p?.id || "");
-    const title = getTitle(p) || "Product";
-    const cover = getCoverUrl(p);
-    const priceText = fmtJmd(p?.priceJMD);
-
-    const sb = normalizeStockBySize(p);
-    const total = totalStock(sb);
-    const sClass = stockClass(total);
-    const { available, html } = buildSizeOptions(sb);
-    const soldOut = available.length === 0;
-
-    const stockText =
-      total <= 0 ? "New stock coming soon." :
-      total <= 3 ? "Low stock" :
-      total <= 10 ? "Limited stock" :
-      "In stock";
-
-    return `
-      <div class="product-card"
-           data-product-id="${escapeHtml(id)}"
-           data-title="${escapeHtml(title)}"
-           data-cover="${escapeHtml(cover)}"
-           data-pricejmd="${String(Number(p?.priceJMD || 0))}"
-           data-stock='${escapeHtml(JSON.stringify(sb))}'>
-        <img src="${cover}" alt="${escapeHtml(title)}" />
-        <h3>${escapeHtml(title)}</h3>
-        <p class="price">${escapeHtml(priceText)}</p>
-
-        <div class="stock ${sClass}">${escapeHtml(stockText)}</div>
-
-        <div class="product-actions">
-          <select class="product-size-select" ${soldOut ? "disabled" : ""} aria-label="Select size">
-            <option value="">Select size</option>
-            ${html}
-          </select>
-
-          <button class="btn add-to-cart" type="button" ${soldOut ? "disabled" : ""}>
-            ${soldOut ? "Sold Out" : "Add to Cart"}
-          </button>
-        </div>
-      </div>
-    `;
-  }).join("");
-}
   async function renderShopFromStore() {
-    const container = document.getElementById("productsGrid");
+    // Support BOTH older markup and your current shop page (#productsGrid)
+    const container =
+      document.getElementById('productsGrid') ||
+      document.querySelector('[data-products]');
+
     if (!container) return;
 
     container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-    // 1) Try same-origin first (works if you proxy API or serve frontend from same host)
     const sameOriginUrl = "/api/products";
-
-    // 2) Fallback to Railway API (works for static hosting)
     const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
 
     async function tryFetch(url) {
@@ -916,116 +932,119 @@
     try {
       const products = await tryFetch(sameOriginUrl);
       Products.setAll(products);
-      renderProducts(container, products);
+      renderProducts(container, Products.listPublished());
       return;
-    } catch (e1) {
-      // ignore, fallback to Railway
+    } catch (_) {
+      // fallback
     }
 
     try {
       const products = await tryFetch(railwayUrl);
       Products.setAll(products);
-      renderProducts(container, products);
+      renderProducts(container, Products.listPublished());
       return;
     } catch (e2) {
-      console.warn("Products fetch failed (same-origin + Railway).", e2);
+      // Do NOT show “Railway” messaging to users
+      console.warn("Products fetch failed.", e2);
     }
 
-    // Final fallback to localStorage (so you never show nothing)
+    // Final fallback to localStorage
     try {
       const raw = localStorage.getItem("bs_products_v1");
       const products = raw ? JSON.parse(raw) : [];
       Products.setAll(products);
-      renderProducts(container, products);
+      renderProducts(container, Products.listPublished());
     } catch {
       container.innerHTML = `<div class="muted">No products available.</div>`;
     }
   }
-
   function bindAddToCart() {
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest(".add-to-cart");
-    if (!btn) return;
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest(".add-to-cart");
+      if (!btn) return;
 
-    const card = btn.closest(".product-card");
-    if (!card) return;
+      const card = btn.closest(".product-card");
+      if (!card) return;
 
-    const productId = String(card.getAttribute("data-product-id") || "");
-    const title = String(card.getAttribute("data-title") || "Product");
-    const coverUrl = String(card.getAttribute("data-cover") || "");
-    const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
+      const productId = String(card.getAttribute("data-product-id") || "");
+      const title = String(card.getAttribute("data-title") || "Product");
+      const coverUrl = String(card.getAttribute("data-cover") || "");
+      const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
 
-    const sizeSelect = card.querySelector(".product-size-select");
-    const size = String(sizeSelect?.value || "").trim().toUpperCase();
+      const sizeSelect = card.querySelector(".product-size-select");
+      const size = String(sizeSelect?.value || "").trim().toUpperCase();
 
-    if (!size) {
-      toast?.("Please select a size.") || alert("Please select a size.");
-      return;
-    }
+      if (!size) {
+        toast?.("Please select a size.") || alert("Please select a size.");
+        return;
+      }
 
-    let stockBySize = {};
-    try {
-      stockBySize = JSON.parse(card.getAttribute("data-stock") || "{}");
-    } catch {
-      stockBySize = {};
-    }
+      let stockBySize = {};
+      try {
+        stockBySize = JSON.parse(card.getAttribute("data-stock") || "{}");
+      } catch {
+        stockBySize = {};
+      }
 
-    const currentStock = Number(stockBySize?.[size] ?? 0);
-    if (!Number.isFinite(currentStock) || currentStock <= 0) {
-      toast?.("That size is out of stock.") || alert("That size is out of stock.");
-      return;
-    }
+      const currentStock = Number(stockBySize?.[size] ?? 0);
+      if (!Number.isFinite(currentStock) || currentStock <= 0) {
+        toast?.("That size is out of stock.") || alert("That size is out of stock.");
+        return;
+      }
 
-    // ✅ Create cart item with fields your cart UI expects (prevents "undefined")
-    const item = {
-      productId,      // keep compatibility with existing cart schema
-      id: productId,  // extra safety in case another renderer uses `id`
-      title,
-      name: title,
-      coverUrl,
-      priceJMD: Number.isFinite(priceJMD) ? priceJMD : 0,
-      size,
-      qty: 1
-    };
+      // ✅ Create cart item with fields your cart UI expects (prevents "undefined")
+      const item = {
+        productId,      // keep compatibility with existing cart schema
+        id: productId,  // extra safety in case another renderer uses `id`
+        title,
+        name: title,
+        coverUrl,
+        priceJMD: Number.isFinite(priceJMD) ? priceJMD : 0,
+        size,
+        qty: 1
+      };
 
-    // Use existing Cart API if present
-    if (window.Cart && typeof Cart.add === "function") {
-      Cart.add(item);
-    } else {
-      // fallback cart (minimal)
-      const key = "bs_cart_v1";
-      const cart = JSON.parse(localStorage.getItem(key) || "[]");
-      const idx = cart.findIndex(x => String(x.productId || x.id) === productId && String(x.size || "") === size);
-      if (idx >= 0) cart[idx].qty = Number(cart[idx].qty || 0) + 1;
-      else cart.push(item);
-      localStorage.setItem(key, JSON.stringify(cart));
-    }
+      // ✅ Always use the real Cart (bs_state_v1) so cart.html sees the items
+      Cart.add(productId, size, 1);
 
-    // Decrement for UI-only stock display
-    stockBySize[size] = Math.max(0, currentStock - 1);
-    card.setAttribute("data-stock", JSON.stringify(stockBySize));
+      // ✅ Save product meta so cart/checkout can render name/image/price even after refresh
+      try {
+        const st = readState();
+        st.productCache = st.productCache || {};
+        st.productCache[String(productId)] = {
+          name: title || 'Item',
+          image: coverUrl || '',
+          price: Number.isFinite(priceJMD) ? priceJMD : 0
+        };
+        writeState(st);
+      } catch (_) { }
 
-    // If size hit 0, remove option
-    if (Number(stockBySize[size]) <= 0 && sizeSelect) {
-      const opt = sizeSelect.querySelector(`option[value="${size}"]`);
-      if (opt) opt.remove();
-      sizeSelect.value = "";
-    }
+      // Decrement for UI-only stock display
+      stockBySize[size] = Math.max(0, currentStock - 1);
+      card.setAttribute("data-stock", JSON.stringify(stockBySize));
 
-    // If no sizes left, disable
-    const sizes = ["S","M","L","XL"];
-    const total = sizes.reduce((sum, s) => sum + Number(stockBySize[s] || 0), 0);
-    if (total <= 0) {
-      btn.disabled = true;
-      btn.textContent = "Sold Out";
-      if (sizeSelect) sizeSelect.disabled = true;
-    }
+      // If size hit 0, remove option
+      if (Number(stockBySize[size]) <= 0 && sizeSelect) {
+        const opt = sizeSelect.querySelector(`option[value="${size}"]`);
+        if (opt) opt.remove();
+        sizeSelect.value = "";
+      }
 
-    if (typeof updateCartCount === "function") updateCartCount();
+      // If no sizes left, disable
+      const sizes = ["S", "M", "L", "XL"];
+      const total = sizes.reduce((sum, s) => sum + Number(stockBySize[s] || 0), 0);
+      if (total <= 0) {
+        btn.disabled = true;
+        btn.textContent = "Sold Out";
+        if (sizeSelect) sizeSelect.disabled = true;
+      }
 
-    toast?.("Added to cart ✅") || null;
-  });
-}
+      if (typeof updateCartCount === "function") updateCartCount();
+
+      toast("Added to cart.");
+      UI.updateCartBadges();
+    });
+  }
 
   // -----------------------------
   // CART PAGE
