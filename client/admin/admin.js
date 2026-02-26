@@ -185,14 +185,6 @@ function writeAdminSettings(next) {
   localStorage.setItem(ADMIN.settings, JSON.stringify(obj));
 }
 
-if (action === 'logout') {
-  e.preventDefault();
-  logoutSite().finally(() => {
-    location.href = '../login.html';
-  });
-  return;
-}
-
 /* ================= Sidebar + delegated actions ================= */
 function bindDelegatedActions() {
   document.addEventListener('click', (e) => {
@@ -219,9 +211,9 @@ function bindDelegatedActions() {
       return;
     }
 
-    if (action === 'logout') {
+   if (action === 'logout') {
   e.preventDefault();
-  logoutSite().finally(() => {
+  Promise.resolve(logoutSite()).finally(() => {
     location.href = '../login.html';
   });
   return;
