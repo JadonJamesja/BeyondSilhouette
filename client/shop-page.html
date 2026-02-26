@@ -53,7 +53,9 @@
   <main class="shop-container">
     <h2 class="section-title">Shop Collection</h2>
 
-    <!-- ✅ This is what main.js expects: [data-products] -->
+    <!-- IMPORTANT:
+         main.js renders into [data-products]
+         so we add that attribute here -->
     <div id="productsGrid" class="products-grid" data-products>
       <!-- products rendered by JS -->
     </div>
@@ -64,7 +66,8 @@
     <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
   </footer>
 
-  <!-- ✅ Load store first (so main.js can use it) -->
+  <!-- IMPORTANT:
+       Load products store BEFORE main.js so window.BSProducts exists -->
   <script src="js/products-store.js"></script>
   <script src="js/main.js"></script>
 </body>

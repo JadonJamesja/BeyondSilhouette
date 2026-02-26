@@ -1,150 +1,138 @@
-/* Beyond Silhouette — Products Store (local demo)
-   - Source of truth for products (for now)
-   - Uses localStorage
-   - Seeds default products if empty
+/* Beyond Silhouette — Products Store (API-backed with safe fallback)
+   - Primary source: Railway API (/api/products)
+   - Keeps the SAME public API your main.js expects: window.BSProducts.readAll(), listPublished(), etc.
 */
 
 (() => {
   "use strict";
 
-  const KEY = "bs_products_v1";
-
-  const nowISO = () => new Date().toISOString();
-  const uid = (p = "prod_") => p + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+  const API_BASE = "https://bs-api-live.up.railway.app";
+  const CACHE_KEY = "bs_products_cache_v1";
+  const CACHE_TTL_MS = 60 * 1000; // 60s
 
   function safeParse(s) {
     try { return JSON.parse(s); } catch { return null; }
   }
 
-  // ---- Seed products (these replace your old hardcoded cards)
-  function seedProducts() {
-    const products = [
-      mk({
-        title: "Classic One-Piece",
-        priceJMD: 8500,
-        cover: "images/test image 2.jpg",
-        totalStock: 12
-      }),
-      mk({
-        title: "High-Waist Bikini",
-        priceJMD: 9500,
-        cover: "images/test image 1.jpg",
-        totalStock: 8
-      }),
-      mk({
-        title: "Strappy Monokini",
-        priceJMD: 11000,
-        cover: "images/test image 6.jpg",
-        totalStock: 5
-      }),
-      mk({
-        title: "Ruffled Bikini",
-        priceJMD: 9000,
-        cover: "images/test image 3.jpg",
-        totalStock: 10
-      }),
-      mk({
-        title: "Sporty Two-Piece",
-        priceJMD: 8700,
-        cover: "images/test image 5.jpg",
-        totalStock: 7
-      }),
-      mk({
-        title: "Cut-Out Monokini",
-        priceJMD: 10500,
-        cover: "images/test image 4.jpg",
-        totalStock: 6
-      }),
-      mk({
-        title: "Fringe Bikini",
-        priceJMD: 9200,
-        cover: "images/test image 7.jpg",
-        totalStock: 9
-      }),
-      mk({
-        title: "Classic Bandeau",
-        priceJMD: 8800,
-        cover: "images/test image 8.jpg",
-        totalStock: 11
-      }),
-    ];
-
-    // publish all by default for demo
-    products.forEach(p => p.status = "published");
-
-    return products;
+  function writeCache(products) {
+    const payload = { at: Date.now(), products: Array.isArray(products) ? products : [] };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   }
 
-  function mk({ title, priceJMD, cover, totalStock }) {
-    const sizes = ["S", "M", "L", "XL"];
-    const split = splitStock(totalStock, sizes);
+  function readCache() {
+    const raw = localStorage.getItem(CACHE_KEY);
+    const obj = raw ? safeParse(raw) : null;
+    if (!obj || !Array.isArray(obj.products) || !Number.isFinite(obj.at)) return null;
+    if (Date.now() - obj.at > CACHE_TTL_MS) return null;
+    return obj.products;
+  }
+
+  function normalizeApiProduct(p) {
+    const id = String(p?.id || "");
+
+    const name = String(p?.name || p?.title || "").trim();
+    const title = name; // main.js currently uses product.name in places; we keep both
+
+    const priceJMD = Number.isFinite(Number(p?.priceJMD)) ? Number(p.priceJMD) : 0;
+
+    // cover image: prefer first image url if present
+    const coverUrl =
+      (Array.isArray(p?.images) && p.images[0]?.url) ? String(p.images[0].url) :
+      (p?.media?.coverUrl ? String(p.media.coverUrl) : "");
+
+    // build stockBySize from inventory[] if present
+    const stockBySize = {};
+    if (Array.isArray(p?.inventory)) {
+      p.inventory.forEach(row => {
+        const size = String(row?.size || "").trim();
+        const stock = Number(row?.stock);
+        if (size) stockBySize[size] = Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : 0;
+      });
+    }
+
+    // sizes: from stock map keys, else default
+    const sizes = Object.keys(stockBySize).length
+      ? Object.keys(stockBySize)
+      : (Array.isArray(p?.sizes) && p.sizes.length ? p.sizes.map(String) : ["S", "M", "L", "XL"]);
+
+    const isPublished = !!p?.isPublished;
 
     return {
-      id: uid("prod_"),
-      slug: String(title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
-      status: "draft", // draft | published | archived
+      id,
+      name,
       title,
-      description: "",
-      priceJMD: Number(priceJMD || 0),
-      compareAtJMD: null,
-      category: "swimwear",
-      tags: [],
-
+      priceJMD,
+      description: p?.description || "",
+      isPublished,
       sizes,
-      stockBySize: split,
-
-      media: {
-        coverImageId: null,           // for later media library
-        galleryImageIds: [],
-        coverUrl: cover               // local path for now
-      },
-
-      isFeatured: false,
-      isActive: true,
-      createdAt: nowISO(),
-      updatedAt: nowISO()
+      stockBySize,
+      media: { coverUrl }
     };
   }
 
-  function splitStock(total, sizes) {
-    // simple even-ish distribution for demo
-    const t = Math.max(0, Number(total || 0));
-    const base = Math.floor(t / sizes.length);
-    let rem = t % sizes.length;
+  async function fetchProductsFromApi() {
+    const url = `${API_BASE}/api/products`;
+    const res = await fetch(url, { credentials: "include" });
+    const data = await res.json().catch(() => null);
 
-    const stock = {};
-    sizes.forEach((s) => {
-      stock[s] = base + (rem > 0 ? 1 : 0);
-      rem--;
-    });
-    return stock;
-  }
-
-  function readAll() {
-    const raw = localStorage.getItem(KEY);
-    const arr = raw ? safeParse(raw) : null;
-
-    if (!Array.isArray(arr) || arr.length === 0) {
-      const seeded = seedProducts();
-      localStorage.setItem(KEY, JSON.stringify(seeded));
-      return seeded;
+    if (!res.ok || !data || data.ok !== true || !Array.isArray(data.products)) {
+      return null;
     }
-    return arr;
+
+    const normalized = data.products.map(normalizeApiProduct);
+    return normalized;
   }
 
-  function writeAll(products) {
-    localStorage.setItem(KEY, JSON.stringify(products || []));
+  // Optional fallback demo list (keeps UI non-empty if API returns [])
+  function demoFallback() {
+    // Minimal, clean fallback (no broken “test image” paths)
+    return [];
   }
 
-  function listPublished() {
-    return readAll().filter(p => p && p.isActive !== false && p.status === "published");
+  let _products = [];
+
+  async function bootstrap() {
+    // quick cache first
+    const cached = readCache();
+    if (cached) {
+      _products = cached;
+      return;
+    }
+
+    const apiList = await fetchProductsFromApi().catch(() => null);
+    if (apiList && apiList.length) {
+      _products = apiList;
+      writeCache(_products);
+      return;
+    }
+
+    // API empty or unreachable
+    _products = demoFallback();
+    writeCache(_products);
   }
 
-  // Expose a tiny API for main.js (and later admin.js)
+  // Start loading ASAP
+  bootstrap();
+
   window.BSProducts = {
-    key: KEY,
-    readAll,
-    writeAll,
-    listPublished,
+    readAll() {
+      return Array.isArray(_products) ? _products : [];
+    },
+    listPublished() {
+      return this.readAll().filter(p => !!p?.isPublished);
+    },
+    findById(id) {
+      const pid = String(id || "");
+      return this.readAll().find(p => String(p?.id) === pid) || null;
+    },
+    // allow manual refresh (handy for admin after publishing)
+    async refresh() {
+      const apiList = await fetchProductsFromApi().catch(() => null);
+      if (apiList && Array.isArray(apiList)) {
+        _products = apiList;
+        writeCache(_products);
+      }
+      return this.readAll();
+    }
   };
 })();
