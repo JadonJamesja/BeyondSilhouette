@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -8,6 +9,11 @@
 </head>
 
 <body class="admin">
+
+  <button class="btn sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Open menu">
+    ☰
+  </button>
+
   <aside class="sidebar" aria-label="Admin sidebar">
     <div class="sidebar-top">
       <a class="brand brand-link" href="./dashboard.html">
@@ -17,7 +23,6 @@
           <div class="brand-subtitle">Admin</div>
         </div>
       </a>
-      <button class="btn btn-ghost btn-sm sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Toggle sidebar">☰</button>
     </div>
 
     <nav class="nav">
@@ -152,7 +157,8 @@
 
         <div class="card-foot row-between">
           <div class="muted">Next: choose backend + schema mapping.</div>
-          <button class="btn btn-primary btn-sm" type="button" data-action="toast" data-toast="We’ll map the steps next.">Start roadmap</button>
+          <button class="btn btn-primary btn-sm" type="button" data-action="toast"
+            data-toast="We’ll map the steps next.">Start roadmap</button>
         </div>
       </article>
     </section>
@@ -162,4 +168,5 @@
 
   <script src="./admin.js"></script>
 </body>
+
 </html>
