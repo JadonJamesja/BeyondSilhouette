@@ -916,7 +916,18 @@ body.sidebar-collapsed .sidebar {
 /* Responsive sidebar overlay */
 @media (max-width: 920px) {
   body.admin {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: 272px 1fr;
+    grid-template-areas: "sidebar main";
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    grid-area: sidebar;
+  }
+
+  .main {
+    grid-area: main;
   }
 
   .sidebar {
