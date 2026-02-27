@@ -112,6 +112,24 @@ async function logoutSite() {
   __ME_CACHE = null;
 }
 
+/* ================= Legacy shims (temporary) =================
+   NOTE:
+   - Your admin Orders/Customers/Dashboard code still expects "site users" + "orders"
+   - But /api/admin/users and /api/admin/orders do NOT exist yet (in your backend ZIP),
+     so we return safe empty data to prevent crashes.
+*/
+
+function getCurrentUser() {
+  // Use the DB /api/me cache from the auth block
+  return (typeof __ME_CACHE !== 'undefined' && __ME_CACHE) ? __ME_CACHE : null;
+}
+
+function readSiteUsers() {
+  // Until /api/admin/users exists, we can't DB-drive users here.
+  // Returning {} keeps dashboard/orders/customers from crashing.
+  return {};
+}
+
 /* ================= Core utils ================= */
 function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
@@ -294,6 +312,14 @@ function bindDelegatedActions() {
       }
       return;
     }
+
+    if (action === 'logout') {
+      e.preventDefault();
+      Promise.resolve(logoutSite()).finally(() => {
+        location.href = '../login.html';
+      });
+      return;
+    } 
 
     if (action === 'toast') {
       e.preventDefault();
