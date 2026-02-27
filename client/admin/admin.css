@@ -937,6 +937,14 @@ body.sidebar-collapsed .sidebar {
 
   .sidebar-toggle {
     display: inline-flex;
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    z-index: 2000;
+    /* above sidebar */
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-soft);
   }
 
   body.admin.sidebar-open::before {
