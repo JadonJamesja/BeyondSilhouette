@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -17,6 +18,8 @@ model User {
   updatedAt    DateTime @updatedAt
 
   orders Order[]
+
+statusChanges OrderStatusHistory[] @relation("OrderStatusActor")
 
   @@map("users")
 }
@@ -78,6 +81,8 @@ model Order {
   user  User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   items OrderItem[]
 
+  history   OrderStatusHistory[]
+
   @@index([userId])
   @@map("orders")
 }
@@ -96,4 +101,22 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id         String   @id @default(cuid())
+  orderId    String
+  actorId    String?  // admin who changed it (nullable)
+  fromStatus String
+  toStatus   String
+  note       String?
+  createdAt  DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Who changed it (admin). If the admin user gets deleted, keep history.
+  actor User? @relation("OrderStatusActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([actorId])
 }

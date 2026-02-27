@@ -373,7 +373,7 @@ async function apiListAdminOrders() {
 }
 
 async function apiUpdateAdminOrderStatus(id, status) {
-  const r = await apiTry(`/api/admin/orders/${encodeURIComponent(id)}`, {
+  const r = await apiTry(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status })
   });
@@ -948,12 +948,9 @@ function initOrders() {
   if (!tbody) return;
 
   const search = qs('#orderSearch');
-  const users = readSiteUsers();
 
-  // Keep a mutable list so we can refresh it after status changes
-  let all = flattenOrders();
+  let all = [];
 
-  // Optional modal (only if your HTML includes it)
   const modal = qs('#orderModal');
   const modalTitle = qs('#orderModalTitle');
   const modalMeta = qs('#orderModalMeta');
@@ -961,269 +958,133 @@ function initOrders() {
   const modalHistory = qs('#orderModalHistory');
   const modalClose = qs('#orderModalClose');
 
-  function resolveCustomerLabel(email) {
-    const em = String(email || '').trim().toLowerCase();
-    const u = users[em];
-    if (u && u.name) return `${u.name} (${em})`;
-    return em || '—';
-  }
-
   function matchesQuery(row, q) {
     const needle = String(q || '').trim().toLowerCase();
     if (!needle) return true;
-
-    const customer = resolveCustomerLabel(row.email).toLowerCase();
     return (
       String(row.id || '').toLowerCase().includes(needle) ||
       String(row.email || '').toLowerCase().includes(needle) ||
-      customer.includes(needle)
+      String(row.customerName || '').toLowerCase().includes(needle)
     );
   }
 
   function render(rows) {
     if (!rows.length) {
-      tbody.innerHTML = `
-          <tr>
-            <td colspan="6" class="muted">No orders found.</td>
-          </tr>
-        `;
+      tbody.innerHTML = `<tr><td colspan="6" class="muted">No orders found.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = rows.map((r) => {
-      const label = r.id ? `#${escapeHtml(r.id)}` : '—';
-      const date = escapeHtml(formatDateShort(r.createdAt));
-      const customer = escapeHtml(resolveCustomerLabel(r.email));
-      const st = String(r.status || 'Placed').trim();
+      const st = String(r.status || 'Placed');
       const stKey = st.toLowerCase();
       const stClass =
         stKey === 'delivered' ? 'chip-delivered' :
-          stKey === 'shipped' ? 'chip-shipped' :
-            stKey === 'processing' ? 'chip-processing' :
-              stKey === 'cancelled' ? 'chip-cancelled' :
-                'chip-placed';
-
-      const statusHtml = `<span class="chip chip-status ${stClass}">${escapeHtml(st)}</span>`;
-      const total = escapeHtml(formatJ(r.totalJMD));
+        stKey === 'shipped' ? 'chip-shipped' :
+        stKey === 'processing' ? 'chip-processing' :
+        stKey === 'cancelled' ? 'chip-cancelled' :
+        'chip-placed';
 
       return `
-          <tr>
-            <td>${label}</td>
-            <td>${date}</td>
-            <td>${customer}</td>
-            <td>${statusHtml}</td>
-            <td class="right">${total}</td>
-            <td class="right">
-              <select class="input input-sm"
-                data-order-status="1"
-                data-order-id="${escapeHtml(r.id)}"
-                data-order-email="${escapeHtml(r.email)}">
-                <option value="Placed" ${String(r.status || 'Placed') === 'Placed' ? 'selected' : ''}>Placed</option>
-                <option value="Processing" ${String(r.status || '') === 'Processing' ? 'selected' : ''}>Processing</option>
-                <option value="Shipped" ${String(r.status || '') === 'Shipped' ? 'selected' : ''}>Shipped</option>
-                <option value="Delivered" ${String(r.status || '') === 'Delivered' ? 'selected' : ''}>Delivered</option>
-                <option value="Cancelled" ${String(r.status || '') === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
-              </select>
-
-              <button class="btn btn-ghost btn-sm" type="button"
-                data-open-order="1"
-                data-order-id="${escapeHtml(r.id)}"
-                data-order-email="${escapeHtml(r.email)}">Open</button>
-            </td>
-          </tr>
-        `;
+        <tr>
+          <td>#${escapeHtml(r.id)}</td>
+          <td>${escapeHtml(formatDateShort(r.createdAt))}</td>
+          <td>${escapeHtml(r.customerName ? `${r.customerName} (${r.email})` : r.email)}</td>
+          <td><span class="chip chip-status ${stClass}">${escapeHtml(st)}</span></td>
+          <td class="right">${escapeHtml(formatJ(r.totalJMD))}</td>
+          <td class="right">
+            <select class="input input-sm"
+              data-order-status="1"
+              data-order-id="${escapeHtml(r.id)}">
+              <option value="Placed" ${st === 'Placed' ? 'selected' : ''}>Placed</option>
+              <option value="Processing" ${st === 'Processing' ? 'selected' : ''}>Processing</option>
+              <option value="Shipped" ${st === 'Shipped' ? 'selected' : ''}>Shipped</option>
+              <option value="Delivered" ${st === 'Delivered' ? 'selected' : ''}>Delivered</option>
+              <option value="Cancelled" ${st === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+            </select>
+            <button class="btn btn-ghost btn-sm"
+              data-open-order="1"
+              data-order-id="${escapeHtml(r.id)}">Open</button>
+          </td>
+        </tr>
+      `;
     }).join('');
   }
 
-  function renderHistoryInto(row) {
-    if (!modalHistory) return;
-
-    // Clear every time (prevents duplicate sections / stale content)
-    modalHistory.innerHTML = '';
-
-    const hist = Array.isArray(row?.raw?.history) ? row.raw.history : [];
-    if (!hist.length) {
-      modalHistory.innerHTML = `<div class="muted">No status changes yet.</div>`;
-      return;
-    }
-
-    // Reverse so newest first
-    const items = hist.slice().reverse();
-
-    modalHistory.innerHTML = `
-        <div class="panel" style="display:grid; gap:10px;">
-          ${items.map(h => {
-      const when = escapeHtml(formatDateShort(h.at));
-      const by = escapeHtml(h.by || 'admin');
-      const from = escapeHtml(h.from || '—');
-      const to = escapeHtml(h.to || '—');
-      return `
-              <div class="meta-row" style="align-items:flex-start;">
-                <div style="display:grid; gap:4px;">
-                  <div><strong>${from}</strong> → <strong>${to}</strong></div>
-                  <div class="muted" style="font-size:12.5px;">${when} • ${by}</div>
-                </div>
-              </div>
-            `;
-    }).join('')}
-        </div>
-      `;
+  async function refresh() {
+    const list = await apiListAdminOrders();
+    all = Array.isArray(list) ? list : [];
+    render(all);
   }
 
-  function openModalFor(orderId, email) {
-    const oid = String(orderId || '').trim();
-    const em = String(email || '').trim().toLowerCase();
+  async function openModal(orderId) {
+    const row = await apiAdminJSON(`/api/admin/orders/${encodeURIComponent(orderId)}`, { method: "GET" });
+    const o = row?.order;
+    if (!o) return toast("Order not found.");
 
-    // Refresh from storage so modal sees latest history every time
-    all = flattenOrders();
-
-    const row =
-      all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
-      all.find(o => String(o.id || '') === oid) ||
-      null;
-
-    if (!row) {
-      toast('Order not found.');
-      return;
-    }
-
-    // If modal is not present in HTML, fallback
-    if (!modal || !modalTitle || !modalMeta || !modalItems) {
-      toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)} — add modal markup to show details.`);
-      return;
-    }
-
-    modalTitle.textContent = `Order #${row.id || ''}`;
+    modalTitle.textContent = `Order #${o.id}`;
     modalMeta.innerHTML = `
-        <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(row.createdAt))}</span></div>
-        <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(resolveCustomerLabel(row.email))}</span></div>
-        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(row.status || 'Placed')}</span></div>
-        <div class="meta-row"><span class="muted">Total</span><span>${escapeHtml(formatJ(row.totalJMD))}</span></div>
-      `;
+      <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(o.createdAt))}</span></div>
+      <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(o.customerName ? `${o.customerName} (${o.email})` : o.email)}</span></div>
+      <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(o.status)}</span></div>
+    `;
 
-    // Items
-    if (!row.items.length) {
-      modalItems.innerHTML = `<div class="muted">No items found for this order.</div>`;
-    } else {
-      modalItems.innerHTML = `
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Size</th>
-                  <th class="right">Qty</th>
-                  <th class="right">Price</th>
-                  <th class="right">Line</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${row.items.map(it => {
-        const nm = escapeHtml(it.name || it.title || 'Item');
-        const sz = escapeHtml(it.size || '—');
-        const qty = toInt(it.qty || it.quantity || 0);
-        const price = Number(it.price || 0);
-        const line = price * qty;
-        return `
-                    <tr>
-                      <td>${nm}</td>
-                      <td>${sz}</td>
-                      <td class="right">${qty}</td>
-                      <td class="right">${escapeHtml(formatJ(price))}</td>
-                      <td class="right">${escapeHtml(formatJ(line))}</td>
-                    </tr>
-                  `;
-      }).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
+    modalItems.innerHTML = `
+      <div class="table-wrap">
+        <table class="table">
+          <tbody>
+            ${o.items.map(it => `
+              <tr>
+                <td>${escapeHtml(it.name)}</td>
+                <td>${escapeHtml(it.size)}</td>
+                <td>${escapeHtml(it.qty)}</td>
+                <td>${escapeHtml(formatJ(it.priceJMD))}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    if (modalHistory) {
+      const hist = Array.isArray(o.history) ? o.history : [];
+      modalHistory.innerHTML = hist.length
+        ? hist.map(h => `
+            <div><strong>${escapeHtml(h.from)}</strong> → <strong>${escapeHtml(h.to)}</strong><br>
+            <span class="muted">${escapeHtml(formatDateShort(h.at))} • ${escapeHtml(h.by)}</span></div>
+          `).join('')
+        : `<div class="muted">No status changes yet.</div>`;
     }
-
-    // History (if present)
-    renderHistoryInto(row);
 
     modal.hidden = false;
     document.body.classList.add('modal-open');
   }
 
-  function closeModal() {
-    if (!modal) return;
-    modal.hidden = true;
-    document.body.classList.remove('modal-open');
-  }
+  tbody.addEventListener('change', async (e) => {
+    const sel = e.target.closest('[data-order-status]');
+    if (!sel) return;
 
-  // Initial render
-  render(all);
+    const id = sel.getAttribute('data-order-id');
+    const status = sel.value;
 
-  // Search
-  if (search && !search.dataset.bound) {
-    search.dataset.bound = '1';
-    search.addEventListener('input', () => {
-      const q = String(search.value || '');
-      render(all.filter(row => matchesQuery(row, q)));
-    });
-  }
-
-  // Open button
-  if (!tbody.dataset.bound) {
-    tbody.dataset.bound = '1';
-    tbody.addEventListener('click', (e) => {
-      const btn = e.target && e.target.closest ? e.target.closest('[data-open-order="1"]') : null;
-      if (!btn) return;
-      const oid = btn.getAttribute('data-order-id') || '';
-      const em = btn.getAttribute('data-order-email') || '';
-      openModalFor(oid, em);
-    });
-  }
-
-  // Status change (dropdown)
-  if (!tbody.dataset.boundStatus) {
-    tbody.dataset.boundStatus = '1';
-    tbody.addEventListener('change', (e) => {
-      const sel = e.target && e.target.closest ? e.target.closest('[data-order-status="1"]') : null;
-      if (!sel) return;
-
-      const oid = sel.getAttribute('data-order-id') || '';
-      const em = sel.getAttribute('data-order-email') || '';
-      const nextStatus = String(sel.value || '').trim() || 'Placed';
-
-      const ok = setOrderStatusInState(em, oid, nextStatus, getAdminActor());
-      if (!ok) {
-        toast('Could not update status.');
-        return;
-      }
-
-      // Refresh list from storage (so history + status are accurate everywhere)
-      all = flattenOrders();
-
-      const q = String(search?.value || '');
-      render(all.filter(r => matchesQuery(r, q)));
-
-      toast(`Status: ${nextStatus}`);
-    });
-  }
-
-  // Modal close
-  if (modalClose && !modalClose.dataset.bound) {
-    modalClose.dataset.bound = '1';
-    modalClose.addEventListener('click', (e) => {
-      e.preventDefault();
-      closeModal();
-    });
-  }
-
-  if (modal && !modal.dataset.bound) {
-    modal.dataset.bound = '1';
-    modal.addEventListener('click', (e) => {
-      const panel = qs('.modal-panel', modal);
-      if (panel && !panel.contains(e.target)) closeModal();
-    });
-  }
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal && !modal.hidden) closeModal();
+    await apiUpdateAdminOrderStatus(id, status);
+    await refresh();
+    toast(`Status updated.`);
   });
+
+  tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-open-order]');
+    if (!btn) return;
+    openModal(btn.getAttribute('data-order-id'));
+  });
+
+  if (search) {
+    search.addEventListener('input', () => {
+      const q = search.value;
+      render(all.filter(r => matchesQuery(r, q)));
+    });
+  }
+
+  refresh();
 }
 
 /* ================= Dashboard helpers ================= */
