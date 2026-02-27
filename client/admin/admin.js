@@ -319,7 +319,7 @@ function bindDelegatedActions() {
         location.href = '../login.html';
       });
       return;
-    } 
+    }
 
     if (action === 'toast') {
       e.preventDefault();
@@ -345,7 +345,40 @@ async function apiAdminJSON(path, opts = {}) {
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
+async function apiTry(path, opts = {}) {
+  try {
+    const res = await fetch(path, {
+      credentials: "include",
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.headers || {})
+      }
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  } catch (e) {
+    return { ok: false, status: 0, data: {} };
+  }
+}
 
+async function apiListAdminUsers() {
+  const r = await apiTry("/api/admin/users", { method: "GET" });
+  return r.ok && Array.isArray(r.data?.users) ? r.data.users : null; // null means "endpoint not ready"
+}
+
+async function apiListAdminOrders() {
+  const r = await apiTry("/api/admin/orders", { method: "GET" });
+  return r.ok && Array.isArray(r.data?.orders) ? r.data.orders : null;
+}
+
+async function apiUpdateAdminOrderStatus(id, status) {
+  const r = await apiTry(`/api/admin/orders/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
+  });
+  return r.ok ? (r.data?.order || null) : null;
+}
 async function apiListAdminProducts() {
   const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
   return Array.isArray(data?.products) ? data.products : [];
@@ -447,7 +480,7 @@ async function setPublished(id, yes) {
   const payload = { isPublished: !!yes };
 
   const data = await apiAdminJSON(
-   `/api/admin/products/${encodeURIComponent(pid)}`
+    `/api/admin/products/${encodeURIComponent(pid)}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -732,7 +765,7 @@ async function initProductsManager() {
     if (publishedList) publishedList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
 
     // Always fetch from DB on page load/refresh
-    const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
+    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
     const db = Array.isArray(data?.products) ? data.products : [];
 
     // Convert DB -> your UI shape
