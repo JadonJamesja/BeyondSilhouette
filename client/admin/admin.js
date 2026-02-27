@@ -347,12 +347,12 @@ async function apiAdminJSON(path, opts = {}) {
 }
 
 async function apiListAdminProducts() {
-  const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
+  const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
   return Array.isArray(data?.products) ? data.products : [];
 }
 
 async function apiCreateAdminProduct(payload) {
-  const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", {
+  const data = await apiAdminJSON("/api/admin/products", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -361,7 +361,7 @@ async function apiCreateAdminProduct(payload) {
 
 async function apiUpdateAdminProduct(id, payload) {
   const data = await apiAdminJSON(
-    `https://bs-api-live.up.railway.app/api/admin/products/${encodeURIComponent(id)}`,
+    `/api/admin/products/${encodeURIComponent(id)}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -447,7 +447,7 @@ async function setPublished(id, yes) {
   const payload = { isPublished: !!yes };
 
   const data = await apiAdminJSON(
-    `https://bs-api-live.up.railway.app/api/admin/products/${encodeURIComponent(pid)}`,
+   `/api/admin/products/${encodeURIComponent(pid)}`
     {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -732,7 +732,7 @@ async function initProductsManager() {
     if (publishedList) publishedList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
 
     // Always fetch from DB on page load/refresh
-    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
+    const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
     const db = Array.isArray(data?.products) ? data.products : [];
 
     // Convert DB -> your UI shape
