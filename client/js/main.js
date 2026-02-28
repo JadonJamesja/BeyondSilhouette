@@ -510,56 +510,32 @@
   };
 
   // -----------------------------
-  // CART (cookie-backed; no localStorage for cart data)
+  // CART
   // -----------------------------
-  const CART_COOKIE = 'bs_cart_v1';
-
-  function readCookie(name) {
-    const n = `${encodeURIComponent(name)}=`;
-    const parts = String(document.cookie || '').split(';');
-    for (const raw of parts) {
-      const s = raw.trim();
-      if (s.startsWith(n)) return decodeURIComponent(s.slice(n.length));
-    }
-    return '';
-  }
-
-  function writeCookie(name, value, days = 14) {
-    const d = new Date();
-    d.setTime(d.getTime() + (Number(days) * 24 * 60 * 60 * 1000));
-    const expires = `expires=${d.toUTCString()}`;
-    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(String(value || ''))};${expires};path=/;SameSite=Lax`;
-  }
-
-  function deleteCookie(name) {
-    document.cookie = `${encodeURIComponent(name)}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax`;
-  }
-
   const Cart = {
+    userKey() {
+      const u = Auth.currentUser();
+      return u ? u.email : USER_GUEST;
+    },
+
     load() {
-      const raw = readCookie(CART_COOKIE);
-      if (!raw) return [];
-      const data = safeParse(raw);
-      const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
-      // Normalize shape: { productId, size, qty }
-      return items
-        .map((it) => ({
-          productId: String(it?.productId || '').trim(),
-          size: String(it?.size || '').trim().toUpperCase(),
-          qty: Math.max(1, Number(it?.qty ?? it?.quantity ?? 1) || 1),
-        }))
-        .filter((it) => it.productId && it.size && it.qty > 0);
+      const st = readState();
+      const key = this.userKey();
+      const items = st.cartByUser[key]?.items || [];
+      return Array.isArray(items) ? items : [];
     },
 
     save(items) {
-      const payload = { items: Array.isArray(items) ? items : [] };
-      writeCookie(CART_COOKIE, JSON.stringify(payload));
+      const st = readState();
+      const key = this.userKey();
+      st.cartByUser[key] = { items: Array.isArray(items) ? items : [] };
+      writeState(st);
     },
 
     add(productId, size, qty = 1) {
       const items = this.load();
-      const pid = String(productId).trim();
-      const sz = String(size || '').trim().toUpperCase();
+      const pid = String(productId);
+      const sz = String(size || '');
       const qAdd = Math.max(1, Number(qty || 1));
 
       const product = Products.findById(pid);
@@ -589,23 +565,25 @@
         return;
       }
 
-      // If we don't have stock info yet, allow add (checkout will still enforce stock server-side)
-      if (existing) existing.qty = Number(existing.qty || 0) + qAdd;
-      else items.push({ productId: pid, size: sz, qty: qAdd });
+      if (existing) {
+        existing.qty = Number(existing.qty || 0) + qAdd;
+      } else {
+        items.push({ productId: pid, size: sz, qty: qAdd });
+      }
 
       this.save(items);
     },
 
     remove(productId, size) {
-      const pid = String(productId).trim();
-      const sz = String(size || '').trim().toUpperCase();
+      const pid = String(productId);
+      const sz = String(size || '');
       const items = this.load().filter(i => !(String(i.productId) === pid && String(i.size || '') === sz));
       this.save(items);
     },
 
     setQty(productId, size, qty) {
-      const pid = String(productId).trim();
-      const sz = String(size || '').trim().toUpperCase();
+      const pid = String(productId);
+      const sz = String(size || '');
       const items = this.load();
       const it = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
       if (!it) return null;
@@ -644,16 +622,37 @@
     },
 
     clear() {
-      deleteCookie(CART_COOKIE);
+      this.save([]);
     },
 
     totalQty(items) {
       return (items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
     },
+
+    mergeGuestIntoUser(email) {
+      const st = readState();
+      const guest = st.cartByUser[USER_GUEST]?.items || [];
+      if (!guest.length) return;
+
+      const userItems = st.cartByUser[email]?.items || [];
+      const merged = Array.isArray(userItems) ? userItems.slice() : [];
+
+      guest.forEach(g => {
+        const pid = String(g.productId);
+        const sz = String(g.size || '');
+        const existing = merged.find(i => String(i.productId) === pid && String(i.size || '') === sz);
+        if (existing) existing.qty = Number(existing.qty || 0) + Number(g.qty || 0);
+        else merged.push({ productId: pid, size: sz, qty: Number(g.qty || 0) });
+      });
+
+      st.cartByUser[email] = { items: merged };
+      st.cartByUser[USER_GUEST] = { items: [] };
+      writeState(st);
+    }
   };
 
   // -----------------------------
-  // PRODUCTS STORE (API-backed) (API-backed)
+  // PRODUCTS STORE (API-backed)
   // -----------------------------
   const Products = (() => {
     let _cache = [];
@@ -731,6 +730,7 @@
       async ensureLoaded() {
         if (Array.isArray(_cache) && _cache.length) return _cache;
 
+        // Use the same fetch logic as shop rendering (same-origin first, then Railway)
         const sameOriginUrl = "/api/products";
         const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
 
@@ -746,15 +746,14 @@
 
         try {
           const products = await tryFetch(sameOriginUrl);
-          _cache = products.map(normalize);
+          _cache = (Array.isArray(products) ? products : []).map(normalize);
           return _cache;
         } catch (e1) {
           try {
             const products = await tryFetch(railwayUrl);
-            _cache = products.map(normalize);
+            _cache = (Array.isArray(products) ? products : []).map(normalize);
             return _cache;
           } catch (e2) {
-            // leave cache empty; callers may still render with existing info
             return _cache;
           }
         }
@@ -762,32 +761,21 @@
     };
   })();
   // -----------------------------
-  // ORDERS (DB-backed via API)
+  // ORDERS (LOCAL DEMO)
   // -----------------------------
   const Orders = {
-    async listMine() {
-      const { ok, status, data } = await apiJson('/api/orders/me');
-      if (!ok) {
-        const msg = data?.error || data?.message || `Failed to load orders (HTTP ${status})`;
-        throw new Error(msg);
-      }
-      return Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+    listFor(email) {
+      const st = readState();
+      const arr = st.ordersByUser[email] || [];
+      return Array.isArray(arr) ? arr : [];
     },
 
-    async createFromCart(items) {
-      const { ok, status, data } = await apiJson('/api/orders', { method: 'POST', body: { items } });
-      if (!ok) {
-        if (status === 409 && data?.code === 'OUT_OF_STOCK') {
-          const err = new Error('OUT_OF_STOCK');
-          err.code = 'OUT_OF_STOCK';
-          err.items = Array.isArray(data?.items) ? data.items : [];
-          throw err;
-        }
-        const msg = data?.error || data?.message || `Failed to create order (HTTP ${status})`;
-        throw new Error(msg);
-      }
-      return data?.order || data;
-    },
+    addFor(email, order) {
+      const st = readState();
+      st.ordersByUser[email] = st.ordersByUser[email] || [];
+      st.ordersByUser[email].unshift(order);
+      writeState(st);
+    }
   };
 
   // -----------------------------
@@ -1154,23 +1142,37 @@
     if (itemsEl && emptyEl && subtotalEl && totalEl) {
       const isEmpty = items.length === 0;
       emptyEl.hidden = !isEmpty;
-    }
 
-    if (isEmpty) {
-      itemsEl.innerHTML = '';
-      subtotalEl.textContent = money(0);
-      totalEl.textContent = money(0);
-      return;
-    }
+      const clearBtn = document.getElementById('clearCartBtn');
+      if (clearBtn) {
+        clearBtn.hidden = isEmpty;
 
-    const filled = items.map((it) => {
-      const meta = resolveProduct(it);
-      return { ...it, ...meta };
-    });
+        if (!clearBtn.dataset.bound) {
+          clearBtn.dataset.bound = '1';
+          clearBtn.addEventListener('click', () => {
+            Cart.clear();
+            UI.updateCartBadges();
+            renderCartIfOnCartPage();
+            toast('Cart cleared.');
+          });
+        }
+      }
 
-    const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+      if (isEmpty) {
+        itemsEl.innerHTML = '';
+        subtotalEl.textContent = money(0);
+        totalEl.textContent = money(0);
+        return;
+      }
 
-    itemsEl.innerHTML = filled.map((it) => `
+      const filled = items.map((it) => {
+        const meta = resolveProduct(it);
+        return { ...it, ...meta };
+      });
+
+      const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+
+      itemsEl.innerHTML = filled.map((it) => `
         <div class="cart-item" data-id="${escapeHtml(it.productId)}" data-size="${escapeHtml(it.size || '')}">
           <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
           <div class="cart-item-info">
@@ -1186,74 +1188,74 @@
         </div>
       `).join('');
 
-    subtotalEl.textContent = money(subtotal);
-    totalEl.textContent = money(subtotal);
+      subtotalEl.textContent = money(subtotal);
+      totalEl.textContent = money(subtotal);
 
-    itemsEl.addEventListener('change', (e) => {
-      const input = e.target.closest('input[type="number"]');
-      if (!input) return;
+      itemsEl.addEventListener('change', (e) => {
+        const input = e.target.closest('input[type="number"]');
+        if (!input) return;
 
-      const row = input.closest('.cart-item');
-      if (!row) return;
+        const row = input.closest('.cart-item');
+        if (!row) return;
 
-      const pid = row.getAttribute('data-id');
-      const size = row.getAttribute('data-size') || null;
-      const q = Math.max(1, Number(input.value || 1));
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
 
-      const applied = Cart.setQty(pid, size, q);
+        const applied = Cart.setQty(pid, size, q);
 
-      if (applied === 0) {
-        toast('That size is out of stock. Item removed from cart.', { important: true });
-      } else if (typeof applied === 'number' && applied < q) {
-        input.value = String(applied);
-        toast(`Only ${applied} available for that size.`, { important: true });
-      }
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          input.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
 
-      UI.updateCartBadges();
-      renderCartIfOnCartPage();
-    });
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
 
-    itemsEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('.remove-from-cart');
-      if (!btn) return;
+      itemsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-from-cart');
+        if (!btn) return;
 
-      const row = btn.closest('.cart-item');
-      if (!row) return;
+        const row = btn.closest('.cart-item');
+        if (!row) return;
 
-      const pid = row.getAttribute('data-id');
-      const size = row.getAttribute('data-size') || null;
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
 
-      Cart.remove(pid, size);
-      UI.updateCartBadges();
-      renderCartIfOnCartPage();
-    });
+        Cart.remove(pid, size);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
 
-    return;
-  }
+      return;
+    }
 
-  if (!legacyContainer) return;
+    if (!legacyContainer) return;
 
-  legacyContainer.innerHTML = '';
+    legacyContainer.innerHTML = '';
 
-  if (items.length === 0) {
-    legacyContainer.innerHTML = `
+    if (items.length === 0) {
+      legacyContainer.innerHTML = `
         <div class="empty-cart">
           Your cart is empty. <a href="shop-page.html">Shop Now</a>
         </div>
       `;
-    return;
-  }
+      return;
+    }
 
-  let subtotal = 0;
+    let subtotal = 0;
 
-  items.forEach((it) => {
-    const meta = resolveProduct(it);
-    const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
-    subtotal += lineTotal;
+    items.forEach((it) => {
+      const meta = resolveProduct(it);
+      const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
+      subtotal += lineTotal;
 
-    const row = document.createElement('div');
-    row.className = 'cart-item';
-    row.innerHTML = `
+      const row = document.createElement('div');
+      row.className = 'cart-item';
+      row.innerHTML = `
         <img src="${escapeHtml(meta.image || '')}" alt="${escapeHtml(meta.name || 'Product')}" class="cart-item-img" />
         <div class="cart-item-info">
           <h4>${escapeHtml(meta.name || 'Item')}</h4>
@@ -1266,332 +1268,332 @@
         </div>
       `;
 
-    const qtyInput = row.querySelector('input[type="number"]');
-    const removeBtn = row.querySelector('.remove-from-cart');
+      const qtyInput = row.querySelector('input[type="number"]');
+      const removeBtn = row.querySelector('.remove-from-cart');
 
-    qtyInput.addEventListener('change', () => {
-      const q = Math.max(1, Number(qtyInput.value || 1));
-      const applied = Cart.setQty(it.productId, it.size || null, q);
+      qtyInput.addEventListener('change', () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        const applied = Cart.setQty(it.productId, it.size || null, q);
 
-      if (applied === 0) {
-        toast('That size is out of stock. Item removed from cart.', { important: true });
-      } else if (typeof applied === 'number' && applied < q) {
-        qtyInput.value = String(applied);
-        toast(`Only ${applied} available for that size.`, { important: true });
-      }
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          qtyInput.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
 
-      UI.updateCartBadges();
-      renderCartIfOnCartPage();
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
+
+      removeBtn.addEventListener('click', () => {
+        Cart.remove(it.productId, it.size || null);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
+
+      legacyContainer.appendChild(row);
     });
 
-    removeBtn.addEventListener('click', () => {
-      Cart.remove(it.productId, it.size || null);
-      UI.updateCartBadges();
-      renderCartIfOnCartPage();
-    });
-
-    legacyContainer.appendChild(row);
-  });
-
-  const summary = document.createElement('div');
-  summary.className = 'cart-summary';
-  summary.innerHTML = `
+    const summary = document.createElement('div');
+    summary.className = 'cart-summary';
+    summary.innerHTML = `
       <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
       <p><strong>Total:</strong> ${money(subtotal)}</p>
       <a href="shop-page.html" class="btn continue-shopping-btn">Continue Shopping</a>
       <a href="checkout.html" class="btn checkout-btn proceed-checkout-btn">Proceed to Checkout</a>
     `;
 
-  legacyContainer.appendChild(summary);
-}
+    legacyContainer.appendChild(summary);
+  }
 
   // -----------------------------
   // AUTH GATE (uses Auth.currentUser() which now prefers server session)
   // -----------------------------
   function gateCheckoutAndOrders() {
-  const p = page();
-  const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
-  if (!needsAuth) return;
+    const p = page();
+    const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
+    if (!needsAuth) return;
 
-  const user = Auth.currentUser();
-  if (user) return;
+    const user = Auth.currentUser();
+    if (user) return;
 
-  localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
-  toast('Please log in to continue.', { important: true });
-  location.href = 'login.html';
-}
-
-// -----------------------------
-// LOGIN / REGISTER FORMS
-// -----------------------------
-function bindLoginForm() {
-  if (page() !== 'login.html' && page() !== 'login') return;
-
-  const form = document.querySelector('form');
-  if (!form) return;
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const email = (form.querySelector('input[type="email"]')?.value || '').trim();
-    const password = (form.querySelector('input[type="password"]')?.value || '').trim();
-
-    try {
-      await Auth.login({ email, password });
-      UI.updateNavAuthState();
-      UI.updateCartBadges();
-
-      const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-      localStorage.removeItem(KEYS.returnTo);
-      location.href = (rt && rt.href) ? rt.href : 'account.html';
-    } catch (err) {
-      toast(err?.message || 'Login failed.', { important: true });
-    }
-  });
-}
-
-function bindRegisterForm() {
-  if (page() !== 'register.html' && page() !== 'register') return;
-
-  const form = document.querySelector('form');
-  if (!form) return;
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
-    const email = (form.querySelector('input[type="email"]')?.value || '').trim();
-
-    const password =
-      (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
-
-    const confirmPassword =
-      (form.querySelector(
-        'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
-      )?.value || '').trim();
-
-    try {
-      await Auth.register({ fullname, email, password, confirmPassword });
-      UI.updateNavAuthState();
-      UI.updateCartBadges();
-      toast('Account created.');
-      location.href = 'account.html';
-    } catch (err) {
-      toast(err?.message || 'Registration failed.', { important: true });
-    }
-  });
-}
-
-// -----------------------------
-// FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
-// -----------------------------
-function bindForgotPasswordForm() {
-  if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
-
-  const form = document.getElementById('forgotPasswordForm');
-  if (!form) return;
-
-  const emailInput = document.getElementById('fpEmail');
-  const codeWrap = document.getElementById('fpCodeWrap');
-  const codeEl = document.getElementById('fpResetCode');
-  const copyBtn = document.getElementById('fpCopyCodeBtn');
-
-  if (form.dataset.bound) return;
-  form.dataset.bound = '1';
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-
-    const email = String(emailInput?.value || '').trim();
-
-    try {
-      const { code } = Auth.requestPasswordReset(email);
-
-      if (codeEl) codeEl.textContent = String(code);
-      if (codeWrap) codeWrap.hidden = false;
-
-      toast('Reset code generated (demo).');
-    } catch (err) {
-      toast(err?.message || 'Could not generate reset code.', { important: true });
-    }
-  });
-
-  if (copyBtn && !copyBtn.dataset.bound) {
-    copyBtn.dataset.bound = '1';
-    copyBtn.addEventListener('click', async () => {
-      try {
-        const txt = String(codeEl?.textContent || '').trim();
-        if (!txt) throw new Error('No code to copy.');
-        await navigator.clipboard.writeText(txt);
-        toast('Code copied.');
-      } catch (err) {
-        toast('Could not copy code.', { important: true });
-      }
-    });
-  }
-}
-
-function bindResetPasswordForm() {
-  if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
-
-  const form = document.getElementById('resetPasswordForm');
-  if (!form) return;
-
-  const emailInput = document.getElementById('rpEmail');
-  const codeInput = document.getElementById('rpCode');
-  const newPwInput = document.getElementById('rpNewPassword');
-  const confirmPwInput = document.getElementById('rpConfirmNewPassword');
-
-  if (form.dataset.bound) return;
-  form.dataset.bound = '1';
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-
-    try {
-      const email = String(emailInput?.value || '').trim();
-      const code = String(codeInput?.value || '').trim();
-      const newPassword = String(newPwInput?.value || '').trim();
-      const confirm = String(confirmPwInput?.value || '').trim();
-
-      if (!email) throw new Error('Please enter your email.');
-      if (!code) throw new Error('Please enter your reset code.');
-      if (!newPassword) throw new Error('Please enter a new password.');
-      if (newPassword !== confirm) throw new Error('New passwords do not match.');
-
-      Auth.resetPassword({ email, code, newPassword });
-
-      toast('Password reset successfully. Please log in.');
-      location.href = 'login.html';
-    } catch (err) {
-      toast(err?.message || 'Could not reset password.', { important: true });
-    }
-  });
-}
-
-function bindEditProfileForm() {
-  if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
-
-  const user = Auth.currentUser();
-  if (!user) {
-    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
+    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
     toast('Please log in to continue.', { important: true });
     location.href = 'login.html';
-    return;
   }
 
-  const form = document.getElementById('editProfileForm');
-  if (!form) return;
+  // -----------------------------
+  // LOGIN / REGISTER FORMS
+  // -----------------------------
+  function bindLoginForm() {
+    if (page() !== 'login.html' && page() !== 'login') return;
 
-  const nameInput = document.getElementById('epName');
-  const emailInput = document.getElementById('epEmail');
-  const currentPwInput = document.getElementById('epCurrentPassword');
-  const newPwInput = document.getElementById('epNewPassword');
-  const confirmPwInput = document.getElementById('epConfirmNewPassword');
-  const cancelBtn = document.getElementById('epCancelBtn');
+    const form = document.querySelector('form');
+    if (!form) return;
 
-  if (emailInput) emailInput.value = user.email || '';
-  if (nameInput) nameInput.value = user.name || '';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-  if (cancelBtn && !cancelBtn.dataset.bound) {
-    cancelBtn.dataset.bound = '1';
-    cancelBtn.addEventListener('click', () => {
-      location.href = 'account.html';
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+      const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+
+      try {
+        await Auth.login({ email, password });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+
+        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
+        localStorage.removeItem(KEYS.returnTo);
+        location.href = (rt && rt.href) ? rt.href : 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Login failed.', { important: true });
+      }
     });
   }
 
-  if (form.dataset.bound) return;
-  form.dataset.bound = '1';
+  function bindRegisterForm() {
+    if (page() !== 'register.html' && page() !== 'register') return;
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
+    const form = document.querySelector('form');
+    if (!form) return;
 
-    try {
-      const name = String(nameInput?.value || '').trim();
-      const currentPassword = String(currentPwInput?.value || '').trim();
-      const newPassword = String(newPwInput?.value || '').trim();
-      const confirmNewPassword = String(confirmPwInput?.value || '').trim();
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-      if (!name) throw new Error('Please enter your display name.');
-      if (!currentPassword) throw new Error('Please enter your current password.');
+      const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
 
-      const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
-      if (wantsPwChange) {
-        if (!newPassword) throw new Error('Please enter a new password.');
-        if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
+      const password =
+        (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
+
+      const confirmPassword =
+        (form.querySelector(
+          'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
+        )?.value || '').trim();
+
+      try {
+        await Auth.register({ fullname, email, password, confirmPassword });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+        toast('Account created.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Registration failed.', { important: true });
       }
-
-      Auth.updateProfile({
-        name,
-        currentPassword,
-        newPassword: wantsPwChange ? newPassword : null
-      });
-
-      UI.updateNavAuthState();
-      toast('Profile updated successfully.');
-      location.href = 'account.html';
-    } catch (err) {
-      toast(err?.message || 'Could not update profile.', { important: true });
-    }
-  });
-}
-
-// -----------------------------
-// LOGOUT + ACCOUNT
-// -----------------------------
-function bindLogoutLinks() {
-  document.addEventListener('click', async (e) => {
-    const a = e.target.closest('a[href="logout.html"]');
-    if (!a) return;
-    e.preventDefault();
-
-    await Auth.logout();
-    UI.updateNavAuthState();
-    UI.updateCartBadges();
-    toast('Logged out.');
-    location.href = 'index.html';
-  });
-}
-
-function renderAccountIfOnAccountPage() {
-  if (page() !== 'account.html' && page() !== 'account') return;
-
-  const user = Auth.currentUser();
-  const nameEl = $('#accountName');
-  const emailEl = $('#accountEmail');
-  const sinceEl = $('#accountSince');
-
-  if (nameEl) nameEl.textContent = user?.name || '';
-  if (emailEl) emailEl.textContent = user?.email || '';
-  if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
-}
-
-// -----------------------------
-// ORDERS PAGE
-// -----------------------------
-async function renderOrdersIfOnOrdersPage() {
-  if (page() !== 'orders.html' && page() !== 'orders') return;
-
-  const user = Auth.currentUser();
-  const listEl = $('#ordersList');
-  if (!listEl) return;
-
-  if (!user || !user.email) {
-    listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
-    return;
+    });
   }
 
-  const fmtDate = (iso) => {
-    const d = iso ? new Date(iso) : null;
-    if (!d || !Number.isFinite(d.getTime())) return '—';
-    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-  };
+  // -----------------------------
+  // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
+  // -----------------------------
+  function bindForgotPasswordForm() {
+    if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
 
-  const safe = (s) => escapeHtml(String(s || ''));
+    const form = document.getElementById('forgotPasswordForm');
+    if (!form) return;
 
-  const renderList = (orders) => {
-    if (!Array.isArray(orders) || !orders.length) {
-      listEl.innerHTML = `
+    const emailInput = document.getElementById('fpEmail');
+    const codeWrap = document.getElementById('fpCodeWrap');
+    const codeEl = document.getElementById('fpResetCode');
+    const copyBtn = document.getElementById('fpCopyCodeBtn');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const email = String(emailInput?.value || '').trim();
+
+      try {
+        const { code } = Auth.requestPasswordReset(email);
+
+        if (codeEl) codeEl.textContent = String(code);
+        if (codeWrap) codeWrap.hidden = false;
+
+        toast('Reset code generated (demo).');
+      } catch (err) {
+        toast(err?.message || 'Could not generate reset code.', { important: true });
+      }
+    });
+
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = '1';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          const txt = String(codeEl?.textContent || '').trim();
+          if (!txt) throw new Error('No code to copy.');
+          await navigator.clipboard.writeText(txt);
+          toast('Code copied.');
+        } catch (err) {
+          toast('Could not copy code.', { important: true });
+        }
+      });
+    }
+  }
+
+  function bindResetPasswordForm() {
+    if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
+
+    const form = document.getElementById('resetPasswordForm');
+    if (!form) return;
+
+    const emailInput = document.getElementById('rpEmail');
+    const codeInput = document.getElementById('rpCode');
+    const newPwInput = document.getElementById('rpNewPassword');
+    const confirmPwInput = document.getElementById('rpConfirmNewPassword');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      try {
+        const email = String(emailInput?.value || '').trim();
+        const code = String(codeInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirm = String(confirmPwInput?.value || '').trim();
+
+        if (!email) throw new Error('Please enter your email.');
+        if (!code) throw new Error('Please enter your reset code.');
+        if (!newPassword) throw new Error('Please enter a new password.');
+        if (newPassword !== confirm) throw new Error('New passwords do not match.');
+
+        Auth.resetPassword({ email, code, newPassword });
+
+        toast('Password reset successfully. Please log in.');
+        location.href = 'login.html';
+      } catch (err) {
+        toast(err?.message || 'Could not reset password.', { important: true });
+      }
+    });
+  }
+
+  function bindEditProfileForm() {
+    if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
+
+    const user = Auth.currentUser();
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
+      toast('Please log in to continue.', { important: true });
+      location.href = 'login.html';
+      return;
+    }
+
+    const form = document.getElementById('editProfileForm');
+    if (!form) return;
+
+    const nameInput = document.getElementById('epName');
+    const emailInput = document.getElementById('epEmail');
+    const currentPwInput = document.getElementById('epCurrentPassword');
+    const newPwInput = document.getElementById('epNewPassword');
+    const confirmPwInput = document.getElementById('epConfirmNewPassword');
+    const cancelBtn = document.getElementById('epCancelBtn');
+
+    if (emailInput) emailInput.value = user.email || '';
+    if (nameInput) nameInput.value = user.name || '';
+
+    if (cancelBtn && !cancelBtn.dataset.bound) {
+      cancelBtn.dataset.bound = '1';
+      cancelBtn.addEventListener('click', () => {
+        location.href = 'account.html';
+      });
+    }
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      try {
+        const name = String(nameInput?.value || '').trim();
+        const currentPassword = String(currentPwInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirmNewPassword = String(confirmPwInput?.value || '').trim();
+
+        if (!name) throw new Error('Please enter your display name.');
+        if (!currentPassword) throw new Error('Please enter your current password.');
+
+        const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
+        if (wantsPwChange) {
+          if (!newPassword) throw new Error('Please enter a new password.');
+          if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
+        }
+
+        Auth.updateProfile({
+          name,
+          currentPassword,
+          newPassword: wantsPwChange ? newPassword : null
+        });
+
+        UI.updateNavAuthState();
+        toast('Profile updated successfully.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Could not update profile.', { important: true });
+      }
+    });
+  }
+
+  // -----------------------------
+  // LOGOUT + ACCOUNT
+  // -----------------------------
+  function bindLogoutLinks() {
+    document.addEventListener('click', async (e) => {
+      const a = e.target.closest('a[href="logout.html"]');
+      if (!a) return;
+      e.preventDefault();
+
+      await Auth.logout();
+      UI.updateNavAuthState();
+      UI.updateCartBadges();
+      toast('Logged out.');
+      location.href = 'index.html';
+    });
+  }
+
+  function renderAccountIfOnAccountPage() {
+    if (page() !== 'account.html' && page() !== 'account') return;
+
+    const user = Auth.currentUser();
+    const nameEl = $('#accountName');
+    const emailEl = $('#accountEmail');
+    const sinceEl = $('#accountSince');
+
+    if (nameEl) nameEl.textContent = user?.name || '';
+    if (emailEl) emailEl.textContent = user?.email || '';
+    if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
+  }
+
+  // -----------------------------
+  // ORDERS PAGE
+  // -----------------------------
+  async function renderOrdersIfOnOrdersPage() {
+    if (page() !== 'orders.html' && page() !== 'orders') return;
+
+    const user = Auth.currentUser();
+    const listEl = $('#ordersList');
+    if (!listEl) return;
+
+    if (!user || !user.email) {
+      listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
+      return;
+    }
+
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
+
+    const safe = (s) => escapeHtml(String(s || ''));
+
+    const renderList = (orders) => {
+      if (!Array.isArray(orders) || !orders.length) {
+        listEl.innerHTML = `
           <div class="order-card">
             <div class="order-row">
               <strong>No orders yet</strong>
@@ -1602,22 +1604,22 @@ async function renderOrdersIfOnOrdersPage() {
             </div>
           </div>
         `;
-      return;
-    }
+        return;
+      }
 
-    const sorted = orders.slice().sort((a, b) => {
-      const ta = new Date(a?.createdAt || 0).getTime();
-      const tb = new Date(b?.createdAt || 0).getTime();
-      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-    });
+      const sorted = orders.slice().sort((a, b) => {
+        const ta = new Date(a?.createdAt || 0).getTime();
+        const tb = new Date(b?.createdAt || 0).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
 
-    listEl.innerHTML = sorted.map(o => {
-      const id = safe(o.id);
-      const status = safe(o.status || 'Placed');
-      const total = money(o.totalJMD || 0);
-      const date = safe(fmtDate(o.createdAt));
+      listEl.innerHTML = sorted.map(o => {
+        const id = safe(o.id);
+        const status = safe(o.status || 'Placed');
+        const total = money(o.totalJMD || 0);
+        const date = safe(fmtDate(o.createdAt));
 
-      return `
+        return `
           <div class="order-card">
             <div class="order-row">
               <strong>Order #</strong> <span>${id}</span>
@@ -1636,80 +1638,99 @@ async function renderOrdersIfOnOrdersPage() {
             </div>
           </div>
         `;
-    }).join('');
-  };
-
-  // --- DB-backed orders only ---
-  try {
-    const orders = await Orders.listMine();
-    renderList(orders);
-    return;
-  } catch (err) {
-    listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
-    return;
-  }
-}
-
-// -----------------------------
-// CHECKOUT PAGE (DEMO + server order create)
-// -----------------------------
-function renderCheckoutIfOnCheckoutPage() {
-  if (page() !== 'checkout.html' && page() !== 'checkout') return;
-
-  const main = document.querySelector('main');
-  if (!main) return;
-
-  const items = Cart.load();
-  const st = readState();
-  const cache = st.productCache || {};
-
-  function resolveProduct(it) {
-    const pid = String(it.productId || '');
-    const p = Products.findById(pid);
-    if (p) {
-      return {
-        name: p.title || p.name || it.name || 'Item',
-        image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
-        price: Number(p.priceJMD || it.price || 0)
-      };
-    }
-    const c = cache[pid];
-    if (c) {
-      return {
-        name: c.name || it.name || 'Item',
-        image: c.image || it.image || '',
-        price: Number(c.price || it.price || 0)
-      };
-    }
-    return {
-      name: it.name || 'Item',
-      image: it.image || '',
-      price: Number(it.price || 0)
+      }).join('');
     };
+
+    // --- PRODUCTION: try backend first ---
+    try {
+      const res = await fetch('/api/orders/me', { credentials: 'include' });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
+
+      const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+      renderList(orders);
+      return;
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const canFallback =
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('not found') ||
+        msg.includes('unexpected token');
+
+      if (!canFallback) {
+        listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
+        return;
+      }
+    }
+
+    // --- DEMO FALLBACK ---
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+    renderList(orders);
   }
 
-  const emptyWrap = $('#checkoutEmpty');
-  const wrap = $('#checkoutWrap');
+  // -----------------------------
+  // CHECKOUT PAGE (DEMO + server order create)
+  // -----------------------------
+  function renderCheckoutIfOnCheckoutPage() {
+    if (page() !== 'checkout.html' && page() !== 'checkout') return;
 
-  if (!items.length) {
-    if (emptyWrap) emptyWrap.hidden = false;
-    if (wrap) wrap.hidden = true;
-    return;
-  }
+    const main = document.querySelector('main');
+    if (!main) return;
 
-  if (emptyWrap) emptyWrap.hidden = true;
-  if (wrap) wrap.hidden = false;
+    const items = Cart.load();
+    const st = readState();
+    const cache = st.productCache || {};
 
-  const filled = items.map(it => ({ ...it, ...resolveProduct(it) }));
-  const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+    function resolveProduct(it) {
+      const pid = String(it.productId || '');
+      const p = Products.findById(pid);
+      if (p) {
+        return {
+          name: p.title || p.name || it.name || 'Item',
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
+          price: Number(p.priceJMD || it.price || 0)
+        };
+      }
+      const c = cache[pid];
+      if (c) {
+        return {
+          name: c.name || it.name || 'Item',
+          image: c.image || it.image || '',
+          price: Number(c.price || it.price || 0)
+        };
+      }
+      return {
+        name: it.name || 'Item',
+        image: it.image || '',
+        price: Number(it.price || 0)
+      };
+    }
 
-  const listEl = $('#checkoutItems');
-  const subtotalEl = $('#checkoutSubtotal');
-  const totalEl = $('#checkoutTotal');
-  const btn = $('#placeOrderBtn');
+    const emptyWrap = $('#checkoutEmpty');
+    const wrap = $('#checkoutWrap');
 
-  if (listEl) {
-    listEl.innerHTML = filled.map(it => `
+    if (!items.length) {
+      if (emptyWrap) emptyWrap.hidden = false;
+      if (wrap) wrap.hidden = true;
+      return;
+    }
+
+    if (emptyWrap) emptyWrap.hidden = true;
+    if (wrap) wrap.hidden = false;
+
+    const filled = items.map(it => ({ ...it, ...resolveProduct(it) }));
+    const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+
+    const listEl = $('#checkoutItems');
+    const subtotalEl = $('#checkoutSubtotal');
+    const totalEl = $('#checkoutTotal');
+    const btn = $('#placeOrderBtn');
+
+    if (listEl) {
+      listEl.innerHTML = filled.map(it => `
         <div class="checkout-item">
           <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
           <div class="checkout-item-info">
@@ -1719,157 +1740,157 @@ function renderCheckoutIfOnCheckoutPage() {
           <div class="checkout-item-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</div>
         </div>
       `).join('');
-  }
+    }
 
-  if (subtotalEl) subtotalEl.textContent = money(subtotal);
-  if (totalEl) totalEl.textContent = money(subtotal);
+    if (subtotalEl) subtotalEl.textContent = money(subtotal);
+    if (totalEl) totalEl.textContent = money(subtotal);
 
-  if (btn) {
-    btn.onclick = async () => {
-      const user = Auth.currentUser();
-      if (!user) {
-        toast('Please log in to continue.', { important: true });
-        localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
-        location.href = 'login.html';
-        return;
-      }
-
-      const orderItemsResolved = filled.map(it => ({
-        productId: String(it.productId),
-        size: String(it.size || ''),
-        qty: Number(it.qty || 0),
-        name: String(it.name || 'Item'),
-        price: Number(it.price || 0),
-        image: String(it.image || '')
-      }));
-
-      try {
-        const payload = {
-          items: orderItemsResolved.map(it => ({
-            productId: it.productId,
-            size: it.size,
-            qty: it.qty
-          }))
-        };
-
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          credentials: 'include'
-        });
-
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-          throw new Error(data?.error || 'Could not place order.');
+    if (btn) {
+      btn.onclick = async () => {
+        const user = Auth.currentUser();
+        if (!user) {
+          toast('Please log in to continue.', { important: true });
+          localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
+          location.href = 'login.html';
+          return;
         }
 
-        const orderId = String(data?.orderId || data?.order?.id || '').trim();
-        if (!orderId) throw new Error('Order placed but missing order id from server.');
+        const orderItemsResolved = filled.map(it => ({
+          productId: String(it.productId),
+          size: String(it.size || ''),
+          qty: Number(it.qty || 0),
+          name: String(it.name || 'Item'),
+          price: Number(it.price || 0),
+          image: String(it.image || '')
+        }));
+
+        try {
+          const payload = {
+            items: orderItemsResolved.map(it => ({
+              productId: it.productId,
+              size: it.size,
+              qty: it.qty
+            }))
+          };
+
+          const res = await fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+            throw new Error(data?.error || 'Could not place order.');
+          }
+
+          const orderId = String(data?.orderId || data?.order?.id || '').trim();
+          if (!orderId) throw new Error('Order placed but missing order id from server.');
+
+          Cart.clear();
+          UI.updateCartBadges();
+          toast('Order placed.');
+          location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
+          return;
+        } catch (err) {
+          const msg = String(err?.message || '');
+          const canFallback =
+            msg.toLowerCase().includes('failed to fetch') ||
+            msg.toLowerCase().includes('networkerror') ||
+            msg.toLowerCase().includes('not found') ||
+            msg.toLowerCase().includes('unexpected token');
+
+          if (!canFallback) {
+            toast(msg || 'Could not place order.', { important: true });
+            return;
+          }
+        }
+
+        // --- DEMO FALLBACK ---
+        const now = nowISO();
+        const orderId = uid('ord_');
+        const totalJMD = Number(subtotal || 0);
+
+        const order = {
+          id: orderId,
+          createdAt: now,
+          status: 'Placed',
+          history: [{ at: now, by: 'System', from: '—', to: 'Placed' }],
+          totalJMD,
+          items: orderItemsResolved
+        };
+
+        const st2 = readState();
+        const em = String(user.email || '').trim().toLowerCase();
+        st2.ordersByUser[em] = Array.isArray(st2.ordersByUser[em]) ? st2.ordersByUser[em] : [];
+        st2.ordersByUser[em].unshift(order);
+        writeState(st2);
 
         Cart.clear();
         UI.updateCartBadges();
-        toast('Order placed.');
+        toast('Order placed (demo).');
         location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
-        return;
-      } catch (err) {
-        const msg = String(err?.message || '');
-        const canFallback =
-          msg.toLowerCase().includes('failed to fetch') ||
-          msg.toLowerCase().includes('networkerror') ||
-          msg.toLowerCase().includes('not found') ||
-          msg.toLowerCase().includes('unexpected token');
-
-        if (!canFallback) {
-          toast(msg || 'Could not place order.', { important: true });
-          return;
-        }
-      }
-
-      // --- DEMO FALLBACK ---
-      const now = nowISO();
-      const orderId = uid('ord_');
-      const totalJMD = Number(subtotal || 0);
-
-      const order = {
-        id: orderId,
-        createdAt: now,
-        status: 'Placed',
-        history: [{ at: now, by: 'System', from: '—', to: 'Placed' }],
-        totalJMD,
-        items: orderItemsResolved
       };
-
-      const st2 = readState();
-      const em = String(user.email || '').trim().toLowerCase();
-      st2.ordersByUser[em] = Array.isArray(st2.ordersByUser[em]) ? st2.ordersByUser[em] : [];
-      st2.ordersByUser[em].unshift(order);
-      writeState(st2);
-
-      Cart.clear();
-      UI.updateCartBadges();
-      toast('Order placed (demo).');
-      location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
-    };
-  }
-}
-
-async function renderReceiptIfOnReceiptPage() {
-  if (page() !== 'receipt.html' && page() !== 'receipt') return;
-
-  const user = Auth.currentUser();
-  if (!user || !user.email) {
-    location.href = 'login.html';
-    return;
+    }
   }
 
-  const params = new URLSearchParams(location.search);
-  const orderId = String(params.get('order') || '').trim();
+  async function renderReceiptIfOnReceiptPage() {
+    if (page() !== 'receipt.html' && page() !== 'receipt') return;
 
-  const setText = (id, value) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = String(value == null ? '' : value);
-  };
-
-  const fmtDate = (iso) => {
-    const d = iso ? new Date(iso) : null;
-    if (!d || !Number.isFinite(d.getTime())) return '—';
-    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-  };
-
-  const renderOrder = (order) => {
-    if (!order) {
-      setText('rcptOrderId', '—');
-      setText('rcptOrderDate', '—');
-      setText('rcptOrderStatus', '—');
-      const itemsEl = document.getElementById('rcptItems');
-      if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+    const user = Auth.currentUser();
+    if (!user || !user.email) {
+      location.href = 'login.html';
       return;
     }
 
-    setText('rcptOrderId', `#${order.id || ''}`);
-    setText('rcptOrderDate', fmtDate(order.createdAt));
-    setText('rcptOrderStatus', order.status || 'Placed');
-    setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+    const params = new URLSearchParams(location.search);
+    const orderId = String(params.get('order') || '').trim();
 
-    const items = Array.isArray(order.items) ? order.items : [];
-    setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
-    setText('rcptTotal', money(order.totalJMD || 0));
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value == null ? '' : value);
+    };
 
-    const tbody = document.getElementById('rcptItems');
-    if (tbody) {
-      if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
-      } else {
-        tbody.innerHTML = items.map(it => {
-          const nm = escapeHtml(it?.name || 'Item');
-          const sz = escapeHtml(it?.size || '—');
-          const qty = Number(it?.qty || 0);
-          const price = Number(it?.price || 0);
-          const line = price * qty;
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
 
-          return `
+    const renderOrder = (order) => {
+      if (!order) {
+        setText('rcptOrderId', '—');
+        setText('rcptOrderDate', '—');
+        setText('rcptOrderStatus', '—');
+        const itemsEl = document.getElementById('rcptItems');
+        if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+        return;
+      }
+
+      setText('rcptOrderId', `#${order.id || ''}`);
+      setText('rcptOrderDate', fmtDate(order.createdAt));
+      setText('rcptOrderStatus', order.status || 'Placed');
+      setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+
+      const items = Array.isArray(order.items) ? order.items : [];
+      setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
+      setText('rcptTotal', money(order.totalJMD || 0));
+
+      const tbody = document.getElementById('rcptItems');
+      if (tbody) {
+        if (!items.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
+        } else {
+          tbody.innerHTML = items.map(it => {
+            const nm = escapeHtml(it?.name || 'Item');
+            const sz = escapeHtml(it?.size || '—');
+            const qty = Number(it?.qty || 0);
+            const price = Number(it?.price || 0);
+            const line = price * qty;
+
+            return `
               <tr>
                 <td>${nm}</td>
                 <td>${sz}</td>
@@ -1878,123 +1899,137 @@ async function renderReceiptIfOnReceiptPage() {
                 <td class="right">${escapeHtml(money(line))}</td>
               </tr>
             `;
-        }).join('');
+          }).join('');
+        }
       }
+    };
+
+    try {
+      if (!orderId) throw new Error('Missing order id.');
+
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { credentials: 'include' });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) throw new Error(data?.error || 'Could not load receipt.');
+
+      const order = data?.order ? data.order : data;
+      renderOrder(order);
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const canFallback =
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('not found') ||
+        msg.includes('unexpected token');
+
+      if (!canFallback) {
+        renderOrder(null);
+        toast(err?.message || 'Could not load receipt.', { important: true });
+        return;
+      }
+
+      const st = readState();
+      const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+      const order = orders.find(o => String(o?.id || '') === orderId) || null;
+      renderOrder(order);
     }
-  };
 
-  try {
-    if (!orderId) throw new Error('Missing order id.');
-
-    const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { credentials: 'include' });
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) throw new Error(data?.error || 'Could not load receipt.');
-
-    const order = data?.order ? data.order : data;
-    renderOrder(order);
-  } catch (err) {
-    renderOrder(null);
-    toast(err?.message || 'Could not load receipt.', { important: true });
-    return;
+    const printBtn = document.getElementById('printReceiptBtn');
+    if (printBtn && !printBtn.dataset.bound) {
+      printBtn.dataset.bound = '1';
+      printBtn.addEventListener('click', () => window.print());
+    }
   }
 
-  const printBtn = document.getElementById('printReceiptBtn');
-  if (printBtn && !printBtn.dataset.bound) {
-    printBtn.dataset.bound = '1';
-    printBtn.addEventListener('click', () => window.print());
-  }
-}
+  // -----------------------------
+  // DEV-ONLY: PROMOTE USER TO ADMIN (SERVER + DEMO)
+  // -----------------------------
+  async function promoteToAdmin({ email, secret }) {
+    const em = String(email || '').trim().toLowerCase();
+    const sec = String(secret || '').trim();
+    if (!em) throw new Error('promoteToAdmin: email is required.');
+    if (!sec) throw new Error('promoteToAdmin: secret is required.');
 
-// -----------------------------
-// DEV-ONLY: PROMOTE USER TO ADMIN (SERVER + DEMO)
-// -----------------------------
-async function promoteToAdmin({ email, secret }) {
-  const em = String(email || '').trim().toLowerCase();
-  const sec = String(secret || '').trim();
-  if (!em) throw new Error('promoteToAdmin: email is required.');
-  if (!sec) throw new Error('promoteToAdmin: secret is required.');
+    const { ok, status, data } = await apiJson('/api/dev/make-admin', {
+      method: 'POST',
+      body: { email: em, secret: sec }
+    });
 
-  const { ok, status, data } = await apiJson('/api/dev/make-admin', {
-    method: 'POST',
-    body: { email: em, secret: sec }
-  });
+    if (!ok) {
+      throw new Error(data?.error || `Failed to promote (${status})`);
+    }
 
-  if (!ok) {
-    throw new Error(data?.error || `Failed to promote (${status})`);
+    await Auth.bootstrap();
+    UI.updateNavAuthState();
+    return data;
   }
 
-  await Auth.bootstrap();
-  UI.updateNavAuthState();
-  return data;
-}
+  // (kept) DEMO local promotion
+  function makeAdmin(email) {
+    const em = String(email || '').trim().toLowerCase();
+    if (!em) throw new Error('makeAdmin(email): email is required.');
 
-// (kept) DEMO local promotion
-function makeAdmin(email) {
-  const em = String(email || '').trim().toLowerCase();
-  if (!em) throw new Error('makeAdmin(email): email is required.');
+    const users = readUsers();
+    const u = users[em];
+    if (!u) throw new Error('makeAdmin(email): no user found with that email.');
 
-  const users = readUsers();
-  const u = users[em];
-  if (!u) throw new Error('makeAdmin(email): no user found with that email.');
+    u.email = u.email || em;
+    u.createdAt = u.createdAt || nowISO();
+    u.role = 'admin';
 
-  u.email = u.email || em;
-  u.createdAt = u.createdAt || nowISO();
-  u.role = 'admin';
+    users[em] = u;
+    writeUsers(users);
 
-  users[em] = u;
-  writeUsers(users);
+    return true;
+  }
 
-  return true;
-}
+  // -----------------------------
+  // INIT
+  // -----------------------------
+  async function init() {
+    UI.ensureHeaderFooter();
 
-// -----------------------------
-// INIT
-// -----------------------------
-async function init() {
-  UI.ensureHeaderFooter();
+    // IMPORTANT: hydrate from server cookie session FIRST
+    await Auth.bootstrap();
 
-  // IMPORTANT: hydrate from server cookie session FIRST
-  await Auth.bootstrap();
+    UI.updateNavAuthState();
+    UI.updateCartBadges();
+    UI.bindLoginDropdown();
+    UI.bindNavActive();
 
-  UI.updateNavAuthState();
-  UI.updateCartBadges();
-  UI.bindLoginDropdown();
-  UI.bindNavActive();
+    gateCheckoutAndOrders();
 
-  gateCheckoutAndOrders();
+    bindGoogleSignInIfPresent();
 
-  bindGoogleSignInIfPresent();
+    await renderShopFromStore();
+    bindAddToCart();
 
-  await renderShopFromStore();
-  bindAddToCart();
+    renderCartIfOnCartPage();
+    renderCheckoutIfOnCheckoutPage();
 
-  renderCartIfOnCartPage();
-  renderCheckoutIfOnCheckoutPage();
+    bindLoginForm();
+    bindRegisterForm();
+    bindForgotPasswordForm();
+    bindResetPasswordForm();
+    bindEditProfileForm();
+    bindLogoutLinks();
 
-  bindLoginForm();
-  bindRegisterForm();
-  bindForgotPasswordForm();
-  bindResetPasswordForm();
-  bindEditProfileForm();
-  bindLogoutLinks();
+    renderAccountIfOnAccountPage();
+    renderOrdersIfOnOrdersPage();
 
-  renderAccountIfOnAccountPage();
-  renderOrdersIfOnOrdersPage();
+    renderReceiptIfOnReceiptPage();
+  }
 
-  renderReceiptIfOnReceiptPage();
-}
+  document.addEventListener('DOMContentLoaded', async () => { init(); });
 
-document.addEventListener('DOMContentLoaded', async () => { init(); });
+  // Expose tiny API (debug / future admin)
+  BS.Auth = Auth;
+  BS.Cart = Cart;
+  BS.Products = Products;
+  BS.Orders = Orders;
 
-// Expose tiny API (debug / future admin)
-BS.Auth = Auth;
-BS.Cart = Cart;
-BS.Products = Products;
-BS.Orders = Orders;
+  // Expose DEV-only admin promotion
+  BS.makeAdmin = makeAdmin;
+  BS.promoteToAdmin = promoteToAdmin;
 
-// Expose DEV-only admin promotion
-BS.makeAdmin = makeAdmin;
-BS.promoteToAdmin = promoteToAdmin;
-
-}) ();
+})();
