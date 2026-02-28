@@ -191,31 +191,37 @@
   // API helper (server cookie session)
   // -----------------------------
   async function apiJson(path, { method = 'GET', body } = {}) {
-    let res;
     try {
-      res = await fetch(path, {
+      const res = await fetch(path, {
         method,
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
         credentials: 'include'
       });
-    } catch (e) {
-      return { ok: false, status: 0, data: { ok: false, error: 'NETWORK_ERROR' } };
+
+      const ct = String(res.headers.get('content-type') || '');
+      const isJson = ct.includes('application/json');
+      const data = isJson ? await res.json().catch(() => null) : null;
+
+      // Never leak HTML/platform error pages into UI. Treat non-JSON as a generic failure.
+      if (!isJson) {
+        return {
+          ok: false,
+          status: res.status,
+          data: { ok: false, error: 'Service temporarily unavailable. Please try again.' }
+        };
+      }
+
+      return { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 0,
+        data: { ok: false, error: 'Unable to reach the server. Please check your connection and try again.' }
+      };
     }
-
-    const ct = String(res.headers.get('content-type') || '').toLowerCase();
-    let data = null;
-
-    if (ct.includes('application/json')) {
-      data = await res.json().catch(() => null);
-    } else {
-      // Never leak HTML/platform pages to UI
-      const txt = await res.text().catch(() => '');
-      data = { ok: false, error: 'NON_JSON_RESPONSE', status: res.status, preview: txt ? txt.slice(0, 120) : '' };
-    }
-
-    return { ok: res.ok, status: res.status, data };
   }
+
 
   // -----------------------------
   // AUTH (SERVER FIRST, DEMO FALLBACK)
@@ -745,10 +751,17 @@
 
       async ensureLoaded() {
         if (Array.isArray(_cache) && _cache.length) return _cache;
-        const { ok, data } = await apiJson('/api/products');
-        if (!ok) return _cache;
-        const products = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : []);
-        _cache = products.map(normalize);
+
+        const res = await fetch("/api/products", { credentials: "omit" }).catch(() => null);
+        if (!res || !res.ok) return _cache;
+
+        const ct = String(res.headers.get("content-type") || "");
+        if (!ct.includes("application/json")) return _cache;
+
+        const data = await res.json().catch(() => null);
+        if (!data || data.ok !== true || !Array.isArray(data.products)) return _cache;
+
+        _cache = data.products.map(normalize);
         return _cache;
       }
     };
@@ -941,20 +954,27 @@
 
     container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-    const { ok, data } = await apiJson('/api/products');
-    if (!ok) {
-      container.innerHTML = `<div class="muted">Unable to load products right now. Please try again.</div>`;
+    // Products are served from the same origin in production.
+    // We intentionally avoid hardcoded fallback hosts to prevent “platform” error pages.
+    try {
+      const res = await fetch("/api/products", { credentials: "omit" });
+
+      const ct = String(res.headers.get("content-type") || "");
+      if (!res.ok || !ct.includes("application/json")) throw new Error("Products fetch failed");
+
+      const data = await res.json();
+      if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error("Bad products response");
+
+      Products.setAll(data.products);
+      renderProducts(container, Products.listPublished());
+      return;
+    } catch (err) {
+      console.warn("Products fetch failed.", err);
+      container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
       return;
     }
-
-    const products = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : []);
-    Products.setAll(products);
-    renderProducts(container, Products.listPublished());
-    return;
-
-    container.innerHTML = `<div class="muted">No products available.</div>`;
   }
-
+  
   function bindAddToCart() {
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".add-to-cart");
@@ -1162,77 +1182,71 @@
       subtotalEl.textContent = money(subtotal);
       totalEl.textContent = money(subtotal);
 
-      itemsEl.addEventListener('input', (e) => {
+      itemsEl.addEventListener('change', (e) => {
         const input = e.target.closest('input[type="number"]');
         if (!input) return;
-        const handleQtyChange = (e) => {
-          const input = e.target.closest('input[type="number"]');
-          if (!input) return;
 
-          const row = input.closest('.cart-item');
-          if (!row) return;
+        const row = input.closest('.cart-item');
+        if (!row) return;
 
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || null;
-          const q = Math.max(1, Number(input.value || 1));
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
 
-          const applied = Cart.setQty(pid, size, q);
+        const applied = Cart.setQty(pid, size, q);
 
-          if (applied === 0) {
-            toast('That size is out of stock, so we removed it from your cart.', { important: true });
-          } else if (typeof applied === 'number' && applied < q) {
-            input.value = String(applied);
-            toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-          }
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          input.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
 
-          UI.updateCartBadges();
-          renderCartIfOnCartPage();
-        };
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
 
-        itemsEl.addEventListener('input', handleQtyChange);
-        itemsEl.addEventListener('change', handleQtyChange);
+      itemsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-from-cart');
+        if (!btn) return;
 
-        itemsEl.addEventListener('click', (e) => {
-          const btn = e.target.closest('.remove-from-cart');
-          if (!btn) return;
+        const row = btn.closest('.cart-item');
+        if (!row) return;
 
-          const row = btn.closest('.cart-item');
-          if (!row) return;
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
 
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || null;
+        Cart.remove(pid, size);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
 
-          Cart.remove(pid, size);
-          UI.updateCartBadges();
-          renderCartIfOnCartPage();
-        });
-
-        return;
-      }
+      return;
+    }
 
     if (!legacyContainer) return;
 
-      legacyContainer.innerHTML = '';
+    legacyContainer.innerHTML = '';
 
-      if (items.length === 0) {
-        legacyContainer.innerHTML = `
+    if (items.length === 0) {
+      legacyContainer.innerHTML = `
         <div class="empty-cart">
           Your cart is empty. <a href="shop-page.html">Shop Now</a>
         </div>
       `;
-        return;
-      }
+      return;
+    }
 
-      let subtotal = 0;
+    let subtotal = 0;
 
-      items.forEach((it) => {
-        const meta = resolveProduct(it);
-        const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
-        subtotal += lineTotal;
+    items.forEach((it) => {
+      const meta = resolveProduct(it);
+      const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
+      subtotal += lineTotal;
 
-        const row = document.createElement('div');
-        row.className = 'cart-item';
-        row.innerHTML = `
+      const row = document.createElement('div');
+      row.className = 'cart-item';
+      row.innerHTML = `
         <img src="${escapeHtml(meta.image || '')}" alt="${escapeHtml(meta.name || 'Product')}" class="cart-item-img" />
         <div class="cart-item-info">
           <h4>${escapeHtml(meta.name || 'Item')}</h4>
@@ -1245,332 +1259,347 @@
         </div>
       `;
 
-        const qtyInput = row.querySelector('input[type="number"]');
-        const removeBtn = row.querySelector('.remove-from-cart');
+      const qtyInput = row.querySelector('input[type="number"]');
+      const removeBtn = row.querySelector('.remove-from-cart');
 
-        qtyInput.addEventListener('change', () => {
-          const q = Math.max(1, Number(qtyInput.value || 1));
-          const applied = Cart.setQty(it.productId, it.size || null, q);
+      qtyInput.addEventListener('input', () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        const applied = Cart.setQty(it.productId, it.size || null, q);
 
-          if (applied === 0) {
-            toast('That size is out of stock. Item removed from cart.', { important: true });
-          } else if (typeof applied === 'number' && applied < q) {
-            qtyInput.value = String(applied);
-            toast(`Only ${applied} available for that size.`, { important: true });
-          }
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          qtyInput.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
 
-          UI.updateCartBadges();
-          renderCartIfOnCartPage();
-        });
-
-        removeBtn.addEventListener('click', () => {
-          Cart.remove(it.productId, it.size || null);
-          UI.updateCartBadges();
-          renderCartIfOnCartPage();
-        });
-
-        legacyContainer.appendChild(row);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
       });
 
-      const summary = document.createElement('div');
-      summary.className = 'cart-summary';
-      summary.innerHTML = `
+      qtyInput.addEventListener('change', () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        const applied = Cart.setQty(it.productId, it.size || null, q);
+
+        if (applied === 0) {
+          toast('That size is out of stock. Item removed from cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          qtyInput.value = String(applied);
+          toast(`Only ${applied} available for that size.`, { important: true });
+        }
+
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
+
+      removeBtn.addEventListener('click', () => {
+        Cart.remove(it.productId, it.size || null);
+        UI.updateCartBadges();
+        renderCartIfOnCartPage();
+      });
+
+      legacyContainer.appendChild(row);
+    });
+
+    const summary = document.createElement('div');
+    summary.className = 'cart-summary';
+    summary.innerHTML = `
       <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
       <p><strong>Total:</strong> ${money(subtotal)}</p>
       <a href="shop-page.html" class="btn continue-shopping-btn">Continue Shopping</a>
       <a href="checkout.html" class="btn checkout-btn proceed-checkout-btn">Proceed to Checkout</a>
     `;
 
-      legacyContainer.appendChild(summary);
-    }
+    legacyContainer.appendChild(summary);
+  }
 
-    // -----------------------------
-    // AUTH GATE (uses Auth.currentUser() which now prefers server session)
-    // -----------------------------
-    function gateCheckoutAndOrders() {
-      const p = page();
-      const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
-      if (!needsAuth) return;
+  // -----------------------------
+  // AUTH GATE (uses Auth.currentUser() which now prefers server session)
+  // -----------------------------
+  function gateCheckoutAndOrders() {
+    const p = page();
+    const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
+    if (!needsAuth) return;
 
-      const user = Auth.currentUser();
-      if (user) return;
+    const user = Auth.currentUser();
+    if (user) return;
 
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
-      toast('Please log in to continue.', { important: true });
-      location.href = 'login.html';
-    }
+    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
+    toast('Please log in to continue.', { important: true });
+    location.href = 'login.html';
+  }
 
-    // -----------------------------
-    // LOGIN / REGISTER FORMS
-    // -----------------------------
-    function bindLoginForm() {
-      if (page() !== 'login.html' && page() !== 'login') return;
+  // -----------------------------
+  // LOGIN / REGISTER FORMS
+  // -----------------------------
+  function bindLoginForm() {
+    if (page() !== 'login.html' && page() !== 'login') return;
 
-      const form = document.querySelector('form');
-      if (!form) return;
+    const form = document.querySelector('form');
+    if (!form) return;
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-        const email = (form.querySelector('input[type="email"]')?.value || '').trim();
-        const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+      const password = (form.querySelector('input[type="password"]')?.value || '').trim();
 
-        try {
-          await Auth.login({ email, password });
-          UI.updateNavAuthState();
-          UI.updateCartBadges();
-
-          const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-          localStorage.removeItem(KEYS.returnTo);
-          location.href = (rt && rt.href) ? rt.href : 'account.html';
-        } catch (err) {
-          toast(err?.message || 'Login failed.', { important: true });
-        }
-      });
-    }
-
-    function bindRegisterForm() {
-      if (page() !== 'register.html' && page() !== 'register') return;
-
-      const form = document.querySelector('form');
-      if (!form) return;
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
-        const email = (form.querySelector('input[type="email"]')?.value || '').trim();
-
-        const password =
-          (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
-
-        const confirmPassword =
-          (form.querySelector(
-            'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
-          )?.value || '').trim();
-
-        try {
-          await Auth.register({ fullname, email, password, confirmPassword });
-          UI.updateNavAuthState();
-          UI.updateCartBadges();
-          toast('Account created.');
-          location.href = 'account.html';
-        } catch (err) {
-          toast(err?.message || 'Registration failed.', { important: true });
-        }
-      });
-    }
-
-    // -----------------------------
-    // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
-    // -----------------------------
-    function bindForgotPasswordForm() {
-      if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
-
-      const form = document.getElementById('forgotPasswordForm');
-      if (!form) return;
-
-      const emailInput = document.getElementById('fpEmail');
-      const codeWrap = document.getElementById('fpCodeWrap');
-      const codeEl = document.getElementById('fpResetCode');
-      const copyBtn = document.getElementById('fpCopyCodeBtn');
-
-      if (form.dataset.bound) return;
-      form.dataset.bound = '1';
-
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const email = String(emailInput?.value || '').trim();
-
-        try {
-          const { code } = Auth.requestPasswordReset(email);
-
-          if (codeEl) codeEl.textContent = String(code);
-          if (codeWrap) codeWrap.hidden = false;
-
-          toast('Reset code generated (demo).');
-        } catch (err) {
-          toast(err?.message || 'Could not generate reset code.', { important: true });
-        }
-      });
-
-      if (copyBtn && !copyBtn.dataset.bound) {
-        copyBtn.dataset.bound = '1';
-        copyBtn.addEventListener('click', async () => {
-          try {
-            const txt = String(codeEl?.textContent || '').trim();
-            if (!txt) throw new Error('No code to copy.');
-            await navigator.clipboard.writeText(txt);
-            toast('Code copied.');
-          } catch (err) {
-            toast('Could not copy code.', { important: true });
-          }
-        });
-      }
-    }
-
-    function bindResetPasswordForm() {
-      if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
-
-      const form = document.getElementById('resetPasswordForm');
-      if (!form) return;
-
-      const emailInput = document.getElementById('rpEmail');
-      const codeInput = document.getElementById('rpCode');
-      const newPwInput = document.getElementById('rpNewPassword');
-      const confirmPwInput = document.getElementById('rpConfirmNewPassword');
-
-      if (form.dataset.bound) return;
-      form.dataset.bound = '1';
-
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        try {
-          const email = String(emailInput?.value || '').trim();
-          const code = String(codeInput?.value || '').trim();
-          const newPassword = String(newPwInput?.value || '').trim();
-          const confirm = String(confirmPwInput?.value || '').trim();
-
-          if (!email) throw new Error('Please enter your email.');
-          if (!code) throw new Error('Please enter your reset code.');
-          if (!newPassword) throw new Error('Please enter a new password.');
-          if (newPassword !== confirm) throw new Error('New passwords do not match.');
-
-          Auth.resetPassword({ email, code, newPassword });
-
-          toast('Password reset successfully. Please log in.');
-          location.href = 'login.html';
-        } catch (err) {
-          toast(err?.message || 'Could not reset password.', { important: true });
-        }
-      });
-    }
-
-    function bindEditProfileForm() {
-      if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
-
-      const user = Auth.currentUser();
-      if (!user) {
-        localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
-        toast('Please log in to continue.', { important: true });
-        location.href = 'login.html';
-        return;
-      }
-
-      const form = document.getElementById('editProfileForm');
-      if (!form) return;
-
-      const nameInput = document.getElementById('epName');
-      const emailInput = document.getElementById('epEmail');
-      const currentPwInput = document.getElementById('epCurrentPassword');
-      const newPwInput = document.getElementById('epNewPassword');
-      const confirmPwInput = document.getElementById('epConfirmNewPassword');
-      const cancelBtn = document.getElementById('epCancelBtn');
-
-      if (emailInput) emailInput.value = user.email || '';
-      if (nameInput) nameInput.value = user.name || '';
-
-      if (cancelBtn && !cancelBtn.dataset.bound) {
-        cancelBtn.dataset.bound = '1';
-        cancelBtn.addEventListener('click', () => {
-          location.href = 'account.html';
-        });
-      }
-
-      if (form.dataset.bound) return;
-      form.dataset.bound = '1';
-
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        try {
-          const name = String(nameInput?.value || '').trim();
-          const currentPassword = String(currentPwInput?.value || '').trim();
-          const newPassword = String(newPwInput?.value || '').trim();
-          const confirmNewPassword = String(confirmPwInput?.value || '').trim();
-
-          if (!name) throw new Error('Please enter your display name.');
-          if (!currentPassword) throw new Error('Please enter your current password.');
-
-          const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
-          if (wantsPwChange) {
-            if (!newPassword) throw new Error('Please enter a new password.');
-            if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
-          }
-
-          Auth.updateProfile({
-            name,
-            currentPassword,
-            newPassword: wantsPwChange ? newPassword : null
-          });
-
-          UI.updateNavAuthState();
-          toast('Profile updated successfully.');
-          location.href = 'account.html';
-        } catch (err) {
-          toast(err?.message || 'Could not update profile.', { important: true });
-        }
-      });
-    }
-
-    // -----------------------------
-    // LOGOUT + ACCOUNT
-    // -----------------------------
-    function bindLogoutLinks() {
-      document.addEventListener('click', async (e) => {
-        const a = e.target.closest('a[href="logout.html"]');
-        if (!a) return;
-        e.preventDefault();
-
-        await Auth.logout();
+      try {
+        await Auth.login({ email, password });
         UI.updateNavAuthState();
         UI.updateCartBadges();
-        toast('Logged out.');
-        location.href = 'index.html';
+
+        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
+        localStorage.removeItem(KEYS.returnTo);
+        location.href = (rt && rt.href) ? rt.href : 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Login failed.', { important: true });
+      }
+    });
+  }
+
+  function bindRegisterForm() {
+    if (page() !== 'register.html' && page() !== 'register') return;
+
+    const form = document.querySelector('form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+
+      const password =
+        (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
+
+      const confirmPassword =
+        (form.querySelector(
+          'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
+        )?.value || '').trim();
+
+      try {
+        await Auth.register({ fullname, email, password, confirmPassword });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+        toast('Account created.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Registration failed.', { important: true });
+      }
+    });
+  }
+
+  // -----------------------------
+  // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
+  // -----------------------------
+  function bindForgotPasswordForm() {
+    if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
+
+    const form = document.getElementById('forgotPasswordForm');
+    if (!form) return;
+
+    const emailInput = document.getElementById('fpEmail');
+    const codeWrap = document.getElementById('fpCodeWrap');
+    const codeEl = document.getElementById('fpResetCode');
+    const copyBtn = document.getElementById('fpCopyCodeBtn');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const email = String(emailInput?.value || '').trim();
+
+      try {
+        const { code } = Auth.requestPasswordReset(email);
+
+        if (codeEl) codeEl.textContent = String(code);
+        if (codeWrap) codeWrap.hidden = false;
+
+        toast('Reset code generated (demo).');
+      } catch (err) {
+        toast(err?.message || 'Could not generate reset code.', { important: true });
+      }
+    });
+
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = '1';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          const txt = String(codeEl?.textContent || '').trim();
+          if (!txt) throw new Error('No code to copy.');
+          await navigator.clipboard.writeText(txt);
+          toast('Code copied.');
+        } catch (err) {
+          toast('Could not copy code.', { important: true });
+        }
+      });
+    }
+  }
+
+  function bindResetPasswordForm() {
+    if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
+
+    const form = document.getElementById('resetPasswordForm');
+    if (!form) return;
+
+    const emailInput = document.getElementById('rpEmail');
+    const codeInput = document.getElementById('rpCode');
+    const newPwInput = document.getElementById('rpNewPassword');
+    const confirmPwInput = document.getElementById('rpConfirmNewPassword');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      try {
+        const email = String(emailInput?.value || '').trim();
+        const code = String(codeInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirm = String(confirmPwInput?.value || '').trim();
+
+        if (!email) throw new Error('Please enter your email.');
+        if (!code) throw new Error('Please enter your reset code.');
+        if (!newPassword) throw new Error('Please enter a new password.');
+        if (newPassword !== confirm) throw new Error('New passwords do not match.');
+
+        Auth.resetPassword({ email, code, newPassword });
+
+        toast('Password reset successfully. Please log in.');
+        location.href = 'login.html';
+      } catch (err) {
+        toast(err?.message || 'Could not reset password.', { important: true });
+      }
+    });
+  }
+
+  function bindEditProfileForm() {
+    if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
+
+    const user = Auth.currentUser();
+    if (!user) {
+      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
+      toast('Please log in to continue.', { important: true });
+      location.href = 'login.html';
+      return;
+    }
+
+    const form = document.getElementById('editProfileForm');
+    if (!form) return;
+
+    const nameInput = document.getElementById('epName');
+    const emailInput = document.getElementById('epEmail');
+    const currentPwInput = document.getElementById('epCurrentPassword');
+    const newPwInput = document.getElementById('epNewPassword');
+    const confirmPwInput = document.getElementById('epConfirmNewPassword');
+    const cancelBtn = document.getElementById('epCancelBtn');
+
+    if (emailInput) emailInput.value = user.email || '';
+    if (nameInput) nameInput.value = user.name || '';
+
+    if (cancelBtn && !cancelBtn.dataset.bound) {
+      cancelBtn.dataset.bound = '1';
+      cancelBtn.addEventListener('click', () => {
+        location.href = 'account.html';
       });
     }
 
-    function renderAccountIfOnAccountPage() {
-      if (page() !== 'account.html' && page() !== 'account') return;
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
 
-      const user = Auth.currentUser();
-      const nameEl = $('#accountName');
-      const emailEl = $('#accountEmail');
-      const sinceEl = $('#accountSince');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
 
-      if (nameEl) nameEl.textContent = user?.name || '';
-      if (emailEl) emailEl.textContent = user?.email || '';
-      if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
+      try {
+        const name = String(nameInput?.value || '').trim();
+        const currentPassword = String(currentPwInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirmNewPassword = String(confirmPwInput?.value || '').trim();
+
+        if (!name) throw new Error('Please enter your display name.');
+        if (!currentPassword) throw new Error('Please enter your current password.');
+
+        const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
+        if (wantsPwChange) {
+          if (!newPassword) throw new Error('Please enter a new password.');
+          if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
+        }
+
+        Auth.updateProfile({
+          name,
+          currentPassword,
+          newPassword: wantsPwChange ? newPassword : null
+        });
+
+        UI.updateNavAuthState();
+        toast('Profile updated successfully.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Could not update profile.', { important: true });
+      }
+    });
+  }
+
+  // -----------------------------
+  // LOGOUT + ACCOUNT
+  // -----------------------------
+  function bindLogoutLinks() {
+    document.addEventListener('click', async (e) => {
+      const a = e.target.closest('a[href="logout.html"]');
+      if (!a) return;
+      e.preventDefault();
+
+      await Auth.logout();
+      UI.updateNavAuthState();
+      UI.updateCartBadges();
+      toast('Logged out.');
+      location.href = 'index.html';
+    });
+  }
+
+  function renderAccountIfOnAccountPage() {
+    if (page() !== 'account.html' && page() !== 'account') return;
+
+    const user = Auth.currentUser();
+    const nameEl = $('#accountName');
+    const emailEl = $('#accountEmail');
+    const sinceEl = $('#accountSince');
+
+    if (nameEl) nameEl.textContent = user?.name || '';
+    if (emailEl) emailEl.textContent = user?.email || '';
+    if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
+  }
+
+  // -----------------------------
+  // ORDERS PAGE
+  // -----------------------------
+  async function renderOrdersIfOnOrdersPage() {
+    if (page() !== 'orders.html' && page() !== 'orders') return;
+
+    const user = Auth.currentUser();
+    const listEl = $('#ordersList');
+    if (!listEl) return;
+
+    if (!user || !user.email) {
+      listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
+      return;
     }
 
-    // -----------------------------
-    // ORDERS PAGE
-    // -----------------------------
-    async function renderOrdersIfOnOrdersPage() {
-      if (page() !== 'orders.html' && page() !== 'orders') return;
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
 
-      const user = Auth.currentUser();
-      const listEl = $('#ordersList');
-      if (!listEl) return;
+    const safe = (s) => escapeHtml(String(s || ''));
 
-      if (!user || !user.email) {
-        listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
-        return;
-      }
-
-      const fmtDate = (iso) => {
-        const d = iso ? new Date(iso) : null;
-        if (!d || !Number.isFinite(d.getTime())) return '—';
-        return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-      };
-
-      const safe = (s) => escapeHtml(String(s || ''));
-
-      const renderList = (orders) => {
-        if (!Array.isArray(orders) || !orders.length) {
-          listEl.innerHTML = `
+    const renderList = (orders) => {
+      if (!Array.isArray(orders) || !orders.length) {
+        listEl.innerHTML = `
           <div class="order-card">
             <div class="order-row">
               <strong>No orders yet</strong>
@@ -1581,22 +1610,22 @@
             </div>
           </div>
         `;
-          return;
-        }
+        return;
+      }
 
-        const sorted = orders.slice().sort((a, b) => {
-          const ta = new Date(a?.createdAt || 0).getTime();
-          const tb = new Date(b?.createdAt || 0).getTime();
-          return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-        });
+      const sorted = orders.slice().sort((a, b) => {
+        const ta = new Date(a?.createdAt || 0).getTime();
+        const tb = new Date(b?.createdAt || 0).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
 
-        listEl.innerHTML = sorted.map(o => {
-          const id = safe(o.id);
-          const status = safe(o.status || 'Placed');
-          const total = money(o.totalJMD || 0);
-          const date = safe(fmtDate(o.createdAt));
+      listEl.innerHTML = sorted.map(o => {
+        const id = safe(o.id);
+        const status = safe(o.status || 'Placed');
+        const total = money(o.totalJMD || 0);
+        const date = safe(fmtDate(o.createdAt));
 
-          return `
+        return `
           <div class="order-card">
             <div class="order-row">
               <strong>Order #</strong> <span>${id}</span>
@@ -1615,37 +1644,75 @@
             </div>
           </div>
         `;
-        }).join('');
-      };
+      }).join('');
+    };
 
-      // --- PRODUCTION: try backend first ---
-      try {
-        const res = await fetch('/api/orders/me', { credentials: 'include' });
-        const data = await res.json().catch(() => null);
+    // --- PRODUCTION: try backend first ---
+    try {
+      const res = await fetch('/api/orders/me', { credentials: 'include' });
+      const data = await res.json().catch(() => null);
 
-        if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
+      if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
 
-        const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
-        renderList(orders);
-        return;
-      } catch (err) {
-        const msg = String(err?.message || '').toLowerCase();
-        const canFallback =
-          msg.includes('failed to fetch') ||
-          msg.includes('networkerror') ||
-          msg.includes('not found') ||
-          msg.includes('unexpected token');
-
-        if (!canFallback) {
-          listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
-          return;
-        }
-      }
-
-      // --- DB ONLY ---
-      // If the backend is unreachable or returns non-JSON, we do not fall back to local demo orders.
-      toast('Unable to load your orders right now. Please try again in a moment.', { important: true });
+      const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+      renderList(orders);
       return;
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const canFallback =
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('not found') ||
+        msg.includes('unexpected token');
+
+      if (!canFallback) {
+        listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
+        return;
+      }
+    }
+
+    // --- DEMO FALLBACK ---
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+    renderList(orders);
+  }
+
+  // -----------------------------
+  // CHECKOUT PAGE (DEMO + server order create)
+  // -----------------------------
+  function renderCheckoutIfOnCheckoutPage() {
+    if (page() !== 'checkout.html' && page() !== 'checkout') return;
+
+    const main = document.querySelector('main');
+    if (!main) return;
+
+    const items = Cart.load();
+    const st = readState();
+    const cache = st.productCache || {};
+
+    function resolveProduct(it) {
+      const pid = String(it.productId || '');
+      const p = Products.findById(pid);
+      if (p) {
+        return {
+          name: p.title || p.name || it.name || 'Item',
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
+          price: Number(p.priceJMD || it.price || 0)
+        };
+      }
+      const c = cache[pid];
+      if (c) {
+        return {
+          name: c.name || it.name || 'Item',
+          image: c.image || it.image || '',
+          price: Number(c.price || it.price || 0)
+        };
+      }
+      return {
+        name: it.name || 'Item',
+        image: it.image || '',
+        price: Number(it.price || 0)
+      };
     }
 
     const emptyWrap = $('#checkoutEmpty');
@@ -1719,56 +1786,10 @@
             credentials: 'include'
           });
 
-          const ct = String(res.headers.get('content-type') || '').toLowerCase();
-          const data = ct.includes('application/json')
-            ? await res.json().catch(() => null)
-            : null;
+          const data = await res.json().catch(() => null);
 
           if (!res.ok) {
-            // Stock enforcement response
-            if (res.status === 409 && data?.code === 'OUT_OF_STOCK' && Array.isArray(data?.items)) {
-              // Apply server authoritative clamps to cart
-              const current = Cart.load();
-              const clampMap = new Map(
-                data.items.map(x => [`${String(x.productId)}::${String(x.size)}`, Number(x.available ?? 0)])
-              );
-
-              let changed = false;
-              for (const row of current.slice()) {
-                const key = `${String(row.productId)}::${String(row.size || '')}`;
-                if (!clampMap.has(key)) continue;
-
-                const avail = Math.max(0, Number(clampMap.get(key) || 0));
-                const desired = Number(row.qty || 0);
-
-                if (avail <= 0) {
-                  Cart.remove(row.productId, row.size || null);
-                  changed = true;
-                } else if (desired > avail) {
-                  Cart.setQty(row.productId, row.size || null, avail);
-                  changed = true;
-                }
-              }
-
-              UI.updateCartBadges();
-
-              toast(
-                'Some items in your cart exceed available stock. We updated your cart to match what is in stock.',
-                { important: true }
-              );
-
-              // Send them back to cart to review
-              location.href = 'cart.html';
-              return;
-            }
-
-            // Never leak platform HTML to the user
-            const safeMsg =
-              data?.error ||
-              data?.message ||
-              (ct.includes('application/json') ? 'Could not place order.' : 'Service temporarily unavailable. Please try again.');
-
-            throw new Error(safeMsg);
+            throw new Error(data?.error || 'Could not place order.');
           }
 
           const orderId = String(data?.orderId || data?.order?.id || '').trim();
@@ -1793,7 +1814,7 @@
           }
         }
 
-        // --- DEMO FALLBACK REMOVED (DB only) ---
+        // --- DEMO FALLBACK ---
         const now = nowISO();
         const orderId = uid('ord_');
         const totalJMD = Number(subtotal || 0);
