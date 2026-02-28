@@ -199,29 +199,27 @@
         credentials: 'include'
       });
 
-      const ct = String(res.headers.get('content-type') || '');
-      const isJson = ct.includes('application/json');
-      const data = isJson ? await res.json().catch(() => null) : null;
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      let data = null;
 
-      // Never leak HTML/platform error pages into UI. Treat non-JSON as a generic failure.
-      if (!isJson) {
-        return {
-          ok: false,
-          status: res.status,
-          data: { ok: false, error: 'Service temporarily unavailable. Please try again.' }
-        };
+      if (ct.includes('application/json')) {
+        data = await res.json().catch(() => null);
+      } else {
+        // Non-JSON response (e.g., platform/proxy HTML). Don't leak it to the user.
+        data = { ok: false, error: 'Service temporarily unavailable. Please try again.' };
+      }
+
+      // Ensure we always return a usable error shape
+      if (!res.ok && (!data || typeof data !== 'object')) {
+        data = { ok: false, error: 'Request failed. Please try again.' };
       }
 
       return { ok: res.ok, status: res.status, data };
     } catch (err) {
-      return {
-        ok: false,
-        status: 0,
-        data: { ok: false, error: 'Unable to reach the server. Please check your connection and try again.' }
-      };
+      // Network error / server unreachable
+      return { ok: false, status: 0, data: { ok: false, error: 'Unable to reach the server. Please try again.' } };
     }
   }
-
 
   // -----------------------------
   // AUTH (SERVER FIRST, DEMO FALLBACK)
@@ -747,22 +745,6 @@
       findById(id) {
         const pid = String(id || "");
         return _cache.find(p => String(p?.id) === pid) || null;
-      },
-
-      async ensureLoaded() {
-        if (Array.isArray(_cache) && _cache.length) return _cache;
-
-        const res = await fetch("/api/products", { credentials: "omit" }).catch(() => null);
-        if (!res || !res.ok) return _cache;
-
-        const ct = String(res.headers.get("content-type") || "");
-        if (!ct.includes("application/json")) return _cache;
-
-        const data = await res.json().catch(() => null);
-        if (!data || data.ok !== true || !Array.isArray(data.products)) return _cache;
-
-        _cache = data.products.map(normalize);
-        return _cache;
       }
     };
   })();
@@ -954,25 +936,40 @@
 
     container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-    // Products are served from the same origin in production.
-    // We intentionally avoid hardcoded fallback hosts to prevent “platform” error pages.
-    try {
-      const res = await fetch("/api/products", { credentials: "omit" });
+    const sameOriginUrl = "/api/products";
+    const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
 
-      const ct = String(res.headers.get("content-type") || "");
-      if (!res.ok || !ct.includes("application/json")) throw new Error("Products fetch failed");
-
+    async function tryFetch(url) {
+      const res = await fetch(url, { credentials: "omit" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error("Bad products response");
+      if (!data || data.ok !== true || !Array.isArray(data.products)) {
+        throw new Error("Bad response shape");
+      }
+      return data.products;
+    }
 
-      Products.setAll(data.products);
+    try {
+      const products = await tryFetch(sameOriginUrl);
+      Products.setAll(products);
       renderProducts(container, Products.listPublished());
       return;
-    } catch (err) {
-      console.warn("Products fetch failed.", err);
-      container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
-      return;
+    } catch (_) {
+      // fallback
     }
+
+    try {
+      const products = await tryFetch(railwayUrl);
+      Products.setAll(products);
+      renderProducts(container, Products.listPublished());
+      return;
+    } catch (e2) {
+      // Do NOT show “Railway” messaging to users
+      console.warn("Products fetch failed.", e2);
+    }
+
+    
+   container.innerHTML = `<div class="muted">No products available.</div>`;
   }
   
   function bindAddToCart() {
@@ -1261,21 +1258,6 @@
 
       const qtyInput = row.querySelector('input[type="number"]');
       const removeBtn = row.querySelector('.remove-from-cart');
-
-      qtyInput.addEventListener('input', () => {
-        const q = Math.max(1, Number(qtyInput.value || 1));
-        const applied = Cart.setQty(it.productId, it.size || null, q);
-
-        if (applied === 0) {
-          toast('That size is out of stock. Item removed from cart.', { important: true });
-        } else if (typeof applied === 'number' && applied < q) {
-          qtyInput.value = String(applied);
-          toast(`Only ${applied} available for that size.`, { important: true });
-        }
-
-        UI.updateCartBadges();
-        renderCartIfOnCartPage();
-      });
 
       qtyInput.addEventListener('change', () => {
         const q = Math.max(1, Number(qtyInput.value || 1));
@@ -2026,7 +2008,7 @@
     renderReceiptIfOnReceiptPage();
   }
 
-  document.addEventListener('DOMContentLoaded', async () => { init(); });
+  document.addEventListener('DOMContentLoaded', () => { init(); });
 
   // Expose tiny API (debug / future admin)
   BS.Auth = Auth;
