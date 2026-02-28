@@ -1935,34 +1935,23 @@
     try {
       if (!orderId) throw new Error('Missing order id.');
 
-      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { credentials: 'include' });
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) throw new Error(data?.error || 'Could not load receipt.');
+      // Always prefer JSON API helper; never leak HTML/platform pages into UI.
+      const { ok, status, data } = await apiJson(`/api/orders/${encodeURIComponent(orderId)}`);
+      if (!ok) {
+        const msg = (data?.error || data?.message || '').trim();
+        throw new Error(msg || `Could not load receipt (${status}).`);
+      }
 
       const order = data?.order ? data.order : data;
       renderOrder(order);
     } catch (err) {
-      const msg = String(err?.message || '').toLowerCase();
-      const canFallback =
-        msg.includes('failed to fetch') ||
-        msg.includes('networkerror') ||
-        msg.includes('not found') ||
-        msg.includes('unexpected token');
-
-      if (!canFallback) {
-        renderOrder(null);
-        toast(err?.message || 'Could not load receipt.', { important: true });
-        return;
-      }
-
-      const st = readState();
-      const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
-      const order = orders.find(o => String(o?.id || '') === orderId) || null;
-      renderOrder(order);
+      console.error(err);
+      renderOrder(null);
+      toast(err?.message || 'Could not load receipt. Please try again.', { important: true });
+      return;
     }
 
-    const printBtn = document.getElementById('printReceiptBtn');
+const printBtn = document.getElementById('printReceiptBtn');
     if (printBtn && !printBtn.dataset.bound) {
       printBtn.dataset.bound = '1';
       printBtn.addEventListener('click', () => window.print());

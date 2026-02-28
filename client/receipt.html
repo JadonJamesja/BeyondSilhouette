@@ -3,76 +3,50 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="icon" type="image/png" href="/assets/favicon.png">
   <title>Beyond Silhouette • Receipt</title>
 
   <link rel="stylesheet" href="./css/style.css" />
   <link rel="stylesheet" href="./css/receipt.css" />
 </head>
 
-<body id="receipt-page">
-  <header id="site-header">
+<body id="receipt-page" class="site-page">
+  <header id="site-header" class="no-print">
     <div class="container header-container">
       <nav id="main-nav">
         <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
-
-        <ul class="nav-list">
-          <li><a href="index.html" class="nav-link">Home</a></li>
-          <li><a href="shop-page.html" class="nav-link">Shop</a></li>
-          <li><a href="About.html" class="nav-link">About</a></li>
-
-          <li class="nav-right">
-            <div class="nav-icons">
-              <a href="cart.html" class="cartIcon" aria-label="Cart">
-                <img src="./images/shopping cart icon.png" alt="Cart" class="cart-img">
-                <span class="cart-count" aria-live="polite">0</span>
-              </a>
-
-              <div class="login-dropdown">
-                <a href="#" class="loginIcon" aria-label="User menu">
-                  <img src="./images/user icon.png" alt="Login">
-                </a>
-                <ul class="login-menu">
-                  <li><a href="login.html">Sign In</a></li>
-                  <li><a href="register.html">Create Account</a></li>
-                  <li><a href="admin/dashboard.html" class="admin-link" style="display:none;">Admin</a></li>
-                  <li><a href="account.html">My Account</a></li>
-                  <li><a href="orders.html">My Orders</a></li>
-                  <li><a href="logout.html">Logout</a></li>
-                </ul>
-              </div>
-            </div>
-          </li>
-        </ul>
-
+        <div class="nav-right">
+          <a href="shop-page.html">Shop</a>
+          <a href="about.html">About</a>
+          <a href="account.html" aria-label="My account">Account</a>
+        </div>
       </nav>
     </div>
   </header>
 
-  <main class="receipt" aria-live="polite">
-    <header class="receipt-header">
-      <div>
-        <h2 class="receipt-title">Receipt</h2>
-        <div class="receipt-subtitle">Thank you for shopping with Beyond Silhouette.</div>
+  <main class="receipt-page">
+    <section class="receipt-card" aria-live="polite">
+      <div class="receipt-top">
+        <div class="receipt-brand">
+          <div class="receipt-mark">Beyond Silhouette</div>
+          <div class="receipt-tag">Order receipt</div>
+        </div>
+
+        <div class="receipt-meta">
+          <div class="kv">
+            <div class="k">Order</div>
+            <div class="v" id="rcptOrderId">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Date</div>
+            <div class="v" id="rcptOrderDate">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Status</div>
+            <div class="v" id="rcptOrderStatus">—</div>
+          </div>
+        </div>
       </div>
 
-      <div class="receipt-meta">
-        <div class="kv">
-          <div class="k">Order</div>
-          <div class="v" id="rcptOrderId">—</div>
-        </div>
-        <div class="kv">
-          <div class="k">Date</div>
-          <div class="v" id="rcptOrderDate">—</div>
-        </div>
-        <div class="kv">
-          <div class="k">Status</div>
-          <div class="v" id="rcptOrderStatus">—</div>
-        </div>
-      </div>
-    </header>
-
-    <section class="receipt-body">
       <div class="receipt-customer">
         <div class="k">Customer</div>
         <div class="v" id="rcptCustomer">—</div>
@@ -105,16 +79,16 @@
           <span class="value" id="rcptTotal">J$0.00</span>
         </div>
       </div>
-    </section>
-
-    <footer class="receipt-footer">
-      <div class="receipt-note">This receipt is generated electronically.</div>
 
       <div class="receipt-actions no-print">
-        <a href="shop-page.html" class="btn btn-primary">Continue Shopping</a>
-        <button class="btn btn-secondary" type="button" onclick="window.print()">Print / Save PDF</button>
+        <a href="shop-page.html" class="btn-secondary">Continue shopping</a>
+        <button id="printReceiptBtn" class="btn-primary" type="button">Print / Save PDF</button>
       </div>
-    </footer>
+
+      <div class="receipt-footer muted">
+        This receipt is generated electronically.
+      </div>
+    </section>
   </main>
 
   <script src="./js/main.js"></script>
