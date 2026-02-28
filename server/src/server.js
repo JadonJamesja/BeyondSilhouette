@@ -469,6 +469,151 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
   }
 });
 
+// ===== ADMIN ORDERS =====
+
+// ADMIN: list orders
+app.get("/api/admin/orders", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    const orders = await prisma.order.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: { select: { email: true, name: true } },
+        items: { include: { product: { select: { name: true } } } }, // ✅ add this
+      },
+    });
+
+    res.json({
+      ok: true,
+      orders: orders.map((o) => ({
+        id: o.id,
+        createdAt: o.createdAt,
+        status: o.status,
+        totalJMD: o.total,
+        email: (o.user?.email || "").toLowerCase(),
+        customerName: o.user?.name || null,
+        items: o.items.map((it) => ({
+          name: it.product?.name || it.productId, // ✅ now real name
+          size: it.size,
+          qty: it.quantity,
+          priceJMD: it.unitPrice,
+        })),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || "Failed to list orders" });
+  }
+});
+// ADMIN: single order (includes history)
+app.get("/api/admin/orders/:id", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const id = String(req.params.id || "").trim();
+  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        user: { select: { email: true, name: true } },
+        items: {
+          include: {
+            product: { select: { name: true } },
+          },
+        },
+        history: {
+          orderBy: { createdAt: "desc" },
+          include: { actor: { select: { email: true, name: true } } },
+        },
+      },
+    });
+
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
+
+    res.json({
+      ok: true,
+      order: {
+        id: order.id,
+        createdAt: order.createdAt,
+        status: order.status,
+        totalJMD: order.total,
+        email: (order.user?.email || "").toLowerCase(),
+        customerName: order.user?.name || null,
+        items: order.items.map((it) => ({
+          name: it.product?.name || it.productId,
+          size: it.size,
+          qty: it.quantity,
+          priceJMD: it.unitPrice,
+        })),
+        history: order.history.map((h) => ({
+          id: h.id,
+          at: h.createdAt,
+          from: h.fromStatus,
+          to: h.toStatus,
+          by: h.actor
+            ? (h.actor.name
+                ? `${h.actor.name} (${h.actor.email})`
+                : h.actor.email)
+            : "admin",
+          note: h.note || null,
+        })),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
+  }
+});
+
+// ADMIN: update status + write history row
+app.patch("/api/admin/orders/:id/status", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const id = String(req.params.id || "").trim();
+  const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+
+  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
+  if (!nextStatus) return res.status(400).json({ ok: false, error: "Missing status" });
+
+  const allowed = new Set(["placed", "processing", "shipped", "delivered", "cancelled"]);
+  if (!allowed.has(nextStatus)) {
+    return res.status(400).json({ ok: false, error: "Invalid status" });
+  }
+
+  try {
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
+
+    const prev = String(order.status || "placed").toLowerCase();
+    if (prev === nextStatus) return res.json({ ok: true, order });
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.order.update({
+        where: { id },
+        data: { status: nextStatus },
+      });
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: id,
+          actorId: sess.userId,
+          fromStatus: prev,
+          toStatus: nextStatus,
+        },
+      });
+
+      return u;
+    });
+
+    res.json({ ok: true, order: updated });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || "Failed to update status" });
+  }
+});
+
 function parseQty(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
