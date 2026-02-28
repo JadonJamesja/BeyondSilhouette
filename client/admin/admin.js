@@ -154,6 +154,14 @@ function toPriceJMD(v) {
   return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
 
+function statusKey(s) {
+  return String(s || '').trim().toLowerCase();
+}
+function statusLabel(s) {
+  const k = statusKey(s) || 'placed';
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+
 function formatJ(n) {
   const num = Math.round(Number(n || 0));
   return 'J$ ' + num.toLocaleString('en-JM', { maximumFractionDigits: 0 });
@@ -375,7 +383,7 @@ async function apiListAdminOrders() {
 async function apiUpdateAdminOrderStatus(id, status) {
   const r = await apiTry(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status })
+    body: JSON.stringify({ status: statusKey(status) })
   });
   return r.ok ? (r.data?.order || null) : null;
 }
@@ -975,8 +983,8 @@ function initOrders() {
     }
 
     tbody.innerHTML = rows.map((r) => {
-      const st = String(r.status || 'Placed');
-      const stKey = st.toLowerCase();
+      const stKey = statusKey(r.status) || 'placed';
+      const st = statusLabel(stKey);
       const stClass =
         stKey === 'delivered' ? 'chip-delivered' :
         stKey === 'shipped' ? 'chip-shipped' :
@@ -995,11 +1003,11 @@ function initOrders() {
             <select class="input input-sm"
               data-order-status="1"
               data-order-id="${escapeHtml(r.id)}">
-              <option value="Placed" ${st === 'Placed' ? 'selected' : ''}>Placed</option>
-              <option value="Processing" ${st === 'Processing' ? 'selected' : ''}>Processing</option>
-              <option value="Shipped" ${st === 'Shipped' ? 'selected' : ''}>Shipped</option>
-              <option value="Delivered" ${st === 'Delivered' ? 'selected' : ''}>Delivered</option>
-              <option value="Cancelled" ${st === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+              <option value="placed" ${stKey === 'placed' ? 'selected' : ''}>Placed</option>
+              <option value="processing" ${stKey === 'processing' ? 'selected' : ''}>Processing</option>
+              <option value="shipped" ${stKey === 'shipped' ? 'selected' : ''}>Shipped</option>
+              <option value="delivered" ${stKey === 'delivered' ? 'selected' : ''}>Delivered</option>
+              <option value="cancelled" ${stKey === 'cancelled' ? 'selected' : ''}>Cancelled</option>
             </select>
             <button class="btn btn-ghost btn-sm"
               data-open-order="1"
@@ -1025,7 +1033,7 @@ function initOrders() {
     modalMeta.innerHTML = `
       <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(o.createdAt))}</span></div>
       <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(o.customerName ? `${o.customerName} (${o.email})` : o.email)}</span></div>
-      <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(o.status)}</span></div>
+      <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(statusLabel(o.status))}</span></div>
     `;
 
     modalItems.innerHTML = `
@@ -1049,7 +1057,7 @@ function initOrders() {
       const hist = Array.isArray(o.history) ? o.history : [];
       modalHistory.innerHTML = hist.length
         ? hist.map(h => `
-            <div><strong>${escapeHtml(h.from)}</strong> → <strong>${escapeHtml(h.to)}</strong><br>
+            <div><strong>${escapeHtml(statusLabel(h.from))}</strong> → <strong>${escapeHtml(statusLabel(h.to))}</strong><br>
             <span class="muted">${escapeHtml(formatDateShort(h.at))} • ${escapeHtml(h.by)}</span></div>
           `).join('')
         : `<div class="muted">No status changes yet.</div>`;
@@ -1494,7 +1502,7 @@ function initCustomers() {
       ordModalMeta.innerHTML = `
         <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(o.createdAt))}</span></div>
         <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(o.customerName ? `${o.customerName} (${o.email})` : o.email)}</span></div>
-        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(o.status)}</span></div>
+        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(statusLabel(o.status))}</span></div>
       `;
     }
 
@@ -1524,7 +1532,7 @@ function initCustomers() {
       const hist = Array.isArray(o.history) ? o.history : [];
       ordModalHistory.innerHTML = hist.length
         ? hist.map(h => `
-            <div><strong>${escapeHtml(h.from)}</strong> → <strong>${escapeHtml(h.to)}</strong><br>
+            <div><strong>${escapeHtml(statusLabel(h.from))}</strong> → <strong>${escapeHtml(statusLabel(h.to))}</strong><br>
             <span class="muted">${escapeHtml(formatDateShort(h.at))} • ${escapeHtml(h.by)}</span></div>
           `).join('')
         : `<div class="muted">No status changes yet.</div>`;
