@@ -1,68 +1,68 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-<link rel="icon" type="image/png" href="/assets/favicon.png">  <title>BeyondSilhouette • Admin Dashboard</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <title>BeyondSilhouette • Admin Dashboard</title>
   <link rel="stylesheet" href="./admin.css" />
 </head>
 
 <body class="admin">
-  <button class="btn sidebar-toggle"
-          type="button"
-          data-action="toggle-sidebar"
-          aria-label="Open menu">
+  <button class="btn sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Open menu">
     ☰
   </button>
   <!-- Sidebar -->
-<aside class="sidebar" aria-label="Admin sidebar">
-  <div class="sidebar-top">
-    <a class="brand brand-link" href="./dashboard.html">
-      <div class="brand-mark" aria-hidden="true">BS</div>
-      <div class="brand-meta">
-        <div class="brand-title">BeyondSilhouette</div>
-        <div class="brand-subtitle">Admin</div>
-      </div>
-    </a>
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
 
-   
-  </div>
 
-  <nav class="nav">
-    <a class="nav-item" href="./dashboard.html">Dashboard</a>
-    <a class="nav-item" href="./products.html">Products</a>
-    <a class="nav-item" href="./orders.html">Orders</a>
-    <a class="nav-item" href="./customers.html">Customers</a>
-    <a class="nav-item" href="./settings.html">Settings</a>
-  </nav>
-
-  <div class="sidebar-bottom">
-    <div class="user-pill">
-      <div class="avatar" aria-hidden="true">A</div>
-      <div class="user-meta">
-        <div class="user-name" data-ui="adminName">Admin</div>
-        <div class="user-role muted">Administrator</div>
-      </div>
     </div>
 
-    <div class="sidebar-actions">
-      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
     </div>
-  </div>
-</aside>
+  </aside>
 
   <!-- Main -->
   <main class="main">
     <header class="topbar">
       <div>
         <h1 class="h1">Dashboard</h1>
-        <div class="muted">Quick view of performance + inventory.</div>
+        <div class="muted"></div>
       </div>
 
       <div class="topbar-actions">
         <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toast" data-toast="Export is coming next.">Export</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
+          data-toast="Export is coming next.">Export</button>
       </div>
     </header>
 
@@ -144,9 +144,7 @@
           </div>
         </div>
 
-        <div class="hint">
-          Orders are read from <code>bs_state_v1.ordersByUser</code>. Customers from <code>bs_users_v1</code>.
-        </div>
+        <div class="hint"></div>
       </form>
     </section>
 
@@ -184,4 +182,5 @@
 
   <script src="./admin.js"></script>
 </body>
+
 </html>

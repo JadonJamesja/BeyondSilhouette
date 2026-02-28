@@ -1,23 +1,26 @@
-/* receipt.css — clean, stable layout + print */
+/* receipt.css — clean, stable layout + print (LIGHT THEME) */
 
 .receipt {
   max-width: 920px;
   margin: 28px auto;
   padding: 22px;
-  background: #0f1115;
-  border: 1px solid rgba(255,255,255,0.08);
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--border));
   border-radius: 16px;
-  color: rgba(255,255,255,0.92);
+  color: hsl(var(--text));
+  box-shadow: var(--shadow-soft);
 }
 
-.receipt * { box-sizing: border-box; }
+.receipt * {
+  box-sizing: border-box;
+}
 
 .receipt-head {
   display: flex;
   justify-content: space-between;
   gap: 18px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .receipt-brand {
@@ -35,201 +38,141 @@
   place-items: center;
   font-weight: 800;
   letter-spacing: 0.5px;
-  background: rgba(255,255,255,0.08);
+  background: rgba(40, 60, 120, 0.06);
+  border: 1px solid hsl(var(--border));
 }
 
 .receipt-title {
   font-size: 18px;
   font-weight: 800;
-  line-height: 1.15;
-}
-
-.receipt-sub {
-  margin-top: 4px;
-  font-size: 13px;
-  opacity: 0.72;
+  line-height: 1.2;
 }
 
 .receipt-meta {
-  min-width: 220px;
-  display: grid;
-  gap: 8px;
   text-align: right;
+  min-width: 220px;
 }
 
-.meta-line {
-  display: grid;
-  grid-template-columns: 70px 1fr;
+.meta-row {
+  display: flex;
   gap: 10px;
-  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  color: hsl(var(--muted));
 }
 
-.meta-line .k { opacity: 0.65; font-size: 12px; }
-.meta-line .v { font-weight: 650; }
+.meta-row strong {
+  color: hsl(var(--text));
+  font-weight: 700;
+}
+
+.receipt-body {
+  padding-top: 18px;
+}
 
 .receipt-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 16px;
+  gap: 16px;
 }
 
-.card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+.cardish {
+  background: hsl(var(--surface2));
+  border: 1px solid hsl(var(--border));
   border-radius: 14px;
   padding: 14px;
 }
 
-.card-title {
+.cardish h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.muted {
+  color: hsl(var(--muted));
+}
+
+.small {
   font-size: 12px;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-  opacity: 0.7;
-  margin-bottom: 10px;
 }
-
-.card-body .row {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 6px 0;
-  border-bottom: 1px dashed rgba(255,255,255,0.08);
-}
-.card-body .row:last-child { border-bottom: none; }
-
-.line { margin: 3px 0; }
-.muted { opacity: 0.72; }
-.small { font-size: 12px; }
 
 .receipt-table {
-  margin-top: 16px;
-}
-
-.table-title {
-  font-weight: 750;
-  margin: 10px 0;
-}
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px;
-  background: rgba(255,255,255,0.02);
-}
-
-.items {
   width: 100%;
   border-collapse: collapse;
-  min-width: 620px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
 }
 
-.items th, .items td {
-  padding: 12px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  font-size: 14px;
+.receipt-table th,
+.receipt-table td {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 13px;
 }
 
-.items thead th {
-  font-size: 12px;
-  letter-spacing: 0.25px;
-  text-transform: uppercase;
-  opacity: 0.75;
-  background: rgba(255,255,255,0.03);
+.receipt-table thead th {
+  background: rgba(40, 60, 120, 0.06);
+  color: hsl(var(--text));
+  font-weight: 800;
 }
 
-.items tbody tr:last-child td { border-bottom: none; }
+.receipt-table tbody tr+tr td {
+  border-top: 1px solid hsl(var(--border));
+}
 
-.right { text-align: right; }
-.center { text-align: center; }
-
-.receipt-totals {
+.receipt-sum {
   margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  gap: 8px;
+  justify-content: end;
 }
 
-.totals-box {
-  width: min(420px, 100%);
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px;
-  padding: 14px;
-}
-
-.totals-row {
+.sum-row {
   display: flex;
+  gap: 12px;
   justify-content: space-between;
-  gap: 14px;
-  padding: 8px 0;
+  min-width: 280px;
+  font-size: 13px;
 }
 
-.totals-divider {
-  height: 1px;
-  background: rgba(255,255,255,0.10);
-  margin: 8px 0;
-}
-
-.totals-grand {
-  font-size: 16px;
-  font-weight: 850;
+.sum-row strong {
+  font-weight: 800;
 }
 
 .receipt-foot {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid hsl(var(--border));
+  display: grid;
+  gap: 10px;
 }
 
 .receipt-actions {
-  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
 }
 
-.btn-print {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.92);
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
+.no-print {}
 
-.btn-print:hover {
-  background: rgba(255,255,255,0.09);
-}
-
-/* Responsive */
-@media (max-width: 720px) {
-  .receipt { padding: 16px; }
-  .receipt-head { flex-direction: column; text-align: left; }
-  .receipt-meta { text-align: left; }
-  .meta-line { grid-template-columns: 70px 1fr; }
-  .receipt-grid { grid-template-columns: 1fr; }
-}
-
-/* Print (PDF) */
 @media print {
-  body { background: #fff !important; }
-  .no-print { display: none !important; }
+
+  #site-header,
+  #site-footer,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
   .receipt {
-    background: #fff !important;
-    color: #111 !important;
-    border: none !important;
-    margin: 0 !important;
-    max-width: none !important;
-    border-radius: 0 !important;
+    box-shadow: none;
+    border: 1px solid #ddd;
   }
-  .muted { opacity: 0.85 !important; color: #333 !important; }
-  .card, .table-wrap, .totals-box {
-    background: #fff !important;
-    border: 1px solid #e5e5e5 !important;
-  }
-  .items thead th { background: #f5f5f5 !important; }
 }
