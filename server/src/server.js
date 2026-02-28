@@ -331,69 +331,6 @@ function requireAdmin(req, res) {
   return sess;
 }
 
-// ADMIN: list users/customers with basic LTV aggregates
-app.get("/api/admin/users", async (req, res) => {
-  const sess = requireAdmin(req, res);
-  if (!sess) return;
-
-  try {
-    // Only non-admin accounts are considered "customers" for the Customers page.
-    const users = await prisma.user.findMany({
-      where: { role: { not: "admin" } },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-      },
-      take: 500,
-    });
-
-    // Aggregate orders per user (count + sum total + latest order date)
-    const grouped = await prisma.order.groupBy({
-      by: ["userId"],
-      _count: { _all: true },
-      _sum: { total: true },
-      _max: { createdAt: true },
-    });
-
-    const statsByUserId = new Map();
-    for (const g of grouped) {
-      statsByUserId.set(g.userId, {
-        orderCount: Number(g._count?._all || 0),
-        lifetimeValueJMD: Number(g._sum?.total || 0),
-        lastOrderAt: g._max?.createdAt || null,
-      });
-    }
-
-    const mapped = users.map((u) => {
-      const s = statsByUserId.get(u.id) || {
-        orderCount: 0,
-        lifetimeValueJMD: 0,
-        lastOrderAt: null,
-      };
-
-      return {
-        id: u.id,
-        email: String(u.email || "").toLowerCase(),
-        name: u.name || null,
-        role: u.role,
-        createdAt: u.createdAt,
-        orderCount: s.orderCount,
-        lifetimeValueJMD: s.lifetimeValueJMD,
-        lastOrderAt: s.lastOrderAt,
-      };
-    });
-
-    return res.json({ ok: true, users: mapped });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to list users" });
-  }
-});
-
-
 // ADMIN: list orders
 app.get("/api/admin/orders", async (req, res) => {
   const sess = requireAdmin(req, res);
@@ -413,7 +350,7 @@ app.get("/api/admin/orders", async (req, res) => {
       orders: orders.map((o) => ({
         id: o.id,
         createdAt: o.createdAt,
-        status: String(o.status || 'placed').trim().toLowerCase(),
+        status: o.status,           // lowercase if that's what you store
         totalJMD: o.total,          // your schema uses total
         email: (o.user?.email || "").toLowerCase(),
         customerName: o.user?.name || null,
@@ -458,7 +395,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
       order: {
         id: order.id,
         createdAt: order.createdAt,
-        status: String(order.status || 'placed').trim().toLowerCase(),
+        status: order.status,
         totalJMD: order.total,
         email: (order.user?.email || "").toLowerCase(),
         customerName: order.user?.name || null,
@@ -471,8 +408,8 @@ app.get("/api/admin/orders/:id", async (req, res) => {
         history: order.history.map((h) => ({
           id: h.id,
           at: h.createdAt,
-          from: String(h.fromStatus || '').trim().toLowerCase(),
-          to: String(h.toStatus || '').trim().toLowerCase(),
+          from: h.fromStatus,
+          to: h.toStatus,
           by: h.actor
             ? (h.actor.name ? `${h.actor.name} (${h.actor.email})` : h.actor.email)
             : "admin",
@@ -505,12 +442,7 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
 
-    const prev = String(order.status || "placed").trim().toLowerCase();
-    // If DB has mixed casing (e.g., "Processing"), normalize silently even if status is "unchanged"
-    if (String(order.status || "").trim() !== prev) {
-      const normalized = await prisma.order.update({ where: { id }, data: { status: prev } });
-      return res.json({ ok: true, order: normalized });
-    }
+    const prev = String(order.status || "placed").toLowerCase();
     if (prev === nextStatus) return res.json({ ok: true, order });
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -606,7 +538,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
       order: {
         id: order.id,
         createdAt: order.createdAt,
-        status: String(order.status || 'placed').trim().toLowerCase(),
+        status: order.status,
         totalJMD: order.total,
         email: (order.user?.email || "").toLowerCase(),
         customerName: order.user?.name || null,
@@ -619,8 +551,8 @@ app.get("/api/admin/orders/:id", async (req, res) => {
         history: order.history.map((h) => ({
           id: h.id,
           at: h.createdAt,
-          from: String(h.fromStatus || '').trim().toLowerCase(),
-          to: String(h.toStatus || '').trim().toLowerCase(),
+          from: h.fromStatus,
+          to: h.toStatus,
           by: h.actor
             ? (h.actor.name
                 ? `${h.actor.name} (${h.actor.email})`
@@ -632,6 +564,53 @@ app.get("/api/admin/orders/:id", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
+  }
+});
+
+// ADMIN: update status + write history row
+app.patch("/api/admin/orders/:id/status", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const id = String(req.params.id || "").trim();
+  const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+
+  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
+  if (!nextStatus) return res.status(400).json({ ok: false, error: "Missing status" });
+
+  const allowed = new Set(["placed", "processing", "shipped", "delivered", "cancelled"]);
+  if (!allowed.has(nextStatus)) {
+    return res.status(400).json({ ok: false, error: "Invalid status" });
+  }
+
+  try {
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
+
+    const prev = String(order.status || "placed").toLowerCase();
+    if (prev === nextStatus) return res.json({ ok: true, order });
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.order.update({
+        where: { id },
+        data: { status: nextStatus },
+      });
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: id,
+          actorId: sess.userId,
+          fromStatus: prev,
+          toStatus: nextStatus,
+        },
+      });
+
+      return u;
+    });
+
+    res.json({ ok: true, order: updated });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || "Failed to update status" });
   }
 });
 
@@ -1229,6 +1208,27 @@ app.use("/admin", (req, res, next) => {
 // FRONTEND (same-domain hosting)
 // -----------------------------
 const projectRoot = path.resolve(__dirname, "..", "..");
+
+// -----------------------------
+// API SAFETY: JSON 404 + JSON 500
+// (Prevents users from seeing platform/proxy HTML on API failures.)
+// -----------------------------
+app.use((err, req, res, next) => {
+  try {
+    if (req && typeof req.path === "string" && req.path.startsWith("/api/")) {
+      console.error("API error:", err);
+      if (res.headersSent) return next(err);
+      return res.status(500).json({ ok: false, error: "Server error. Please try again." });
+    }
+  } catch (_) {}
+  return next(err);
+});
+
+// Any unknown /api route => JSON 404
+app.use("/api", (req, res) => {
+  return res.status(404).json({ ok: false, error: "Not found" });
+});
+
 const clientDir = path.join(projectRoot, "client");
 
 // Static files (this comes AFTER admin gate middleware on purpose)
