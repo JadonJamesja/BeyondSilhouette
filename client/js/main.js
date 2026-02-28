@@ -1066,8 +1066,10 @@
   // -----------------------------
   // CART PAGE
   // -----------------------------
-  function renderCartIfOnCartPage() {
+  async function renderCartIfOnCartPage() {
     if (!page().includes('cart.html')) return;
+
+    await Products.ensureLoaded();
 
     const itemsEl = $('#cartItems');
     const emptyEl = $('#cartEmpty');
@@ -1140,10 +1142,10 @@
 
         if (!clearBtn.dataset.bound) {
           clearBtn.dataset.bound = '1';
-          clearBtn.addEventListener('click', () => {
+          clearBtn.addEventListener('click', async () => {
             Cart.clear();
             UI.updateCartBadges();
-            renderCartIfOnCartPage();
+            await renderCartIfOnCartPage();
             toast('Cart cleared.');
           });
         }
@@ -1182,7 +1184,27 @@
       subtotalEl.textContent = money(subtotal);
       totalEl.textContent = money(subtotal);
 
-      itemsEl.addEventListener('change', (e) => {
+      itemsEl.addEventListener('input', async (e) => {
+        const input = e.target.closest('input[type="number"]');
+        if (!input) return;
+        // Mirror change handler so stepper arrows clamp immediately
+        const row = input.closest('.cart-item');
+        if (!row) return;
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
+        const applied = Cart.setQty(pid, size, q);
+        if (applied === 0) {
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          input.value = String(applied);
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+        }
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
+      });
+
+      itemsEl.addEventListener('change', async (e) => {
         const input = e.target.closest('input[type="number"]');
         if (!input) return;
 
@@ -1196,17 +1218,17 @@
         const applied = Cart.setQty(pid, size, q);
 
         if (applied === 0) {
-          toast('That size is out of stock. Item removed from cart.', { important: true });
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
         } else if (typeof applied === 'number' && applied < q) {
           input.value = String(applied);
-          toast(`Only ${applied} available for that size.`, { important: true });
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
         }
 
         UI.updateCartBadges();
-        renderCartIfOnCartPage();
+        await renderCartIfOnCartPage();
       });
 
-      itemsEl.addEventListener('click', (e) => {
+      itemsEl.addEventListener('click', async (e) => {
         const btn = e.target.closest('.remove-from-cart');
         if (!btn) return;
 
@@ -1218,7 +1240,7 @@
 
         Cart.remove(pid, size);
         UI.updateCartBadges();
-        renderCartIfOnCartPage();
+        await renderCartIfOnCartPage();
       });
 
       return;
@@ -1262,40 +1284,40 @@
       const qtyInput = row.querySelector('input[type="number"]');
       const removeBtn = row.querySelector('.remove-from-cart');
 
-      qtyInput.addEventListener('input', () => {
+      qtyInput.addEventListener('input', async () => {
         const q = Math.max(1, Number(qtyInput.value || 1));
         const applied = Cart.setQty(it.productId, it.size || null, q);
 
         if (applied === 0) {
-          toast('That size is out of stock. Item removed from cart.', { important: true });
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
         } else if (typeof applied === 'number' && applied < q) {
           qtyInput.value = String(applied);
-          toast(`Only ${applied} available for that size.`, { important: true });
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
         }
 
         UI.updateCartBadges();
-        renderCartIfOnCartPage();
+        await renderCartIfOnCartPage();
       });
 
-      qtyInput.addEventListener('change', () => {
+      qtyInput.addEventListener('change', async () => {
         const q = Math.max(1, Number(qtyInput.value || 1));
         const applied = Cart.setQty(it.productId, it.size || null, q);
 
         if (applied === 0) {
-          toast('That size is out of stock. Item removed from cart.', { important: true });
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
         } else if (typeof applied === 'number' && applied < q) {
           qtyInput.value = String(applied);
-          toast(`Only ${applied} available for that size.`, { important: true });
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
         }
 
         UI.updateCartBadges();
-        renderCartIfOnCartPage();
+        await renderCartIfOnCartPage();
       });
 
-      removeBtn.addEventListener('click', () => {
+      removeBtn.addEventListener('click', async () => {
         Cart.remove(it.productId, it.size || null);
         UI.updateCartBadges();
-        renderCartIfOnCartPage();
+        await renderCartIfOnCartPage();
       });
 
       legacyContainer.appendChild(row);
@@ -1680,7 +1702,7 @@
   // -----------------------------
   // CHECKOUT PAGE (DEMO + server order create)
   // -----------------------------
-  function renderCheckoutIfOnCheckoutPage() {
+  async function renderCheckoutIfOnCheckoutPage() {
     if (page() !== 'checkout.html' && page() !== 'checkout') return;
 
     const main = document.querySelector('main');
@@ -2010,8 +2032,8 @@
     await renderShopFromStore();
     bindAddToCart();
 
-    renderCartIfOnCartPage();
-    renderCheckoutIfOnCheckoutPage();
+    await renderCartIfOnCartPage();
+    await renderCheckoutIfOnCheckoutPage();
 
     bindLoginForm();
     bindRegisterForm();
@@ -2026,7 +2048,12 @@
     renderReceiptIfOnReceiptPage();
   }
 
-  document.addEventListener('DOMContentLoaded', async () => { init(); });
+  document.addEventListener('DOMContentLoaded', async () => {
+    try { await init(); } catch (e) {
+      console.error(e);
+      try { toast('Something went wrong loading the site. Please refresh.', { important: true }); } catch (_) {}
+    }
+  });
 
   // Expose tiny API (debug / future admin)
   BS.Auth = Auth;

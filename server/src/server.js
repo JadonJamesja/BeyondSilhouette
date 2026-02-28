@@ -1240,3 +1240,20 @@ app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));
 app.listen(PORT, () => {
   console.log(`Beyond Silhouette server running on http://localhost:${PORT}`);
 });
+// -----------------------------
+// API 404 + Error handling (JSON only)
+// -----------------------------
+app.use('/api', (req, res, next) => {
+  // If we reach here, no /api route matched.
+  res.status(404).json({ ok: false, error: 'Not found' });
+});
+
+app.use((err, req, res, next) => {
+  // Ensure API never returns HTML/platform pages.
+  if (req.path && req.path.startsWith('/api')) {
+    console.error('API error:', err);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+  next(err);
+});
+
