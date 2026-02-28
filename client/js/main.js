@@ -191,14 +191,34 @@
   // API helper (server cookie session)
   // -----------------------------
   async function apiJson(path, { method = 'GET', body } = {}) {
-    const res = await fetch(path, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-      credentials: 'include'
-    });
-    const data = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, data };
+    try {
+      const res = await fetch(path, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+        credentials: 'include'
+      });
+
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      let data = null;
+
+      if (ct.includes('application/json')) {
+        data = await res.json().catch(() => null);
+      } else {
+        // Non-JSON response (e.g., platform/proxy HTML). Don't leak it to the user.
+        data = { ok: false, error: 'Service temporarily unavailable. Please try again.' };
+      }
+
+      // Ensure we always return a usable error shape
+      if (!res.ok && (!data || typeof data !== 'object')) {
+        data = { ok: false, error: 'Request failed. Please try again.' };
+      }
+
+      return { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      // Network error / server unreachable
+      return { ok: false, status: 0, data: { ok: false, error: 'Unable to reach the server. Please try again.' } };
+    }
   }
 
   // -----------------------------
@@ -725,38 +745,6 @@
       findById(id) {
         const pid = String(id || "");
         return _cache.find(p => String(p?.id) === pid) || null;
-      },
-
-      async ensureLoaded() {
-        if (Array.isArray(_cache) && _cache.length) return _cache;
-
-        // Use the same fetch logic as shop rendering (same-origin first, then Railway)
-        const sameOriginUrl = "/api/products";
-        const railwayUrl = "https://bs-api-live.up.railway.app/api/products";
-
-        async function tryFetch(url) {
-          const res = await fetch(url, { credentials: "omit" });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-          if (!data || data.ok !== true || !Array.isArray(data.products)) {
-            throw new Error("Bad response shape");
-          }
-          return data.products;
-        }
-
-        try {
-          const products = await tryFetch(sameOriginUrl);
-          _cache = (Array.isArray(products) ? products : []).map(normalize);
-          return _cache;
-        } catch (e1) {
-          try {
-            const products = await tryFetch(railwayUrl);
-            _cache = (Array.isArray(products) ? products : []).map(normalize);
-            return _cache;
-          } catch (e2) {
-            return _cache;
-          }
-        }
       }
     };
   })();
@@ -1205,10 +1193,10 @@
         const applied = Cart.setQty(pid, size, q);
 
         if (applied === 0) {
-          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+          toast('That size is out of stock. Item removed from cart.', { important: true });
         } else if (typeof applied === 'number' && applied < q) {
           input.value = String(applied);
-          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+          toast(`Only ${applied} available for that size.`, { important: true });
         }
 
         UI.updateCartBadges();
@@ -1276,10 +1264,10 @@
         const applied = Cart.setQty(it.productId, it.size || null, q);
 
         if (applied === 0) {
-          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+          toast('That size is out of stock. Item removed from cart.', { important: true });
         } else if (typeof applied === 'number' && applied < q) {
           qtyInput.value = String(applied);
-          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+          toast(`Only ${applied} available for that size.`, { important: true });
         }
 
         UI.updateCartBadges();
@@ -1782,44 +1770,7 @@
 
           const data = await res.json().catch(() => null);
 
-          // Stock enforcement: if server rejects due to inventory, clamp cart and explain clearly.
           if (!res.ok) {
-            if (res.status === 409 && data?.code === 'OUT_OF_STOCK' && Array.isArray(data?.items)) {
-              const rows = data.items;
-
-              rows.forEach((r) => {
-                const pid = String(r.productId || '');
-                const sz = String(r.size || '');
-                const available = Number(r.available ?? 0);
-
-                if (!pid || !sz) return;
-
-                if (!Number.isFinite(available) || available <= 0) {
-                  Cart.remove(pid, sz);
-                } else {
-                  Cart.setQty(pid, sz, available);
-                }
-              });
-
-              UI.updateCartBadges();
-
-              if (rows.length === 1) {
-                const r = rows[0];
-                const available = Number(r.available ?? 0);
-                if (!Number.isFinite(available) || available <= 0) {
-                  toast('That item is now out of stock, so we removed it from your cart.', { important: true });
-                } else {
-                  toast(`We updated your cart because only ${available} left in stock for that size.`, { important: true });
-                }
-              } else {
-                toast('We updated your cart because some items no longer have enough stock. Please review your cart and try again.', { important: true });
-              }
-
-              // Send them back to cart so they understand what changed.
-              location.href = 'cart.html';
-              return;
-            }
-
             throw new Error(data?.error || 'Could not place order.');
           }
 
@@ -2041,11 +1992,6 @@
     await renderShopFromStore();
     bindAddToCart();
 
-    // Ensure products are loaded on pages that must enforce stock (cart/checkout/receipt)
-    if (page().includes('cart') || page().includes('checkout') || page().includes('receipt')) {
-      await Products.ensureLoaded();
-    }
-
     renderCartIfOnCartPage();
     renderCheckoutIfOnCheckoutPage();
 
@@ -2062,7 +2008,7 @@
     renderReceiptIfOnReceiptPage();
   }
 
-  document.addEventListener('DOMContentLoaded', async () => { init(); });
+  document.addEventListener('DOMContentLoaded', () => { init(); });
 
   // Expose tiny API (debug / future admin)
   BS.Auth = Auth;
