@@ -1208,27 +1208,6 @@ app.use("/admin", (req, res, next) => {
 // FRONTEND (same-domain hosting)
 // -----------------------------
 const projectRoot = path.resolve(__dirname, "..", "..");
-
-// -----------------------------
-// API SAFETY: JSON 404 + JSON 500
-// (Prevents users from seeing platform/proxy HTML on API failures.)
-// -----------------------------
-app.use((err, req, res, next) => {
-  try {
-    if (req && typeof req.path === "string" && req.path.startsWith("/api/")) {
-      console.error("API error:", err);
-      if (res.headersSent) return next(err);
-      return res.status(500).json({ ok: false, error: "Server error. Please try again." });
-    }
-  } catch (_) {}
-  return next(err);
-});
-
-// Any unknown /api route => JSON 404
-app.use("/api", (req, res) => {
-  return res.status(404).json({ ok: false, error: "Not found" });
-});
-
 const clientDir = path.join(projectRoot, "client");
 
 // Static files (this comes AFTER admin gate middleware on purpose)
@@ -1236,6 +1215,23 @@ app.use(express.static(clientDir));
 
 // Serve homepage
 app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));
+
+
+// -----------------------------
+// API error handling (JSON only)
+// -----------------------------
+// 404 for unknown API routes (avoid platform HTML pages)
+app.use("/api", (req, res) => {
+  if (res.headersSent) return;
+  res.status(404).json({ ok: false, error: "NOT_FOUND" });
+});
+
+// Final API error handler (avoid leaking HTML)
+app.use("/api", (err, req, res, next) => {
+  console.error("API error:", err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+});
 
 app.listen(PORT, () => {
   console.log(`Beyond Silhouette server running on http://localhost:${PORT}`);
