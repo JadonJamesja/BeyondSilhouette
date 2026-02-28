@@ -17,9 +17,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  orders Order[]
-
-statusChanges OrderStatusHistory[] @relation("OrderStatusActor")
+  orders        Order[]
+  statusChanges OrderStatusHistory[] @relation("OrderStatusActor")
 
   @@map("users")
 }
@@ -119,4 +118,5 @@ model OrderStatusHistory {
 
   @@index([orderId])
   @@index([actorId])
+  @@map("order_status_history")
 }

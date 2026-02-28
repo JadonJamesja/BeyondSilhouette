@@ -1,11 +1,11 @@
-{
-  "name": "beyond-silhouette-monorepo",
-  "private": true,
-  "scripts": {
-    "build": "npm --prefix server install && cd server && npx prisma generate",
-    "start": "cd server && npx prisma migrate deploy && npm start"
-  },
-  "dependencies": {
-    "google-auth-library": "^10.5.0"
+  {
+    "name": "beyond-silhouette-monorepo",
+    "private": true,
+    "scripts": {
+      "build": "npm --prefix server install && cd server && npx prisma generate",
+      "start": "cd server && npx prisma migrate deploy && npm start"
+    },
+    "dependencies": {
+      "google-auth-library": "^10.5.0"
+    }
   }
-}
