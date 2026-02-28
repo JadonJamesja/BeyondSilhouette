@@ -1,6 +1,5 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -12,8 +11,7 @@
 </head>
 
 <body id="receipt-page">
-
-<header id="site-header">
+  <header id="site-header">
     <div class="container header-container">
       <nav id="main-nav">
         <h1 id="logo"><a href="index.html">Beyond Silhouette</a></h1>
@@ -51,125 +49,74 @@
     </div>
   </header>
 
-<!-- Receipt Layout (CLEAN) -->
-<main class="receipt" aria-label="Receipt">
-  <header class="receipt-head">
-    <div class="receipt-brand">
-      <div class="receipt-logo">BS</div>
+  <main class="receipt" aria-live="polite">
+    <header class="receipt-header">
       <div>
-        <div class="receipt-title">Beyond Silhouette</div>
-        <div class="receipt-sub">Receipt / Invoice</div>
+        <h2 class="receipt-title">Receipt</h2>
+        <div class="receipt-subtitle">Thank you for shopping with Beyond Silhouette.</div>
       </div>
-    </div>
 
-    <div class="receipt-meta">
-      <div class="meta-line">
-        <span class="k">Order</span>
-        <span class="v" id="rcpOrderId">—</span>
-      </div>
-      <div class="meta-line">
-        <span class="k">Date</span>
-        <span class="v" id="rcpDate">—</span>
-      </div>
-      <div class="meta-line">
-        <span class="k">Status</span>
-        <span class="v" id="rcpStatus">—</span>
-      </div>
-    </div>
-  </header>
-
-  <section class="receipt-grid">
-    <div class="card">
-      <div class="card-title">Billed To</div>
-      <div class="card-body">
-        <div class="line" id="rcpCustomerName">—</div>
-        <div class="muted line" id="rcpCustomerEmail">—</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Invoice Details</div>
-      <div class="card-body">
-        <div class="row">
-          <span class="muted">Invoice #</span>
-          <span id="rcpInvoiceNo">—</span>
+      <div class="receipt-meta">
+        <div class="kv">
+          <div class="k">Order</div>
+          <div class="v" id="rcptOrderId">—</div>
         </div>
-        <div class="row">
-          <span class="muted">Receipt #</span>
-          <span id="rcpReceiptNo">—</span>
+        <div class="kv">
+          <div class="k">Date</div>
+          <div class="v" id="rcptOrderDate">—</div>
         </div>
-        <div class="row">
-          <span class="muted">Currency</span>
-          <span>JMD</span>
+        <div class="kv">
+          <div class="k">Status</div>
+          <div class="v" id="rcptOrderStatus">—</div>
         </div>
       </div>
-    </div>
-  </section>
+    </header>
 
-  <section class="receipt-table">
-    <div class="table-title">Items</div>
-
-    <div class="table-wrap">
-      <table class="items">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th class="center">Size</th>
-            <th class="right">Qty</th>
-            <th class="right">Price</th>
-            <th class="right">Line</th>
-          </tr>
-        </thead>
-        <tbody id="rcpItems">
-          <!-- injected rows -->
-          <tr>
-            <td class="muted" colspan="5">No items</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="receipt-totals">
-    <div class="totals-box">
-      <div class="totals-row">
-        <span class="muted">Subtotal</span>
-        <span id="rcpSubtotal">J$ 0</span>
+    <section class="receipt-body">
+      <div class="receipt-customer">
+        <div class="k">Customer</div>
+        <div class="v" id="rcptCustomer">—</div>
       </div>
-      <div class="totals-row">
-        <span class="muted">Shipping</span>
-        <span id="rcpShipping">J$ 0</span>
+
+      <div class="receipt-table-wrap">
+        <table class="receipt-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Size</th>
+              <th class="right">Qty</th>
+              <th class="right">Price</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody id="rcptItems">
+            <tr><td colspan="5" class="muted">Loading receipt…</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="totals-row">
-        <span class="muted">Tax</span>
-        <span id="rcpTax">J$ 0</span>
+
+      <div class="receipt-summary">
+        <div class="row">
+          <span class="label">Items</span>
+          <span class="value" id="rcptItemCount">0</span>
+        </div>
+        <div class="row total">
+          <span class="label">Total</span>
+          <span class="value" id="rcptTotal">J$0.00</span>
+        </div>
       </div>
-      <div class="totals-divider"></div>
-      <div class="totals-row totals-grand">
-        <span>Total</span>
-        <span id="rcpTotal">J$ 0</span>
+    </section>
+
+    <footer class="receipt-footer">
+      <div class="receipt-note">This receipt is generated electronically.</div>
+
+      <div class="receipt-actions no-print">
+        <a href="shop-page.html" class="btn btn-primary">Continue Shopping</a>
+        <button class="btn btn-secondary" type="button" onclick="window.print()">Print / Save PDF</button>
       </div>
-    </div>
-  </section>
+    </footer>
+  </main>
 
-  <footer class="receipt-foot">
-    <div class="muted">Thank you for shopping with Beyond Silhouette.</div>
-    <div class="muted small">This receipt is generated electronically.</div>
-
-    <div class="receipt-actions no-print">
-      <a href="shop-page.html" class="btn-secondary">Continue Shopping</a>
-      <button class="btn-primary" type="button" onclick="window.print()">Print / Save PDF</button>
-    </div>
-  </footer>
-</main>
-
-  <footer id="site-footer">
-    <p class="footer-text">&copy; 2025 Beyond Silhouette. All rights reserved.</p>
-  </footer>
-
-  <script src="js/products-store.js"></script>
-  <script src="js/main.js"></script>
-
+  <script src="./js/main.js"></script>
 </body>
-
 </html>
