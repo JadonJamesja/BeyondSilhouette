@@ -510,32 +510,56 @@
   };
 
   // -----------------------------
-  // CART
+  // CART (cookie-backed; no localStorage for cart data)
   // -----------------------------
-  const Cart = {
-    userKey() {
-      const u = Auth.currentUser();
-      return u ? u.email : USER_GUEST;
-    },
+  const CART_COOKIE = 'bs_cart_v1';
 
+  function readCookie(name) {
+    const n = `${encodeURIComponent(name)}=`;
+    const parts = String(document.cookie || '').split(';');
+    for (const raw of parts) {
+      const s = raw.trim();
+      if (s.startsWith(n)) return decodeURIComponent(s.slice(n.length));
+    }
+    return '';
+  }
+
+  function writeCookie(name, value, days = 14) {
+    const d = new Date();
+    d.setTime(d.getTime() + (Number(days) * 24 * 60 * 60 * 1000));
+    const expires = `expires=${d.toUTCString()}`;
+    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(String(value || ''))};${expires};path=/;SameSite=Lax`;
+  }
+
+  function deleteCookie(name) {
+    document.cookie = `${encodeURIComponent(name)}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax`;
+  }
+
+  const Cart = {
     load() {
-      const st = readState();
-      const key = this.userKey();
-      const items = st.cartByUser[key]?.items || [];
-      return Array.isArray(items) ? items : [];
+      const raw = readCookie(CART_COOKIE);
+      if (!raw) return [];
+      const data = safeParse(raw);
+      const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
+      // Normalize shape: { productId, size, qty }
+      return items
+        .map((it) => ({
+          productId: String(it?.productId || '').trim(),
+          size: String(it?.size || '').trim().toUpperCase(),
+          qty: Math.max(1, Number(it?.qty ?? it?.quantity ?? 1) || 1),
+        }))
+        .filter((it) => it.productId && it.size && it.qty > 0);
     },
 
     save(items) {
-      const st = readState();
-      const key = this.userKey();
-      st.cartByUser[key] = { items: Array.isArray(items) ? items : [] };
-      writeState(st);
+      const payload = { items: Array.isArray(items) ? items : [] };
+      writeCookie(CART_COOKIE, JSON.stringify(payload));
     },
 
     add(productId, size, qty = 1) {
       const items = this.load();
-      const pid = String(productId);
-      const sz = String(size || '');
+      const pid = String(productId).trim();
+      const sz = String(size || '').trim().toUpperCase();
       const qAdd = Math.max(1, Number(qty || 1));
 
       const product = Products.findById(pid);
@@ -565,25 +589,23 @@
         return;
       }
 
-      if (existing) {
-        existing.qty = Number(existing.qty || 0) + qAdd;
-      } else {
-        items.push({ productId: pid, size: sz, qty: qAdd });
-      }
+      // If we don't have stock info yet, allow add (checkout will still enforce stock server-side)
+      if (existing) existing.qty = Number(existing.qty || 0) + qAdd;
+      else items.push({ productId: pid, size: sz, qty: qAdd });
 
       this.save(items);
     },
 
     remove(productId, size) {
-      const pid = String(productId);
-      const sz = String(size || '');
+      const pid = String(productId).trim();
+      const sz = String(size || '').trim().toUpperCase();
       const items = this.load().filter(i => !(String(i.productId) === pid && String(i.size || '') === sz));
       this.save(items);
     },
 
     setQty(productId, size, qty) {
-      const pid = String(productId);
-      const sz = String(size || '');
+      const pid = String(productId).trim();
+      const sz = String(size || '').trim().toUpperCase();
       const items = this.load();
       const it = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
       if (!it) return null;
@@ -622,37 +644,16 @@
     },
 
     clear() {
-      this.save([]);
+      deleteCookie(CART_COOKIE);
     },
 
     totalQty(items) {
       return (items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
     },
-
-    mergeGuestIntoUser(email) {
-      const st = readState();
-      const guest = st.cartByUser[USER_GUEST]?.items || [];
-      if (!guest.length) return;
-
-      const userItems = st.cartByUser[email]?.items || [];
-      const merged = Array.isArray(userItems) ? userItems.slice() : [];
-
-      guest.forEach(g => {
-        const pid = String(g.productId);
-        const sz = String(g.size || '');
-        const existing = merged.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-        if (existing) existing.qty = Number(existing.qty || 0) + Number(g.qty || 0);
-        else merged.push({ productId: pid, size: sz, qty: Number(g.qty || 0) });
-      });
-
-      st.cartByUser[email] = { items: merged };
-      st.cartByUser[USER_GUEST] = { items: [] };
-      writeState(st);
-    }
   };
 
   // -----------------------------
-  // PRODUCTS STORE (API-backed)
+  // PRODUCTS STORE (API-backed) (API-backed)
   // -----------------------------
   const Products = (() => {
     let _cache = [];
@@ -729,21 +730,32 @@
     };
   })();
   // -----------------------------
-  // ORDERS (LOCAL DEMO)
+  // ORDERS (DB-backed via API)
   // -----------------------------
   const Orders = {
-    listFor(email) {
-      const st = readState();
-      const arr = st.ordersByUser[email] || [];
-      return Array.isArray(arr) ? arr : [];
+    async listMine() {
+      const { ok, status, data } = await apiJson('/api/orders/me');
+      if (!ok) {
+        const msg = data?.error || data?.message || `Failed to load orders (HTTP ${status})`;
+        throw new Error(msg);
+      }
+      return Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
     },
 
-    addFor(email, order) {
-      const st = readState();
-      st.ordersByUser[email] = st.ordersByUser[email] || [];
-      st.ordersByUser[email].unshift(order);
-      writeState(st);
-    }
+    async createFromCart(items) {
+      const { ok, status, data } = await apiJson('/api/orders', { method: 'POST', body: { items } });
+      if (!ok) {
+        if (status === 409 && data?.code === 'OUT_OF_STOCK') {
+          const err = new Error('OUT_OF_STOCK');
+          err.code = 'OUT_OF_STOCK';
+          err.items = Array.isArray(data?.items) ? data.items : [];
+          throw err;
+        }
+        const msg = data?.error || data?.message || `Failed to create order (HTTP ${status})`;
+        throw new Error(msg);
+      }
+      return data?.order || data;
+    },
   };
 
   // -----------------------------
@@ -948,10 +960,10 @@
       console.warn("Products fetch failed.", e2);
     }
 
-    
-   container.innerHTML = `<div class="muted">No products available.</div>`;
+
+    container.innerHTML = `<div class="muted">No products available.</div>`;
   }
-  
+
   function bindAddToCart() {
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".add-to-cart");
@@ -1609,34 +1621,15 @@
       }).join('');
     };
 
-    // --- PRODUCTION: try backend first ---
+    // --- DB-backed orders only ---
     try {
-      const res = await fetch('/api/orders/me', { credentials: 'include' });
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
-
-      const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
+      const orders = await Orders.listMine();
       renderList(orders);
       return;
     } catch (err) {
-      const msg = String(err?.message || '').toLowerCase();
-      const canFallback =
-        msg.includes('failed to fetch') ||
-        msg.includes('networkerror') ||
-        msg.includes('not found') ||
-        msg.includes('unexpected token');
-
-      if (!canFallback) {
-        listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
-        return;
-      }
+      listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
+      return;
     }
-
-    // --- DEMO FALLBACK ---
-    const st = readState();
-    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
-    renderList(orders);
   }
 
   // -----------------------------
@@ -1883,23 +1876,9 @@
       const order = data?.order ? data.order : data;
       renderOrder(order);
     } catch (err) {
-      const msg = String(err?.message || '').toLowerCase();
-      const canFallback =
-        msg.includes('failed to fetch') ||
-        msg.includes('networkerror') ||
-        msg.includes('not found') ||
-        msg.includes('unexpected token');
-
-      if (!canFallback) {
-        renderOrder(null);
-        toast(err?.message || 'Could not load receipt.', { important: true });
-        return;
-      }
-
-      const st = readState();
-      const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
-      const order = orders.find(o => String(o?.id || '') === orderId) || null;
-      renderOrder(order);
+      renderOrder(null);
+      toast(err?.message || 'Could not load receipt.', { important: true });
+      return;
     }
 
     const printBtn = document.getElementById('printReceiptBtn');
