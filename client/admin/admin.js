@@ -1341,13 +1341,12 @@ function initDashboard() {
 }
 
 /* ================= Customers (REAL) ================= */
+
 function initCustomers() {
   const tbody = qs('#customersTbody');
   if (!tbody) return;
 
   const search = qs('#customerSearch');
-  const users = readSiteUsers();
-  const orders = flattenOrders();
 
   // Optional modals (only if your HTML includes them)
   const cusModal = qs('#customerModal');
@@ -1364,328 +1363,233 @@ function initCustomers() {
   const ordModalHistory = qs('#orderModalHistory');
   const ordModalClose = qs('#orderModalClose');
 
-  const byEmailOrders = new Map();
-  orders.forEach((o) => {
-    const em = String(o.email || '').trim().toLowerCase();
-    if (!byEmailOrders.has(em)) byEmailOrders.set(em, []);
-    byEmailOrders.get(em).push(o);
-  });
+  let allUsers = [];
+  let allOrders = [];
+  let byEmailOrders = new Map();
 
-  const rows = Object.keys(users)
-    .map((em) => {
-      const u = users[em];
-      const role = String(u?.role || '').toLowerCase();
-      return { em: String(em).toLowerCase(), user: u, role };
-    })
-    .filter(r => r.user && r.role !== 'admin')
-    .map((r) => {
-      const list = byEmailOrders.get(r.em) || [];
-      const count = list.length;
-      const total = list.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0);
-      return {
-        email: r.em,
-        name: String(r.user.name || '').trim() || '—',
-        orders: count,
-        ltv: total
-      };
-    })
-    .sort((a, b) => b.ltv - a.ltv);
-
-  function resolveCustomerName(email) {
-    const em = String(email || '').trim().toLowerCase();
-    const u = users[em];
-    const nm = u && u.name ? String(u.name).trim() : '';
-    return nm || '—';
+  function rebuildOrderIndex() {
+    byEmailOrders = new Map();
+    allOrders.forEach((o) => {
+      const em = String(o.email || '').trim().toLowerCase();
+      if (!em) return;
+      if (!byEmailOrders.has(em)) byEmailOrders.set(em, []);
+      byEmailOrders.get(em).push(o);
+    });
   }
 
-  function openCustomerModal(email) {
-    const em = String(email || '').trim().toLowerCase();
-    const u = users[em] || null;
-    const list = byEmailOrders.get(em) || [];
-    const count = list.length;
-    const total = list.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0);
+  function matchesQuery(row, q) {
+    const needle = String(q || '').trim().toLowerCase();
+    if (!needle) return true;
+    return (
+      String(row.email || '').toLowerCase().includes(needle) ||
+      String(row.name || '').toLowerCase().includes(needle)
+    );
+  }
 
-    if (!cusModal || !cusModalTitle || !cusModalMeta || !cusModalOrders) {
-      // Fallback if modal markup isn't present
-      toast(`${resolveCustomerName(em)} (${em}) • Orders: ${count} • LTV: ${formatJ(total)}`);
+  function render(rows) {
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">No customers found.</td></tr>`;
       return;
     }
 
-    const displayName = (u && u.name) ? String(u.name).trim() : 'Customer';
-    cusModalTitle.textContent = displayName;
+    tbody.innerHTML = rows.map((u) => {
+      const name = u.name || '—';
+      const email = u.email || '';
+      const orders = Number(u.orderCount || 0);
+      const ltv = Number(u.lifetimeValueJMD || 0);
 
-    cusModalMeta.innerHTML = `
-        <div class="meta-row"><span class="muted">Name</span><span>${escapeHtml(displayName || '—')}</span></div>
-        <div class="meta-row"><span class="muted">Email</span><span>${escapeHtml(em || '—')}</span></div>
-        <div class="meta-row"><span class="muted">Total orders</span><span>${escapeHtml(String(count))}</span></div>
-        <div class="meta-row"><span class="muted">Lifetime value</span><span>${escapeHtml(formatJ(total))}</span></div>
+      return `
+        <tr>
+          <td>${escapeHtml(name)}</td>
+          <td>${escapeHtml(email)}</td>
+          <td>${orders}</td>
+          <td class="right">${escapeHtml(formatJ(ltv))}</td>
+          <td class="right">
+            <button class="btn btn-ghost btn-sm"
+              data-open-customer="1"
+              data-email="${escapeHtml(email)}"
+              data-user-id="${escapeHtml(u.id)}">Open</button>
+          </td>
+        </tr>
       `;
+    }).join('');
+  }
 
-    const recent = list.slice(0, 8);
-    if (!recent.length) {
-      cusModalOrders.innerHTML = `<div class="muted">No orders yet.</div>`;
-    } else {
-      cusModalOrders.innerHTML = `
-          <div class="modal-orders">
-            ${recent.map(o => {
-        const oid = String(o.id || '');
-        const when = formatDateShort(o.createdAt);
-        const st = String(o.status || 'Placed');
-        const tot = formatJ(o.totalJMD);
-        return `
-                <div class="modal-order-row">
-                  <div class="modal-order-main">
-                    <div class="modal-order-title">#${escapeHtml(oid || '—')}</div>
-                    <div class="modal-order-sub">${escapeHtml(when)} • ${escapeHtml(st)}</div>
-                  </div>
-                  <div class="row modal-order-actions">
-                    <span class="badge badge-soft">${escapeHtml(tot)}</span>
-                    <button class="btn btn-ghost btn-sm" type="button" data-open-order="1"
-                      data-order-id="${escapeHtml(oid)}" data-order-email="${escapeHtml(em)}">Open</button>
-                  </div>
-                </div>
-              `;
-      }).join('')}
+  function openCustomerModalByEmail(email) {
+    if (!cusModal) return;
+    const em = String(email || '').trim().toLowerCase();
+    const u = allUsers.find(x => String(x.email || '').toLowerCase() === em);
+    if (!u) return toast('Customer not found.');
+
+    const orders = byEmailOrders.get(em) || [];
+    const orderCount = Number(u.orderCount || 0);
+    const ltv = Number(u.lifetimeValueJMD || 0);
+
+    if (cusModalTitle) cusModalTitle.textContent = u.name ? u.name : em;
+    if (cusModalMeta) {
+      cusModalMeta.innerHTML = `
+        <div class="meta-row"><span class="muted">Email</span><span>${escapeHtml(em)}</span></div>
+        <div class="meta-row"><span class="muted">Orders</span><span>${escapeHtml(String(orderCount))}</span></div>
+        <div class="meta-row"><span class="muted">Lifetime Value</span><span>${escapeHtml(formatJ(ltv))}</span></div>
+        <div class="meta-row"><span class="muted">Joined</span><span>${escapeHtml(formatDateShort(u.createdAt))}</span></div>
+      `;
+    }
+
+    if (cusModalOrders) {
+      const recent = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
+
+      cusModalOrders.innerHTML = recent.length
+        ? `
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th class="right">Total</th>
+                  <th class="right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${recent.map(o => `
+                  <tr>
+                    <td>#${escapeHtml(o.id)}</td>
+                    <td>${escapeHtml(formatDateShort(o.createdAt))}</td>
+                    <td>${escapeHtml(String(o.status || 'placed'))}</td>
+                    <td class="right">${escapeHtml(formatJ(o.totalJMD || 0))}</td>
+                    <td class="right">
+                      <button class="btn btn-ghost btn-sm"
+                        data-open-order="1"
+                        data-order-id="${escapeHtml(o.id)}">Open</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
-        `;
+        `
+        : `<div class="muted">No orders yet.</div>`;
     }
 
     cusModal.hidden = false;
     document.body.classList.add('modal-open');
   }
 
-  function closeCustomerModal() {
-    if (!cusModal) return;
-    cusModal.hidden = true;
-    // Only remove modal-open if no other modal is visible
-    const anyOpen = qsa('.modal-overlay').some(m => m && !m.hasAttribute('hidden'));
-    if (!anyOpen) document.body.classList.remove('modal-open');
+  function closeOverlay(el) {
+    if (!el) return;
+    el.hidden = true;
+    document.body.classList.remove('modal-open');
   }
 
-  function renderOrderHistoryIntoModal(row) {
-    if (!ordModalHistory) return;
+  async function openOrderModal(orderId) {
+    if (!ordModal) return;
 
-    ordModalHistory.innerHTML = '';
+    const row = await apiAdminJSON(`/api/admin/orders/${encodeURIComponent(orderId)}`, { method: "GET" });
+    const o = row?.order;
+    if (!o) return toast("Order not found.");
 
-    const hist = Array.isArray(row?.raw?.history) ? row.raw.history : [];
-    if (!hist.length) {
-      ordModalHistory.innerHTML = `<div class="muted">No status changes yet.</div>`;
-      return;
+    if (ordModalTitle) ordModalTitle.textContent = `Order #${o.id}`;
+    if (ordModalMeta) {
+      ordModalMeta.innerHTML = `
+        <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(o.createdAt))}</span></div>
+        <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(o.customerName ? `${o.customerName} (${o.email})` : o.email)}</span></div>
+        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(o.status)}</span></div>
+      `;
     }
 
-    const items = hist.slice().reverse();
-    ordModalHistory.innerHTML = `
-        <div class="panel" style="display:grid; gap:10px;">
-          ${items.map(h => {
-      const when = escapeHtml(formatDateShort(h.at));
-      const by = escapeHtml(h.by || 'admin');
-      const from = escapeHtml(h.from || '—');
-      const to = escapeHtml(h.to || '—');
-      return `
-              <div class="meta-row" style="align-items:flex-start;">
-                <div style="display:grid; gap:4px;">
-                  <div><strong>${from}</strong> → <strong>${to}</strong></div>
-                  <div class="muted" style="font-size:12.5px;">${when} • ${by}</div>
-                </div>
-              </div>
-            `;
-    }).join('')}
+    if (ordModalItems) {
+      ordModalItems.innerHTML = `
+        <div class="table-wrap">
+          <table class="table">
+            <tbody>
+              ${o.items.map(it => `
+                <tr>
+                  <td>${escapeHtml(it.name)}</td>
+                  <td class="muted">${escapeHtml(it.size)} × ${escapeHtml(String(it.qty))}</td>
+                  <td class="right">${escapeHtml(formatJ((it.priceJMD || 0) * (it.qty || 0)))}</td>
+                </tr>
+              `).join('')}
+              <tr>
+                <td colspan="2" class="right"><strong>Total</strong></td>
+                <td class="right"><strong>${escapeHtml(formatJ(o.totalJMD || 0))}</strong></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       `;
-  }
-
-  function openOrderModal(orderId, email) {
-    const oid = String(orderId || '').trim();
-    const em = String(email || '').trim().toLowerCase();
-
-    // Refresh orders so history is current
-    const all = flattenOrders();
-
-    const row =
-      all.find(o => String(o.id || '') === oid && String(o.email || '') === em) ||
-      all.find(o => String(o.id || '') === oid) ||
-      null;
-
-    if (!row) {
-      toast('Order not found.');
-      return;
     }
 
-    if (!ordModal || !ordModalTitle || !ordModalMeta || !ordModalItems) {
-      toast(`Order #${row.id} (${row.email}) total ${formatJ(row.totalJMD)}.`);
-      return;
+    if (ordModalHistory) {
+      const hist = Array.isArray(o.history) ? o.history : [];
+      ordModalHistory.innerHTML = hist.length
+        ? hist.map(h => `
+            <div><strong>${escapeHtml(h.from)}</strong> → <strong>${escapeHtml(h.to)}</strong><br>
+            <span class="muted">${escapeHtml(formatDateShort(h.at))} • ${escapeHtml(h.by)}</span></div>
+          `).join('')
+        : `<div class="muted">No status changes yet.</div>`;
     }
-
-    ordModalTitle.textContent = `Order #${row.id || ''}`;
-    ordModalMeta.innerHTML = `
-        <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(row.createdAt))}</span></div>
-        <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(resolveCustomerName(row.email) === '—' ? row.email : `${resolveCustomerName(row.email)} (${row.email})`)}</span></div>
-        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(String(row.status || 'Placed'))}</span></div>
-        <div class="meta-row"><span class="muted">Total</span><span>${escapeHtml(formatJ(row.totalJMD))}</span></div>
-      `;
-
-    const items = Array.isArray(row.items) ? row.items : [];
-    if (!items.length) {
-      ordModalItems.innerHTML = `<div class="muted">No items found for this order.</div>`;
-    } else {
-      ordModalItems.innerHTML = `
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Size</th>
-                  <th class="right">Qty</th>
-                  <th class="right">Price</th>
-                  <th class="right">Line</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${items.map(it => {
-        const nm = escapeHtml(it.name || it.title || 'Item');
-        const sz = escapeHtml(it.size || '—');
-        const qty = toInt(it.qty || it.quantity || 0);
-        const price = Number(it.price || 0);
-        const line = price * qty;
-        return `
-                    <tr>
-                      <td>${nm}</td>
-                      <td>${sz}</td>
-                      <td class="right">${qty}</td>
-                      <td class="right">${escapeHtml(formatJ(price))}</td>
-                      <td class="right">${escapeHtml(formatJ(line))}</td>
-                    </tr>
-                  `;
-      }).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
-    }
-
-    // History (optional if #orderModalHistory exists on this page)
-    renderOrderHistoryIntoModal(row);
 
     ordModal.hidden = false;
     document.body.classList.add('modal-open');
   }
 
-  function closeOrderModal() {
-    if (!ordModal) return;
-    ordModal.hidden = true;
-    const anyOpen = qsa('.modal-overlay').some(m => m && !m.hasAttribute('hidden'));
-    if (!anyOpen) document.body.classList.remove('modal-open');
+  async function refresh() {
+    const [users, orders] = await Promise.all([
+      apiListAdminUsers(),
+      apiListAdminOrders(),
+    ]);
+
+    allUsers = Array.isArray(users) ? users : [];
+    allOrders = Array.isArray(orders) ? orders : [];
+    rebuildOrderIndex();
+
+    const q = search ? search.value : '';
+    render(allUsers.filter(u => matchesQuery(u, q)));
   }
 
-  function matches(row, q) {
-    const needle = String(q || '').trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      row.email.includes(needle) ||
-      String(row.name || '').toLowerCase().includes(needle)
-    );
-  }
-
-  function render(list) {
-    if (!list.length) {
-      tbody.innerHTML = `
-          <tr>
-            <td colspan="5" class="muted">No customers found.</td>
-          </tr>
-        `;
+  tbody.addEventListener('click', (e) => {
+    const btnCus = e.target.closest('[data-open-customer]');
+    if (btnCus) {
+      openCustomerModalByEmail(btnCus.getAttribute('data-email'));
       return;
     }
-
-    tbody.innerHTML = list.map((r) => {
-      return `
-          <tr>
-            <td>${escapeHtml(r.name)}</td>
-            <td>${escapeHtml(r.email)}</td>
-            <td>${escapeHtml(String(r.orders))}</td>
-            <td class="right">${escapeHtml(formatJ(r.ltv))}</td>
-            <td class="right">
-              <button class="btn btn-ghost btn-sm" type="button"
-                data-open-customer="1" data-customer-email="${escapeHtml(r.email)}">Open</button>
-            </td>
-          </tr>
-        `;
-    }).join('');
-  }
-
-  render(rows);
-
-  if (search && !search.dataset.bound) {
-    search.dataset.bound = '1';
-    search.addEventListener('input', () => {
-      const q = String(search.value || '');
-      render(rows.filter(r => matches(r, q)));
-    });
-  }
-
-  // Customer open
-  if (!tbody.dataset.bound) {
-    tbody.dataset.bound = '1';
-    tbody.addEventListener('click', (e) => {
-      const btn = e.target && e.target.closest ? e.target.closest('[data-open-customer="1"]') : null;
-      if (!btn) return;
-      const em = btn.getAttribute('data-customer-email') || '';
-      openCustomerModal(em);
-    });
-  }
-
-  // Orders open (from within customer modal)
-  if (cusModalOrders && !cusModalOrders.dataset.bound) {
-    cusModalOrders.dataset.bound = '1';
-    cusModalOrders.addEventListener('click', (e) => {
-      const btn = e.target && e.target.closest ? e.target.closest('[data-open-order="1"]') : null;
-      if (!btn) return;
-      const oid = btn.getAttribute('data-order-id') || '';
-      const em = btn.getAttribute('data-order-email') || '';
-      openOrderModal(oid, em);
-    });
-  }
-
-  // Modal close controls
-  if (cusModalClose && !cusModalClose.dataset.bound) {
-    cusModalClose.dataset.bound = '1';
-    cusModalClose.addEventListener('click', (e) => {
-      e.preventDefault();
-      closeCustomerModal();
-    });
-  }
-
-  if (cusModal && !cusModal.dataset.bound) {
-    cusModal.dataset.bound = '1';
-    cusModal.addEventListener('click', (e) => {
-      const panel = qs('.modal-panel', cusModal);
-      if (panel && !panel.contains(e.target)) closeCustomerModal();
-    });
-  }
-
-  if (ordModalClose && !ordModalClose.dataset.bound) {
-    ordModalClose.dataset.bound = '1';
-    ordModalClose.addEventListener('click', (e) => {
-      e.preventDefault();
-      closeOrderModal();
-    });
-  }
-
-  if (ordModal && !ordModal.dataset.bound) {
-    ordModal.dataset.bound = '1';
-    ordModal.addEventListener('click', (e) => {
-      const panel = qs('.modal-panel', ordModal);
-      if (panel && !panel.contains(e.target)) closeOrderModal();
-    });
-  }
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (ordModal && !ordModal.hidden) closeOrderModal();
-    else if (cusModal && !cusModal.hidden) closeCustomerModal();
   });
+
+  if (search) {
+    search.addEventListener('input', () => {
+      const q = search.value;
+      render(allUsers.filter(u => matchesQuery(u, q)));
+    });
+  }
+
+  // Customer modal events
+  if (cusModalClose && cusModal) {
+    cusModalClose.addEventListener('click', () => closeOverlay(cusModal));
+    cusModal.addEventListener('click', (e) => {
+      if (e.target === cusModal) closeOverlay(cusModal);
+    });
+
+    // Delegate order opens inside customer modal
+    cusModal.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-open-order]');
+      if (!btn) return;
+      openOrderModal(btn.getAttribute('data-order-id'));
+    });
+  }
+
+  // Order modal close
+  if (ordModalClose && ordModal) {
+    ordModalClose.addEventListener('click', () => closeOverlay(ordModal));
+    ordModal.addEventListener('click', (e) => {
+      if (e.target === ordModal) closeOverlay(ordModal);
+    });
+  }
+
+  refresh();
 }
 
-/* ================= Settings (REAL) ================= */
+
 function initSettings() {
   const form = qs('#adminSettingsForm');
   if (!form) return;

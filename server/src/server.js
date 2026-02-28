@@ -331,6 +331,69 @@ function requireAdmin(req, res) {
   return sess;
 }
 
+// ADMIN: list users/customers with basic LTV aggregates
+app.get("/api/admin/users", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    // Only non-admin accounts are considered "customers" for the Customers page.
+    const users = await prisma.user.findMany({
+      where: { role: { not: "admin" } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+      take: 500,
+    });
+
+    // Aggregate orders per user (count + sum total + latest order date)
+    const grouped = await prisma.order.groupBy({
+      by: ["userId"],
+      _count: { _all: true },
+      _sum: { total: true },
+      _max: { createdAt: true },
+    });
+
+    const statsByUserId = new Map();
+    for (const g of grouped) {
+      statsByUserId.set(g.userId, {
+        orderCount: Number(g._count?._all || 0),
+        lifetimeValueJMD: Number(g._sum?.total || 0),
+        lastOrderAt: g._max?.createdAt || null,
+      });
+    }
+
+    const mapped = users.map((u) => {
+      const s = statsByUserId.get(u.id) || {
+        orderCount: 0,
+        lifetimeValueJMD: 0,
+        lastOrderAt: null,
+      };
+
+      return {
+        id: u.id,
+        email: String(u.email || "").toLowerCase(),
+        name: u.name || null,
+        role: u.role,
+        createdAt: u.createdAt,
+        orderCount: s.orderCount,
+        lifetimeValueJMD: s.lifetimeValueJMD,
+        lastOrderAt: s.lastOrderAt,
+      };
+    });
+
+    return res.json({ ok: true, users: mapped });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to list users" });
+  }
+});
+
+
 // ADMIN: list orders
 app.get("/api/admin/orders", async (req, res) => {
   const sess = requireAdmin(req, res);
