@@ -164,29 +164,3 @@ body#receipt-page {
   }
 }
 
-/* ==============================
-   Receipt Button Alignment Fix
-============================== */
-
-.receipt-actions .btn {
-  min-width: 180px;
-  padding: 0.8rem 1.6rem;
-  font-size: 0.95rem;
-  border-radius: 8px;
-}
-
-.receipt-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  margin-top: 2rem;
-}
-
-.receipt-actions .btn-primary {
-  background-color: #111;
-  color: #fff;
-}
-
-.receipt-actions .btn-primary:hover {
-  background-color: #333;
-} 
