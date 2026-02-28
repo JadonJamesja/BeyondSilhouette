@@ -95,7 +95,7 @@ body {
   letter-spacing: 1px;
 }
 
-#logo > a {
+#logo>a {
   text-decoration: none;
   color: hsl(var(--text));
   white-space: nowrap;
@@ -142,7 +142,7 @@ body {
   margin-left: 6px;
 }
 
-.loginIcon > img {
+.loginIcon>img {
   width: 1.7rem;
   height: auto;
   vertical-align: middle;
@@ -241,11 +241,25 @@ body {
 
 /* Animation: fade in and out */
 @keyframes slideShow {
-  0% { opacity: 0; }
-  5% { opacity: 1; }
-  25% { opacity: 1; }
-  30% { opacity: 0; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0;
+  }
+
+  5% {
+    opacity: 1;
+  }
+
+  25% {
+    opacity: 1;
+  }
+
+  30% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }
 
 .hero-overlay {
@@ -308,8 +322,9 @@ body {
   transform: translateY(0);
 }
 
-.auth-secondary-btn{
-  display: inline-flex;            /* makes it “button-like” and visible */
+.auth-secondary-btn {
+  display: inline-flex;
+  /* makes it “button-like” and visible */
   align-items: center;
   justify-content: center;
   margin-top: 16px;
@@ -324,7 +339,7 @@ body {
   font-weight: 700;
 }
 
-.auth-secondary-btn:hover{
+.auth-secondary-btn:hover {
   background: #000;
   color: #fff;
 }
@@ -438,24 +453,24 @@ body {
   border-top: 1px solid hsla(var(--border), 0.85);
 }
 
-.redefine-btn{
+.redefine-btn {
   width: auto;
   min-width: 14rem;
 }
 
-#featured .featured-cta{
+#featured .featured-cta {
   margin-top: 28px;
   display: flex;
   justify-content: center;
 }
 
 /* Home page CTA polish (Featured section) */
-#featured .featured-cta .btn-primary{
+#featured .featured-cta .btn-primary {
   width: 16rem;
   box-shadow: var(--shadow-soft);
 }
 
-#featured .featured-cta .btn-primary:hover{
+#featured .featured-cta .btn-primary:hover {
   box-shadow: var(--shadow-med);
 }
 
@@ -463,26 +478,27 @@ body {
    NAV ICONS (GLOBAL)
    Ensures cart + user icons are consistent across all pages.
 ============================== */
-.nav-icons{
+.nav-icons {
   display: flex;
   align-items: center;
-  gap: 18px; /* was 15px */
+  gap: 18px;
+  /* was 15px */
 }
 
-.cartIcon{
+.cartIcon {
   position: relative;
   display: inline-flex;
   align-items: center;
   text-decoration: none;
 }
 
-.cart-img{
+.cart-img {
   width: 1.7rem;
   height: auto;
   vertical-align: middle;
 }
 
-.cart-count{
+.cart-count {
   position: absolute;
   top: -8px;
   right: -10px;
@@ -545,7 +561,7 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
     margin: 0;
   }
 
-  #logo > a {
+  #logo>a {
     white-space: nowrap;
   }
 }
@@ -558,15 +574,18 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
 @media (max-width: 1024px) {
   #home-page #main-nav {
     justify-content: space-between;
-    gap: 12px; /* small safety gap if items wrap */
+    gap: 12px;
+    /* small safety gap if items wrap */
   }
 
   #home-page #main-nav .nav-list {
-    margin-left: auto; /* keep icons pushed right */
+    margin-left: auto;
+    /* keep icons pushed right */
   }
 
   #home-page .nav-right {
-    margin-left: 0; /* avoid extra squeeze */
+    margin-left: 0;
+    /* avoid extra squeeze */
   }
 
   #home-page .header-container {
@@ -585,6 +604,12 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
   }
 
   #home-page .nav-icons {
-    gap: 18px; /* keep cart/user from feeling cramped */
+    gap: 18px;
+    /* keep cart/user from feeling cramped */
   }
+}
+
+a.btn-primary,
+a.btn-secondary {
+  display: inline-flex;
 }
