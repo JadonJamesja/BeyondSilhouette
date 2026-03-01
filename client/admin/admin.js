@@ -12,12 +12,6 @@
 
 'use strict';
 
-// Force LIGHT theme only (production design standard)
-try {
-  document.documentElement.setAttribute('data-theme','light');
-} catch(_) {}
-
-
 const SITE = {
   session: 'bs_session_v1',
   users: 'bs_users_v1',
@@ -222,10 +216,10 @@ function readTheme() {
   return (t === 'light' || t === 'dark') ? t : 'dark';
 }
 
-function applyTheme(_theme) {
-  // Light theme only (production).
-  try { document.documentElement.setAttribute('data-theme', 'light'); } catch (_) {}
-  try { localStorage.removeItem(ADMIN.theme); } catch (_) {}
+function applyTheme(theme) {
+  const t = (String(theme || '').toLowerCase() === 'light') ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem(ADMIN.theme, t);
 }
 
 function toggleTheme() {
@@ -1147,19 +1141,26 @@ function initDashboard() {
   const applyBtn = qs('#applyRangeBtn');
   const tbody = qs('#recentOrdersTbody');
 
-  const users = readSiteUsers();
   const products = [];
-  readProductsRaw()
-    .then((list) => {
-      products.splice(0, products.length, ...(Array.isArray(list) ? list : []));
-      // Re-render after products load
-      const r = defaultRange();
-      setInputsFromRange(r);
-      renderForRange(r);
-    })
-    .catch(() => {
-      // ignore; dashboard can still render without product counts
-    });
+
+  let allUsers = [];
+  let allOrders = [];
+
+  // Load products/users/orders from DB
+  Promise.all([
+    readProductsRaw().catch(() => []),
+    apiListAdminUsers().catch(() => null),
+    apiListAdminOrders().catch(() => null),
+  ]).then(([plist, users, orders]) => {
+    products.splice(0, products.length, ...(Array.isArray(plist) ? plist : []));
+    allUsers = Array.isArray(users) ? users : [];
+    allOrders = Array.isArray(orders) ? orders : [];
+
+    const r = defaultRange();
+    setInputsFromRange(r);
+    renderForRange(r);
+  });
+
   const settings = readAdminSettings();
 
   function fmtDate(d) {
@@ -1190,60 +1191,54 @@ function initDashboard() {
 
     if (p === 'today') return { start: t0, end: t1 };
     if (p === 'yesterday') {
-      const y = new Date(t0);
-      y.setDate(y.getDate() - 1);
+      const y = new Date(today); y.setDate(y.getDate() - 1);
       return { start: startOfDay(y), end: endOfDay(y) };
     }
     if (p === 'last7') {
-      const s = new Date(t0);
-      s.setDate(s.getDate() - 6);
+      const s = new Date(today); s.setDate(s.getDate() - 6);
       return { start: startOfDay(s), end: t1 };
     }
     if (p === 'last30') {
-      const s = new Date(t0);
-      s.setDate(s.getDate() - 29);
+      const s = new Date(today); s.setDate(s.getDate() - 29);
       return { start: startOfDay(s), end: t1 };
     }
-    if (p === 'thisMonth') {
-      const s = new Date(today.getFullYear(), today.getMonth(), 1);
-      const e = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      return { start: startOfDay(s), end: endOfDay(e) };
-    }
-    if (p === 'custom') {
-      const r = getRangeFromInputs();
-      return r;
-    }
-    return null;
+    // fallback
+    return { start: t0, end: t1 };
   }
 
-  function getRangeFromInputs() {
-    const s = parseDateInput(startInput?.value);
-    const e = parseDateInput(endInput?.value);
-    if (!s || !e) return defaultRange();
-    const start = startOfDay(s);
-    const end = endOfDay(e);
-    if (start.getTime() > end.getTime()) return defaultRange();
-    return { start, end };
-  }
-
-  function previousRange(curr) {
-    const ms = curr.end.getTime() - curr.start.getTime();
-    const prevEnd = new Date(curr.start.getTime() - 1);
-    const prevStart = new Date(prevEnd.getTime() - ms);
+  function previousRange(r) {
+    const days = Math.max(1, Math.round((r.end.getTime() - r.start.getTime()) / (24 * 3600 * 1000)) + 1);
+    const prevEnd = new Date(r.start); prevEnd.setDate(prevEnd.getDate() - 1);
+    const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - (days - 1));
     return { start: startOfDay(prevStart), end: endOfDay(prevEnd) };
   }
 
-  function pctChange(curr, prev) {
-    const a = Number(curr || 0);
-    const b = Number(prev || 0);
+  function pct(a, b) {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     if (b <= 0) return null;
     return ((a - b) / b) * 100;
   }
 
-  function renderRecentOrders(allOrders) {
+  function normalizeOrderRow(o) {
+    const total = Number(o?.total ?? o?.totalJMD ?? 0);
+    const createdAt = o?.createdAt || o?.created_at || null;
+    const status = o?.status || 'processing';
+    const email = o?.user?.email || o?.email || '';
+    const name = o?.user?.name || o?.customerName || '';
+    return {
+      id: String(o?.id || ''),
+      totalJMD: total,
+      createdAt,
+      status,
+      email,
+      name,
+    };
+  }
+
+  function renderRecentOrders(allRows) {
     if (!tbody) return;
 
-    const rows = allOrders.slice(0, 4);
+    const rows = allRows.slice(0, 4);
     if (!rows.length) {
       tbody.innerHTML = `
           <tr>
@@ -1254,8 +1249,7 @@ function initDashboard() {
     }
 
     tbody.innerHTML = rows.map((r) => {
-      const u = users[r.email];
-      const customer = u && u.name ? `${u.name} (${r.email})` : r.email;
+      const customer = r.name ? `${r.name} (${r.email})` : r.email;
       return `
           <tr>
             <td>#${escapeHtml(r.id)}</td>
@@ -1267,92 +1261,73 @@ function initDashboard() {
     }).join('');
   }
 
+  function computeLowStockCount() {
+    // count published products with any size stock <= threshold
+    const threshold = Number(settings?.lowStockThreshold || 3);
+    let count = 0;
+    products.forEach((p) => {
+      const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+      const stock = p.stockBySize || {};
+      const anyLow = sizes.some((s) => Number(stock[s] || 0) > 0 && Number(stock[s] || 0) <= threshold);
+      if (anyLow) count += 1;
+    });
+    return count;
+  }
+
   function renderForRange(range) {
-    const all = flattenOrders();
+    const all = (Array.isArray(allOrders) ? allOrders : []).map(normalizeOrderRow).filter(o => o.id);
     const inRange = all.filter(o => inRangeISO(o.createdAt, range.start, range.end));
 
     const revenue = sumRevenue(inRange);
     const ordersCount = inRange.length;
+    const customersCount = Array.isArray(allUsers) ? allUsers.length : 0;
+    const lowCount = computeLowStockCount();
 
     const prev = previousRange(range);
     const prevInRange = all.filter(o => inRangeISO(o.createdAt, prev.start, prev.end));
-    const prevRevenue = sumRevenue(prevInRange);
 
-    const chg = pctChange(revenue, prevRevenue);
+    const prevRev = sumRevenue(prevInRange);
+    const prevOrders = prevInRange.length;
 
-    // Customers (non-admin)
-    const customerEmails = Object.keys(users).filter(em => String(users[em]?.role || '').toLowerCase() !== 'admin');
-    const totalCustomers = customerEmails.length;
-    const newCustomers = customerEmails.filter(em => {
-      const createdAt = users[em]?.createdAt;
-      return createdAt ? inRangeISO(createdAt, range.start, range.end) : false;
-    }).length;
-
-    // Low stock
-    const lowCount = (function () {
-      const thr = Number(settings.lowStockThreshold || 0);
-      let count = 0;
-      products.forEach((p) => {
-        if (!p || p.isActive === false) return;
-        const sb = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
-        const total = toInt(sb.S) + toInt(sb.M) + toInt(sb.L) + toInt(sb.XL);
-        if (total <= thr) count += 1;
-      });
-      return count;
-    })();
+    const revDelta = pct(revenue, prevRev);
+    const ordDelta = pct(ordersCount, prevOrders);
 
     if (revEl) revEl.textContent = formatJ(revenue);
     if (ordersEl) ordersEl.textContent = String(ordersCount);
-    if (customersEl) customersEl.textContent = String(totalCustomers);
+    if (customersEl) customersEl.textContent = String(customersCount);
     if (lowEl) lowEl.textContent = String(lowCount);
 
-    if (revSub) {
-      if (chg == null) revSub.textContent = `Range: ${fmtDate(range.start)} – ${fmtDate(range.end)}`;
-      else {
-        const sign = chg >= 0 ? '+' : '';
-        revSub.textContent = `${sign}${chg.toFixed(1)}% vs previous period`;
-      }
-    }
+    if (revSub) revSub.textContent = revDelta == null ? `vs prev period` : `${revDelta >= 0 ? '+' : ''}${revDelta.toFixed(1)}% vs prev`;
+    if (ordersSub) ordersSub.textContent = ordDelta == null ? `vs prev period` : `${ordDelta >= 0 ? '+' : ''}${ordDelta.toFixed(1)}% vs prev`;
+    if (customersSub) customersSub.textContent = `Total customers`;
+    if (lowSub) lowSub.textContent = `Low stock threshold: ${Number(settings?.lowStockThreshold || 3)}`;
 
-    if (ordersSub) ordersSub.textContent = `Range: ${fmtDate(range.start)} – ${fmtDate(range.end)}`;
-    if (customersSub) customersSub.textContent = `New in range: ${newCustomers}`;
-    if (lowSub) lowSub.textContent = `≤ ${Number(settings.lowStockThreshold)} in stock`;
-
-    renderRecentOrders(all);
+    // Sort by newest, then render recent
+    const newest = [...all].sort((a,b) => new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime());
+    renderRecentOrders(newest);
   }
 
-  function applyPresetValue() {
-    const p = String(preset?.value || '').trim();
+  function applyPreset() {
+    const p = preset ? String(preset.value || '') : 'today';
     const r = deriveRangeFromPreset(p);
-    if (!r) return;
     setInputsFromRange(r);
     renderForRange(r);
   }
 
-  if (preset && !preset.dataset.bound) {
-    preset.dataset.bound = '1';
-    preset.addEventListener('change', () => {
-      applyPresetValue();
-    });
+  function applyCustomRange() {
+    const s = startInput && startInput.valueAsDate ? startOfDay(startInput.valueAsDate) : null;
+    const e = endInput && endInput.valueAsDate ? endOfDay(endInput.valueAsDate) : null;
+    if (!s || !e) return applyPreset();
+    renderForRange({ start: s, end: e });
   }
 
-  if (applyBtn && !applyBtn.dataset.bound) {
-    applyBtn.dataset.bound = '1';
-    applyBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const r = getRangeFromInputs();
-      renderForRange(r);
-    });
-  }
+  if (preset) preset.addEventListener('change', applyPreset);
+  if (applyBtn) applyBtn.addEventListener('click', (e) => { e.preventDefault(); applyCustomRange(); });
 
-  // Initial
-  if (preset && preset.value) applyPresetValue();
-  else {
-    const r = defaultRange();
-    setInputsFromRange(r);
-    renderForRange(r);
-  }
+  // Initial render (will be replaced after Promise.all above resolves)
+  applyPreset();
 }
+
 
 /* ================= Customers (REAL) ================= */
 

@@ -1067,10 +1067,9 @@
   // CART PAGE
   // -----------------------------
   async function renderCartIfOnCartPage() {
-    // Render cart when cart DOM is present (works for clean URLs like /cart too)
     if (!$('#cartItems')) return;
 
-    await Products.ensureLoaded();
+await Products.ensureLoaded();
 
     const itemsEl = $('#cartItems');
     const emptyEl = $('#cartEmpty');
@@ -1601,9 +1600,8 @@
   // ORDERS PAGE
   // -----------------------------
   async function renderOrdersIfOnOrdersPage() {
-    if (page() !== 'orders.html' && page() !== 'orders') return;
-
-    const user = Auth.currentUser();
+    if (!document.getElementById('ordersList')) return;
+const user = Auth.currentUser();
     const listEl = $('#ordersList');
     if (!listEl) return;
 
@@ -1704,9 +1702,8 @@
   // CHECKOUT PAGE (DEMO + server order create)
   // -----------------------------
   async function renderCheckoutIfOnCheckoutPage() {
-    if (page() !== 'checkout.html' && page() !== 'checkout') return;
-
-    const main = document.querySelector('main');
+    if (!document.getElementById('checkoutItems')) return;
+const main = document.querySelector('main');
     if (!main) return;
 
     await Products.ensureLoaded();
@@ -1868,9 +1865,8 @@
   }
 
   async function renderReceiptIfOnReceiptPage() {
-    if (page() !== 'receipt.html' && page() !== 'receipt') return;
-
-    const user = Auth.currentUser();
+    if (!document.getElementById('rcptItems')) return;
+const user = Auth.currentUser();
     if (!user || !user.email) {
       location.href = 'login.html';
       return;

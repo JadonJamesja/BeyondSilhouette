@@ -1,5 +1,4 @@
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 import express from "express";
 import helmet from "helmet";
@@ -331,6 +330,66 @@ function requireAdmin(req, res) {
   }
   return sess;
 }
+
+
+// ADMIN: list users (no password hashes)
+app.get("/api/admin/users", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({ ok: true, users });
+  } catch (e) {
+    console.error("GET /api/admin/users failed:", e);
+    res.status(500).json({ ok: false, error: "Failed to load users" });
+  }
+});
+
+// ADMIN: dashboard stats
+app.get("/api/admin/stats", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    const [usersCount, ordersCount, lowInvRows, revenueAgg] = await Promise.all([
+      prisma.user.count(),
+      prisma.order.count(),
+      prisma.inventory.findMany({
+        where: { stock: { gt: 0, lte: 3 } },
+        distinct: ["productId"],
+        select: { productId: true },
+      }),
+      prisma.order.aggregate({ _sum: { total: true } }),
+    ]);
+
+    const lowStockCount = Array.isArray(lowInvRows) ? lowInvRows.length : 0;
+    const revenueJMD = Number(revenueAgg?._sum?.total || 0);
+
+    res.json({
+      ok: true,
+      stats: {
+        usersCount,
+        ordersCount,
+        lowStockCount,
+        revenueJMD,
+      },
+    });
+  } catch (e) {
+    console.error("GET /api/admin/stats failed:", e);
+    res.status(500).json({ ok: false, error: "Failed to load stats" });
+  }
+});
 
 // ADMIN: list orders
 app.get("/api/admin/orders", async (req, res) => {
@@ -1233,37 +1292,6 @@ app.use("/api", (req, res) => {
 const clientDir = path.join(projectRoot, "client");
 
 // Static files (this comes AFTER admin gate middleware on purpose)
-
-// -----------------------------
-// Clean URLs: remove .html in production
-// - Redirect /page.html -> /page
-// - Serve /page -> /page.html when it exists
-// -----------------------------
-app.use((req, res, next) => {
-  try {
-    if (!req.path || typeof req.path !== 'string') return next();
-    // Never touch APIs
-    if (req.path.startsWith('/api/')) return next();
-    // Ignore static assets (has a file extension)
-    const hasExt = /\.[a-zA-Z0-9]+$/.test(req.path);
-    if (hasExt) {
-      // Redirect .html -> clean
-      if (req.path.toLowerCase().endsWith('.html')) {
-        const clean = req.path.slice(0, -5) || '/';
-        const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-        return res.redirect(301, clean + qs);
-      }
-      return next();
-    }
-    // If path already ends with '/', let static / index handling continue
-    // Attempt to serve matching .html file
-    const filePath = path.join(clientDir, req.path + '.html');
-    if (fs.existsSync(filePath)) {
-      return res.sendFile(filePath);
-    }
-  } catch (_) {}
-  return next();
-});
 app.use(express.static(clientDir));
 
 // Serve homepage
@@ -1288,3 +1316,4 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
+
