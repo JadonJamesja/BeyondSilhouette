@@ -1067,7 +1067,8 @@
   // CART PAGE
   // -----------------------------
   async function renderCartIfOnCartPage() {
-    if (!page().includes('cart.html')) return;
+    // Render cart when cart DOM is present (works for clean URLs like /cart too)
+    if (!$('#cartItems')) return;
 
     await Products.ensureLoaded();
 
