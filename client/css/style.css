@@ -14,9 +14,9 @@
 :root {
   --font: "Nunito", sans-serif;
 
-  /* Brand accents */
-  --accent: 210 90% 60%;
-  --accent2: 270 85% 64%;
+  /* Brand accents (softer, premium, not harsh/masculine) */
+  --accent: 212 75% 54%;   /* softer ocean blue */
+  --accent2: 332 55% 62%;  /* soft mauve */
 
   /* Core palette */
   --bg: 220 38% 94%;
@@ -34,9 +34,9 @@
   --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.08);
   --shadow-med: 0 12px 26px rgba(0, 0, 0, 0.12);
 
-  /* Buttons (keep your original button vibe) */
-  --btn-bg: #31313d;
-  --btn-bg-hover: #20202f;
+  /* Buttons (slightly softer charcoal) */
+  --btn-bg: #2b2b34;
+  --btn-bg-hover: #1f1f27;
 
   --radius: 10px;
   --radius-sm: 8px;
@@ -51,9 +51,10 @@
 
 body {
   font-family: var(--font);
-  line-height: 1.6;
+  line-height: 1.65;
   background-color: hsl(var(--bg));
   color: hsl(var(--text));
+  font-size: 16px; /* was implicit/smaller */
 }
 
 /* ------------------------------
@@ -122,8 +123,8 @@ body {
 
 .nav-link {
   text-decoration: none;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.98rem;
+  font-weight: 650;
   color: hsla(var(--text), 0.82);
   transition: color 0.2s ease, opacity 0.2s ease;
 }
@@ -180,7 +181,7 @@ body {
   padding: 10px 15px;
   color: hsla(var(--text), 0.86);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   transition: background 0.25s ease, color 0.25s ease;
 }
 
@@ -295,6 +296,26 @@ body {
   margin-bottom: 25px;
 }
 
+/* =========================================================
+   GLOBAL BUTTON SYSTEM (site-wide cohesive)
+   - Keep your original vibe, but normalize sizing + reuse
+========================================================= */
+
+/* Base (optional class you can adopt gradually) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 20px;
+  min-height: 48px;
+  border-radius: 10px;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.12s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
 /* Primary button (shared) */
 .btn-primary {
   display: inline-flex;
@@ -306,8 +327,8 @@ body {
   padding: 12px 20px;
   text-decoration: none;
   border-radius: 10px;
-  font-weight: 700;
-  transition: background 0.25s ease, transform 0.12s ease;
+  font-weight: 800;
+  transition: background 0.25s ease, transform 0.12s ease, box-shadow 0.25s ease;
   width: 14rem;
   height: 3rem;
   border: 1px solid rgba(255, 255, 255, 0.10);
@@ -322,28 +343,55 @@ body {
   transform: translateY(0);
 }
 
+/* Secondary button (NOW global) */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(0, 0, 0, 0.03);
+  color: hsl(var(--text));
+  padding: 12px 20px;
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 800;
+  transition: background 0.25s ease, transform 0.12s ease, border-color 0.25s ease;
+
+  width: 14rem;
+  height: 3rem;
+
+  border: 1px solid hsla(var(--border), 0.95);
+}
+
+.btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:active {
+  transform: translateY(0);
+}
+
 .auth-secondary-btn {
   display: inline-flex;
-  /* makes it “button-like” and visible */
   align-items: center;
   justify-content: center;
   margin-top: 16px;
   width: 100%;
-  min-height: 44px;
+  min-height: 48px;
 
   background: transparent;
   border: 1px solid #000;
   color: #000;
   text-decoration: none;
   border-radius: 10px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .auth-secondary-btn:hover {
   background: #000;
   color: #fff;
 }
-
 
 /* ------------------------------
    4. FEATURED SECTION
@@ -418,27 +466,31 @@ body {
 #about-preview .about-text {
   max-width: 1000px;
   margin: 0 auto 15px;
-  font-size: 0.9rem;
+  font-size: 0.98rem;
   color: hsla(var(--text), 0.86);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
+/* Keep About button vibe, but match new accent2 token */
 #about-preview .btn-secondary {
-  display: inline-block;
-  border: 2px solid hsla(var(--accent2), 0.85);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 2px solid hsla(var(--accent2), 0.70);
   color: hsl(var(--text));
   padding: 10px 40px;
   border-radius: 10px;
   text-decoration: none;
-  font-weight: 800;
-  font-size: 0.85rem;
+  font-weight: 850;
+  font-size: 0.9rem;
   transition: all 0.25s ease;
-  background: rgba(90, 60, 196, 0.06);
+  background: hsla(var(--accent2), 0.08);
 }
 
 #about-preview .btn-secondary:hover {
-  background: rgba(90, 60, 196, 0.16);
-  border-color: hsla(var(--accent2), 1);
+  background: hsla(var(--accent2), 0.14);
+  border-color: hsla(var(--accent2), 0.95);
 }
 
 /* ------------------------------
@@ -482,7 +534,6 @@ body {
   display: flex;
   align-items: center;
   gap: 18px;
-  /* was 15px */
 }
 
 .cartIcon {
@@ -502,10 +553,10 @@ body {
   position: absolute;
   top: -8px;
   right: -10px;
-  background: hsl(220 85% 38%);
+  background: hsl(214 78% 34%); /* deeper + softer than before */
   color: #fff;
-  font-size: 0.72rem;
-  padding: 2px 6px;
+  font-size: 0.78rem;
+  padding: 2px 7px;
   border-radius: 999px;
   font-weight: 800;
   line-height: 1;
@@ -568,24 +619,19 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
 
 /* ==============================
    INDEX ONLY: FIX TIGHT FEEL ON TABLET/MOBILE
-   - Index nav contains ONLY icons (no text links)
-   - Make header behave like a standard layout: logo left, icons right
 ============================== */
 @media (max-width: 1024px) {
   #home-page #main-nav {
     justify-content: space-between;
     gap: 12px;
-    /* small safety gap if items wrap */
   }
 
   #home-page #main-nav .nav-list {
     margin-left: auto;
-    /* keep icons pushed right */
   }
 
   #home-page .nav-right {
     margin-left: 0;
-    /* avoid extra squeeze */
   }
 
   #home-page .header-container {
@@ -605,7 +651,6 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
 
   #home-page .nav-icons {
     gap: 18px;
-    /* keep cart/user from feeling cramped */
   }
 }
 
