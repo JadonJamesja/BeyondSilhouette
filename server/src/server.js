@@ -108,8 +108,7 @@ app.get("/api/products", async (req, res) => {
         }
       }
 
-      const coverUrl =
-        p.images && p.images.length > 0 ? String(p.images[0].url) : "";
+      const coverUrl = p.images && p.images.length > 0 ? String(p.images[0].url) : "";
 
       return {
         id: p.id,
@@ -134,6 +133,7 @@ app.get("/api/products", async (req, res) => {
     });
   }
 });
+
 // -----------------------------
 // AUTH (backend foundation)
 // -----------------------------
@@ -160,7 +160,6 @@ app.post("/api/auth/register", async (req, res) => {
     const password = String(req.body?.password || "");
     const name = String(req.body?.name || "").trim() || null;
 
-    // Prisma schema default role is "customer"
     const role = "customer";
 
     if (!email) return res.status(400).json({ ok: false, error: "Email is required" });
@@ -218,10 +217,7 @@ app.post("/api/auth/logout", (req, res) => {
   return res.json({ ok: true });
 });
 
-// Optional: Google Sign-In (only works if GOOGLE_CLIENT_ID is set)
-// Accepts either:
-// - { credential: "..." }  (Google Identity Services)
-// - { idToken: "..." }     (older/manual testing)
+// Optional: Google Sign-In
 app.post("/api/auth/google", async (req, res) => {
   if (!googleClient) {
     return res.status(501).json({
@@ -232,23 +228,16 @@ app.post("/api/auth/google", async (req, res) => {
   }
 
   const token = String(req.body?.credential || req.body?.idToken || "").trim();
-  if (!token) {
-    return res.status(400).json({ ok: false, error: "Missing credential" });
-  }
+  if (!token) return res.status(400).json({ ok: false, error: "Missing credential" });
 
   try {
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: GOOGLE_CLIENT_ID,
-    });
-
+    const ticket = await googleClient.verifyIdToken({ idToken: token, audience: GOOGLE_CLIENT_ID });
     const payload = ticket.getPayload();
     const email = String(payload?.email || "").trim().toLowerCase();
     const name = String(payload?.name || "").trim() || null;
 
     if (!email) return res.status(400).json({ ok: false, error: "Google token missing email" });
 
-    // Create-or-login user
     let user = await prisma.user.findUnique({
       where: { email },
       select: { id: true, email: true, name: true, role: true, createdAt: true },
@@ -272,8 +261,7 @@ app.post("/api/auth/google", async (req, res) => {
 });
 
 // -----------------------------
-// DEV ONLY: Promote user to admin (remove after use)
-// Protect with DEV_ADMIN_SECRET (Railway env var)
+// DEV ONLY: Promote user to admin
 // -----------------------------
 app.post("/api/dev/make-admin", async (req, res) => {
   const secret = String(req.body?.secret || "");
@@ -296,12 +284,10 @@ app.post("/api/dev/make-admin", async (req, res) => {
       select: { id: true, email: true, role: true },
     });
 
-    // Update session too (useful if you're logged in as this user)
     setSession(res, { userId: user.id, email: user.email, role: user.role });
 
     return res.json({ ok: true, user });
   } catch (err) {
-    // Prisma "Record to update not found" => P2025
     if (err?.code === "P2025" || String(err?.message || "").includes("Record to update not found")) {
       return res.status(404).json({ ok: false, error: "User not found. Create the account first, then promote." });
     }
@@ -331,8 +317,9 @@ function requireAdmin(req, res) {
   return sess;
 }
 
-
-// ADMIN: list users (no password hashes)
+// -----------------------------
+// ADMIN: users + stats + orders
+// -----------------------------
 app.get("/api/admin/users", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
@@ -340,13 +327,7 @@ app.get("/api/admin/users", async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-      },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
     });
 
     res.json({ ok: true, users });
@@ -356,7 +337,6 @@ app.get("/api/admin/users", async (req, res) => {
   }
 });
 
-// ADMIN: dashboard stats
 app.get("/api/admin/stats", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
@@ -373,16 +353,13 @@ app.get("/api/admin/stats", async (req, res) => {
       prisma.order.aggregate({ _sum: { total: true } }),
     ]);
 
-    const lowStockCount = Array.isArray(lowInvRows) ? lowInvRows.length : 0;
-    const revenueJMD = Number(revenueAgg?._sum?.total || 0);
-
     res.json({
       ok: true,
       stats: {
         usersCount,
         ordersCount,
-        lowStockCount,
-        revenueJMD,
+        lowStockCount: Array.isArray(lowInvRows) ? lowInvRows.length : 0,
+        revenueJMD: Number(revenueAgg?._sum?.total || 0),
       },
     });
   } catch (e) {
@@ -391,7 +368,7 @@ app.get("/api/admin/stats", async (req, res) => {
   }
 });
 
-// ADMIN: list orders
+// ADMIN: list orders (single definition; includes product name)
 app.get("/api/admin/orders", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
@@ -401,147 +378,7 @@ app.get("/api/admin/orders", async (req, res) => {
       orderBy: { createdAt: "desc" },
       include: {
         user: { select: { email: true, name: true } },
-        items: true,
-      },
-    });
-
-    res.json({
-      ok: true,
-      orders: orders.map((o) => ({
-        id: o.id,
-        createdAt: o.createdAt,
-        status: o.status,           // lowercase if that's what you store
-        totalJMD: o.total,          // your schema uses total
-        email: (o.user?.email || "").toLowerCase(),
-        customerName: o.user?.name || null,
-        items: o.items.map((it) => ({
-          name: it.productId,       // you do NOT store item name in order_items; you store productId
-          size: it.size,
-          qty: it.quantity,
-          priceJMD: it.unitPrice,
-        })),
-      })),
-    });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to list orders" });
-  }
-});
-
-// ADMIN: single order (includes history)
-app.get("/api/admin/orders/:id", async (req, res) => {
-  const sess = requireAdmin(req, res);
-  if (!sess) return;
-
-  const id = String(req.params.id || "").trim();
-  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
-
-  try {
-    const order = await prisma.order.findUnique({
-      where: { id },
-      include: {
-        user: { select: { email: true, name: true } },
-        items: { include: { product: { select: { name: true } } } }, // so UI gets real item name
-        history: {
-          orderBy: { createdAt: "desc" },
-          include: { actor: { select: { email: true, name: true } } },
-        },
-      },
-    });
-
-    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
-
-    res.json({
-      ok: true,
-      order: {
-        id: order.id,
-        createdAt: order.createdAt,
-        status: order.status,
-        totalJMD: order.total,
-        email: (order.user?.email || "").toLowerCase(),
-        customerName: order.user?.name || null,
-        items: order.items.map((it) => ({
-          name: it.product?.name || it.productId,
-          size: it.size,
-          qty: it.quantity,
-          priceJMD: it.unitPrice,
-        })),
-        history: order.history.map((h) => ({
-          id: h.id,
-          at: h.createdAt,
-          from: h.fromStatus,
-          to: h.toStatus,
-          by: h.actor
-            ? (h.actor.name ? `${h.actor.name} (${h.actor.email})` : h.actor.email)
-            : "admin",
-          note: h.note || null,
-        })),
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
-  }
-});
-
-// ADMIN: update status + write history row
-app.patch("/api/admin/orders/:id/status", async (req, res) => {
-  const sess = requireAdmin(req, res);
-  if (!sess) return;
-
-  const id = String(req.params.id || "").trim();
-  const nextStatus = String(req.body?.status || "").trim().toLowerCase();
-
-  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
-  if (!nextStatus) return res.status(400).json({ ok: false, error: "Missing status" });
-
-  const allowed = new Set(["placed", "processing", "shipped", "delivered", "cancelled"]);
-  if (!allowed.has(nextStatus)) {
-    return res.status(400).json({ ok: false, error: "Invalid status" });
-  }
-
-  try {
-    const order = await prisma.order.findUnique({ where: { id } });
-    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
-
-    const prev = String(order.status || "placed").toLowerCase();
-    if (prev === nextStatus) return res.json({ ok: true, order });
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.order.update({
-        where: { id },
-        data: { status: nextStatus },
-      });
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: id,
-          actorId: sess.userId,
-          fromStatus: prev,
-          toStatus: nextStatus,
-        },
-      });
-
-      return u;
-    });
-
-    res.json({ ok: true, order: updated });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to update status" });
-  }
-});
-
-// ===== ADMIN ORDERS =====
-
-// ADMIN: list orders
-app.get("/api/admin/orders", async (req, res) => {
-  const sess = requireAdmin(req, res);
-  if (!sess) return;
-
-  try {
-    const orders = await prisma.order.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        user: { select: { email: true, name: true } },
-        items: { include: { product: { select: { name: true } } } }, // ✅ add this
+        items: { include: { product: { select: { name: true } } } },
       },
     });
 
@@ -555,7 +392,7 @@ app.get("/api/admin/orders", async (req, res) => {
         email: (o.user?.email || "").toLowerCase(),
         customerName: o.user?.name || null,
         items: o.items.map((it) => ({
-          name: it.product?.name || it.productId, // ✅ now real name
+          name: it.product?.name || it.productId,
           size: it.size,
           qty: it.quantity,
           priceJMD: it.unitPrice,
@@ -566,6 +403,7 @@ app.get("/api/admin/orders", async (req, res) => {
     res.status(500).json({ ok: false, error: err?.message || "Failed to list orders" });
   }
 });
+
 // ADMIN: single order (includes history)
 app.get("/api/admin/orders/:id", async (req, res) => {
   const sess = requireAdmin(req, res);
@@ -579,11 +417,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
       where: { id },
       include: {
         user: { select: { email: true, name: true } },
-        items: {
-          include: {
-            product: { select: { name: true } },
-          },
-        },
+        items: { include: { product: { select: { name: true } } } },
         history: {
           orderBy: { createdAt: "desc" },
           include: { actor: { select: { email: true, name: true } } },
@@ -613,11 +447,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
           at: h.createdAt,
           from: h.fromStatus,
           to: h.toStatus,
-          by: h.actor
-            ? (h.actor.name
-                ? `${h.actor.name} (${h.actor.email})`
-                : h.actor.email)
-            : "admin",
+          by: h.actor ? (h.actor.name ? `${h.actor.name} (${h.actor.email})` : h.actor.email) : "admin",
           note: h.note || null,
         })),
       },
@@ -651,10 +481,7 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
     if (prev === nextStatus) return res.json({ ok: true, order });
 
     const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.order.update({
-        where: { id },
-        data: { status: nextStatus },
-      });
+      const u = await tx.order.update({ where: { id }, data: { status: nextStatus } });
 
       await tx.orderStatusHistory.create({
         data: {
@@ -696,13 +523,10 @@ app.post("/api/orders", async (req, res) => {
     }))
     .filter((it) => it.productId && it.size && it.quantity > 0);
 
-  if (!items.length) {
-    return res.status(400).json({ ok: false, error: "Cart is empty" });
-  }
+  if (!items.length) return res.status(400).json({ ok: false, error: "Cart is empty" });
 
   try {
     const order = await prisma.$transaction(async (tx) => {
-      // Load products in one go (server is source of truth for price)
       const productIds = Array.from(new Set(items.map((i) => i.productId)));
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
@@ -719,7 +543,6 @@ app.post("/api/orders", async (req, res) => {
           continue;
         }
 
-        // Check inventory (compound unique: productId+size)
         const inv = await tx.inventory.findUnique({
           where: { productId_size: { productId: it.productId, size: it.size } },
           select: { stock: true },
@@ -731,13 +554,8 @@ app.post("/api/orders", async (req, res) => {
           continue;
         }
 
-        // Atomic decrement: only decrement if stock is still >= qty
         const updated = await tx.inventory.updateMany({
-          where: {
-            productId: it.productId,
-            size: it.size,
-            stock: { gte: it.quantity },
-          },
+          where: { productId: it.productId, size: it.size, stock: { gte: it.quantity } },
           data: { stock: { decrement: it.quantity } },
         });
 
@@ -751,10 +569,10 @@ app.post("/api/orders", async (req, res) => {
       }
 
       if (outOfStock.length) {
-        const err = new Error("OUT_OF_STOCK");
-        err.code = "OUT_OF_STOCK";
-        err.details = outOfStock;
-        throw err;
+        const e = new Error("OUT_OF_STOCK");
+        e.code = "OUT_OF_STOCK";
+        e.details = outOfStock;
+        throw e;
       }
 
       const orderItems = items.map((it) => {
@@ -809,31 +627,18 @@ app.get("/api/orders/my", async (req, res) => {
         currency: true,
         status: true,
         createdAt: true,
-        items: {
-          select: {
-            productId: true,
-            size: true,
-            quantity: true,
-            unitPrice: true,
-          },
-        },
+        items: { select: { productId: true, size: true, quantity: true, unitPrice: true } },
       },
     });
 
-    // Add compatibility aliases expected by frontend
-    const orders = ordersRaw.map((o) => ({
-      ...o,
-      subtotalJMD: o.subtotal,
-      totalJMD: o.total,
-    }));
-
+    const orders = ordersRaw.map((o) => ({ ...o, subtotalJMD: o.subtotal, totalJMD: o.total }));
     return res.json({ ok: true, orders });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
   }
 });
 
-// Backward-compatible alias (frontend in ZIP calls this)
+// Backward-compatible alias
 app.get("/api/orders/me", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
@@ -854,19 +659,14 @@ app.get("/api/orders/me", async (req, res) => {
       },
     });
 
-    const orders = ordersRaw.map((o) => ({
-      ...o,
-      subtotalJMD: o.subtotal,
-      totalJMD: o.total,
-    }));
-
+    const orders = ordersRaw.map((o) => ({ ...o, subtotalJMD: o.subtotal, totalJMD: o.total }));
     return res.json({ ok: true, orders });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
   }
 });
 
-// Receipt / order detail (frontend calls /api/orders/:id)
+// Receipt / order detail
 app.get("/api/orders/:id", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
@@ -897,7 +697,6 @@ app.get("/api/orders/:id", async (req, res) => {
 
     if (!o) return res.status(404).json({ ok: false, error: "Order not found" });
 
-    // Shape to match frontend expectations
     const order = {
       id: o.id,
       createdAt: o.createdAt,
@@ -919,12 +718,9 @@ app.get("/api/orders/:id", async (req, res) => {
   }
 });
 
-
 // -----------------------------
-// ADMIN (requires admin role)
+// ADMIN PRODUCTS + INVENTORY
 // -----------------------------
-
-// GET /api/admin/products
 app.get("/api/admin/products", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
@@ -944,36 +740,21 @@ app.get("/api/admin/products", async (req, res) => {
         updatedAt: true,
         images: {
           orderBy: { sortOrder: "asc" },
-          select: {
-            id: true,
-            url: true,
-            alt: true,
-            sortOrder: true,
-            createdAt: true,
-          },
+          select: { id: true, url: true, alt: true, sortOrder: true, createdAt: true },
         },
         inventory: {
           orderBy: { size: "asc" },
-          select: {
-            id: true,
-            size: true,
-            stock: true,
-            updatedAt: true,
-          },
+          select: { id: true, size: true, stock: true, updatedAt: true },
         },
       },
     });
 
     return res.json({ ok: true, products });
   } catch (err) {
-    return res.status(500).json({
-      ok: false,
-      error: err?.message || "Failed to load admin products",
-    });
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to load admin products" });
   }
 });
 
-// POST /api/admin/products
 app.post("/api/admin/products", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
@@ -984,8 +765,7 @@ app.post("/api/admin/products", async (req, res) => {
     const slug = slugRaw === null || slugRaw === undefined ? null : String(slugRaw).trim() || null;
 
     const descriptionRaw = req.body?.description;
-    const description =
-      descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
+    const description = descriptionRaw === null || descriptionRaw === undefined ? null : String(descriptionRaw).trim() || null;
 
     const priceJMDNum = Number(req.body?.priceJMD);
     const priceJMD = Number.isFinite(priceJMDNum) ? Math.max(0, Math.round(priceJMDNum)) : NaN;
@@ -1006,7 +786,6 @@ app.post("/api/admin/products", async (req, res) => {
       }))
       .filter((img) => img.url);
 
-    // De-dupe inventory by size (keep last)
     const invMap = new Map();
     for (const row of inventoryIn) {
       const size = String(row?.size || "").trim();
@@ -1036,25 +815,8 @@ app.post("/api/admin/products", async (req, res) => {
         isPublished: true,
         createdAt: true,
         updatedAt: true,
-        images: {
-          orderBy: { sortOrder: "asc" },
-          select: {
-            id: true,
-            url: true,
-            alt: true,
-            sortOrder: true,
-            createdAt: true,
-          },
-        },
-        inventory: {
-          orderBy: { size: "asc" },
-          select: {
-            id: true,
-            size: true,
-            stock: true,
-            updatedAt: true,
-          },
-        },
+        images: { orderBy: { sortOrder: "asc" }, select: { id: true, url: true, alt: true, sortOrder: true, createdAt: true } },
+        inventory: { orderBy: { size: "asc" }, select: { id: true, size: true, stock: true, updatedAt: true } },
       },
     });
 
@@ -1068,8 +830,6 @@ app.post("/api/admin/products", async (req, res) => {
   }
 });
 
-// PATCH /api/admin/products/:id
-// Updates basic product fields + optional full replace of images/inventory arrays.
 app.patch("/api/admin/products/:id", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
@@ -1080,7 +840,6 @@ app.patch("/api/admin/products/:id", async (req, res) => {
   try {
     const data = {};
 
-    // Optional fields
     if (req.body?.slug !== undefined) {
       const slugRaw = req.body.slug;
       data.slug = slugRaw === null ? null : String(slugRaw).trim() || null;
@@ -1103,15 +862,13 @@ app.patch("/api/admin/products/:id", async (req, res) => {
     const result = await prisma.$transaction(async (tx) => {
       const exists = await tx.product.findUnique({ where: { id }, select: { id: true } });
       if (!exists) {
-        const err = new Error("NOT_FOUND");
-        err.code = "NOT_FOUND";
-        throw err;
+        const e = new Error("NOT_FOUND");
+        e.code = "NOT_FOUND";
+        throw e;
       }
 
-      // Optional full replace: images
       if (Array.isArray(imagesIn)) {
         await tx.productImage.deleteMany({ where: { productId: id } });
-
         const images = imagesIn
           .map((img) => ({
             url: String(img?.url || "").trim(),
@@ -1121,13 +878,10 @@ app.patch("/api/admin/products/:id", async (req, res) => {
           .filter((img) => img.url);
 
         if (images.length) {
-          await tx.productImage.createMany({
-            data: images.map((im) => ({ ...im, productId: id })),
-          });
+          await tx.productImage.createMany({ data: images.map((im) => ({ ...im, productId: id })) });
         }
       }
 
-      // Optional full replace: inventory
       if (Array.isArray(inventoryIn)) {
         await tx.inventory.deleteMany({ where: { productId: id } });
 
@@ -1142,18 +896,15 @@ app.patch("/api/admin/products/:id", async (req, res) => {
         const inventory = Array.from(invMap.entries()).map(([size, stock]) => ({ size, stock }));
 
         if (inventory.length) {
-          await tx.inventory.createMany({
-            data: inventory.map((r) => ({ ...r, productId: id })),
-          });
+          await tx.inventory.createMany({ data: inventory.map((r) => ({ ...r, productId: id })) });
         }
       }
 
-      // Update core fields (if any)
       if (Object.keys(data).length) {
         await tx.product.update({ where: { id }, data });
       }
 
-      const product = await tx.product.findUnique({
+      return tx.product.findUnique({
         where: { id },
         select: {
           id: true,
@@ -1164,18 +915,10 @@ app.patch("/api/admin/products/:id", async (req, res) => {
           isPublished: true,
           createdAt: true,
           updatedAt: true,
-          images: {
-            orderBy: { sortOrder: "asc" },
-            select: { id: true, url: true, alt: true, sortOrder: true, createdAt: true },
-          },
-          inventory: {
-            orderBy: { size: "asc" },
-            select: { id: true, size: true, stock: true, updatedAt: true },
-          },
+          images: { orderBy: { sortOrder: "asc" }, select: { id: true, url: true, alt: true, sortOrder: true, createdAt: true } },
+          inventory: { orderBy: { size: "asc" }, select: { id: true, size: true, stock: true, updatedAt: true } },
         },
       });
-
-      return product;
     });
 
     return res.json({ ok: true, product: result });
@@ -1189,8 +932,6 @@ app.patch("/api/admin/products/:id", async (req, res) => {
   }
 });
 
-// PATCH /api/admin/inventory
-// Bulk upsert inventory rows: [{ productId, size, stock }] OR { items: [...] }
 app.patch("/api/admin/inventory", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
@@ -1243,7 +984,6 @@ app.get("/admin", (req, res) => {
 app.use("/admin", (req, res, next) => {
   const p = req.path || "/";
 
-  // Always allow login page (and typical static assets) without admin role
   const isPublic =
     p === "/login.html" ||
     p.endsWith(".css") ||
@@ -1268,52 +1008,42 @@ app.use("/admin", (req, res, next) => {
 // FRONTEND (same-domain hosting)
 // -----------------------------
 const projectRoot = path.resolve(__dirname, "..", "..");
-
-// -----------------------------
-// API SAFETY: JSON 404 + JSON 500
-// (Prevents users from seeing platform/proxy HTML on API failures.)
-// -----------------------------
-app.use((err, req, res, next) => {
-  try {
-    if (req && typeof req.path === "string" && req.path.startsWith("/api/")) {
-      console.error("API error:", err);
-      if (res.headersSent) return next(err);
-      return res.status(500).json({ ok: false, error: "Server error. Please try again." });
-    }
-  } catch (_) {}
-  return next(err);
-});
-
-// Any unknown /api route => JSON 404
-app.use("/api", (req, res) => {
-  return res.status(404).json({ ok: false, error: "Not found" });
-});
-
 const clientDir = path.join(projectRoot, "client");
 
-// Static files (this comes AFTER admin gate middleware on purpose)
+// Static files (comes AFTER admin gate middleware)
 app.use(express.static(clientDir));
+
+// CLEAN URLS for ALL pages (public + admin) — MUST be after express.static
+app.get(/^\/(?!api\/).+/, (req, res, next) => {
+  // allow real file requests through
+  if (path.extname(req.path)) return next();
+
+  const rel = req.path.replace(/^\/+/, "");
+  const htmlPath = path.join(clientDir, `${rel}.html`);
+
+  res.sendFile(htmlPath, (err) => {
+    if (err) return next();
+  });
+});
 
 // Serve homepage
 app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));
 
-app.listen(PORT, () => {
-  console.log(`Beyond Silhouette server running on http://localhost:${PORT}`);
-});
 // -----------------------------
 // API 404 + Error handling (JSON only)
 // -----------------------------
-app.use('/api', (req, res, next) => {
-  // If we reach here, no /api route matched.
-  res.status(404).json({ ok: false, error: 'Not found' });
+app.use("/api", (req, res) => {
+  res.status(404).json({ ok: false, error: "Not found" });
 });
 
 app.use((err, req, res, next) => {
-  // Ensure API never returns HTML/platform pages.
-  if (req.path && req.path.startsWith('/api')) {
-    console.error('API error:', err);
-    return res.status(500).json({ ok: false, error: 'Server error' });
+  if (req.path && req.path.startsWith("/api")) {
+    console.error("API error:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
-  next(err);
+  return next(err);
 });
 
+app.listen(PORT, () => {
+  console.log(`Beyond Silhouette server running on http://localhost:${PORT}`);
+});
