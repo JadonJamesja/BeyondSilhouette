@@ -12,47 +12,43 @@
    These tokens are used throughout the file.
 ========================================================= */
 :root {
-  --font: "Nunito", sans-serif;
+  /* Unified site font (text + headings) */
+  --font: "Bricolage Grotesque", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
-  /* Typography scale */
-  --fs-base: 17px;
-  --fs-sm: 0.94rem;
-  --fs-md: 1rem;
-  --fs-lg: 1.125rem;
-  --fs-xl: 1.35rem;
-  --fs-2xl: 1.75rem;
-  --fs-3xl: 2.15rem;
+  /* Premium feminine palette (light only) */
+  --bg: 28 38% 96%;          /* warm ivory */
+  --surface: 0 0% 100%;      /* white */
+  --surface2: 26 28% 94%;    /* soft sand */
+  --text: 18 22% 14%;        /* espresso */
+  --muted: 20 10% 38%;       /* warm gray */
+  --border: 24 20% 86%;      /* champagne border */
 
-  --lh-tight: 1.25;
-  --lh-base: 1.65;
-
-  /* Brand accents (softer, premium, not harsh/masculine) */
-  --accent: 212 75% 54%;   /* softer ocean blue */
-  --accent2: 332 55% 62%;  /* soft mauve */
-
-  /* Core palette */
-  --bg: 220 38% 94%;
-  --surface: 220 40% 97%;
-  --surface2: 225 36% 95%;
-  --text: 222 26% 16%;
-  --muted: 224 16% 42%;
-  --border: 225 22% 82%;
+  /* Accents */
+  --accent: 215 55% 38%;     /* deep ink navy */
+  --accent2: 338 42% 58%;    /* dusty rose */
+  --accent3: 35 55% 62%;     /* champagne gold */
 
   /* Effects */
-  --header-glass: rgba(245, 247, 255, 0.82);
-  --header-glass-scrolled: rgba(245, 247, 255, 0.55);
-  --section-alt: rgba(40, 60, 120, 0.06);
+  --header-glass: rgba(255, 252, 249, 0.86);
+  --header-glass-scrolled: rgba(255, 252, 249, 0.62);
+  --section-alt: rgba(54, 34, 28, 0.04);
 
-  --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.08);
-  --shadow-med: 0 12px 26px rgba(0, 0, 0, 0.12);
+  --shadow-soft: 0 10px 26px rgba(20, 12, 10, 0.08);
+  --shadow-med: 0 14px 34px rgba(20, 12, 10, 0.12);
 
-  /* Buttons (slightly softer charcoal) */
-  --btn-bg: #2b2b34;
-  --btn-bg-hover: #1f1f27;
+  /* Buttons */
+  --btn-bg: hsl(var(--text));
+  --btn-bg-hover: hsl(18 22% 10%);
 
-  --radius: 10px;
-  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-sm: 10px;
+
+  /* Typography scale */
+  --text-base: 17px;
+  --text-sm: 0.95rem;
+  --text-lg: 1.08rem;
 }
+
 
 /* Utility container */
 .container {
@@ -63,10 +59,17 @@
 
 body {
   font-family: var(--font);
-  line-height: var(--lh-base);
+  line-height: 1.65;
   background-color: hsl(var(--bg));
   color: hsl(var(--text));
-  font-size: var(--fs-base);n: fixed;
+  font-size: var(--text-base);
+}
+
+/* ------------------------------
+   2. HEADER
+------------------------------ */
+#site-header {
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
@@ -96,8 +99,7 @@ body {
 
 #logo {
   margin-right: auto;
-  font-family: 'Abril Fatface', serif;
-  font-weight: 400;
+    font-weight: 400;
   letter-spacing: 1px;
 }
 
@@ -289,10 +291,10 @@ body {
 }
 
 .hero-title {
-  font-family: Helvetica, sans-serif;
-  font-weight: 300;
-  font-size: 4.5rem;
-  letter-spacing: 2px;
+  font-family: var(--font);
+  font-weight: 750;
+  font-size: clamp(2.4rem, 5.6vw, 4.2rem);
+  letter-spacing: 0.02em;
   margin-bottom: 15px;
 }
 
@@ -322,8 +324,7 @@ body {
 }
 
 /* Primary button (shared) */
-.btn-primary,
-.btn--primary {
+.btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -340,8 +341,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
-.btn-primary:hover,
-.btn--primary:hover {
+.btn-primary:hover {
   background: var(--btn-bg-hover);
   transform: translateY(-1px);
 }
@@ -351,8 +351,7 @@ body {
 }
 
 /* Secondary button (NOW global) */
-.btn-secondary,
-.btn--secondary {
+.btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -371,8 +370,7 @@ body {
   border: 1px solid hsla(var(--border), 0.95);
 }
 
-.btn-secondary:hover,
-.btn--secondary:hover {
+.btn-secondary:hover {
   background: rgba(0, 0, 0, 0.06);
   transform: translateY(-1px);
 }
@@ -481,8 +479,7 @@ body {
 }
 
 /* Keep About button vibe, but match new accent2 token */
-#about-preview .btn-secondary,
-.btn--secondary {
+#about-preview .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -498,8 +495,7 @@ body {
   background: hsla(var(--accent2), 0.08);
 }
 
-#about-preview .btn-secondary:hover,
-.btn--secondary:hover {
+#about-preview .btn-secondary:hover {
   background: hsla(var(--accent2), 0.14);
   border-color: hsla(var(--accent2), 0.95);
 }
@@ -528,14 +524,12 @@ body {
 }
 
 /* Home page CTA polish (Featured section) */
-#featured .featured-cta .btn-primary,
-.btn--primary {
+#featured .featured-cta .btn-primary {
   width: 16rem;
   box-shadow: var(--shadow-soft);
 }
 
-#featured .featured-cta .btn-primary:hover,
-.btn--primary:hover {
+#featured .featured-cta .btn-primary:hover {
   box-shadow: var(--shadow-med);
 }
 
@@ -628,47 +622,51 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
   #logo>a {
     white-space: nowrap;
   }
+
+  .hero-title {
+    letter-spacing: 0.01em;
+  }
 }
+
 
 /* ==============================
    INDEX ONLY: FIX TIGHT FEEL ON TABLET/MOBILE
 ============================== */
 @media (max-width: 1024px) {
-  #home-page #main-nav {
+  #main-nav {
     justify-content: space-between;
     gap: 12px;
   }
 
-  #home-page #main-nav .nav-list {
+  #main-nav .nav-list {
     margin-left: auto;
   }
 
-  #home-page .nav-right {
+  .nav-right {
     margin-left: 0;
   }
 
-  #home-page .header-container {
+  .header-container {
     padding: 14px clamp(18px, 4vw, 40px);
   }
 }
 
 @media (max-width: 768px) {
-  #home-page .header-container {
+  .header-container {
     padding: 14px 20px;
   }
 
-  #home-page #main-nav {
+  #main-nav {
     justify-content: space-between;
     gap: 14px;
   }
 
-  #home-page .nav-icons {
+  .nav-icons {
     gap: 18px;
   }
 }
 
 a.btn-primary,
-a.btn-secondary,
-.btn--secondary {
+a.btn-secondary {
   display: inline-flex;
 }

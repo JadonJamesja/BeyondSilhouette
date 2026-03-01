@@ -5,7 +5,7 @@
 
 /* Base page */
 body {
-  font-family: "Nunito", sans-serif;
+  font-family: var(--font);
   margin: 0;
   padding: 0;
   background: #f3f6ff; /* soft tinted background */
@@ -40,7 +40,7 @@ body {
 }
 
 #logo a {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font);
   font-size: 1.55rem;
   text-decoration: none;
   color: #141826;

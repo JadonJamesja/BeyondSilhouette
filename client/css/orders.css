@@ -1,8 +1,8 @@
 /* Body */
 #orders-page {
     font-family: var(--font);
-    background-color: hsl(var(--bg));
-    color: hsl(var(--text));
+    background-color: #fffefe;
+    color: #000;
     margin: 0;
     padding-top: 80px;
     /* space for fixed header */
@@ -14,15 +14,15 @@
     width: 100%;
     top: 0;
     z-index: 1000;
-    background: var(--header-glass);
+    background: #fff;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     padding: 15px 20px;
 }
 
 #logo a {
-    font-family: 'Abril Fatface', serif;
+    font-family: var(--font);
     font-size: 1.8rem;
-    color: hsl(var(--text));
+    color: #111;
     text-decoration: none;
 }
 
@@ -35,13 +35,13 @@
 
 .nav-link {
     text-decoration: none;
-    color: hsl(var(--text));
+    color: #111;
     font-weight: 600;
     transition: color 0.3s ease;
 }
 
 .nav-link:hover {
-    color: hsl(var(--accent));
+    color: #5A3CC4;
 }
 
 .nav-icons {
@@ -64,7 +64,7 @@
     position: absolute;
     top: -6px;
     right: -10px;
-    background: hsl(var(--accent));
+    background: #2917ca;
     color: #fff;
     font-size: 0.75rem;
     padding: 2px 6px;
@@ -82,7 +82,7 @@
     position: absolute;
     top: 40px;
     right: 0;
-    background: var(--header-glass);
+    background: #fff;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     list-style: none;
@@ -94,13 +94,13 @@
     text-decoration: none;
     display: block;
     padding: 10px 20px;
-    color: hsl(var(--text));
+    color: #111;
     transition: background 0.3s ease;
 }
 
 .login-menu li a:hover {
-    background: rgba(50, 74, 189, 0.08);
-    color: hsl(var(--accent));
+    background: #f1f0ff;
+    color: #5A3CC4;
 }
 
 .login-dropdown:hover .login-menu {
@@ -123,7 +123,7 @@
 
 /* Order Cards */
 .order-card {
-    background: var(--header-glass);
+    background: #fff;
     border-radius: 20px;
     padding: 20px;
     margin-bottom: 30px;
@@ -193,7 +193,7 @@
 }
 
 .btn:hover {
-    background-color: hsl(var(--accent));
+    background-color: #5A3CC4;
 }
 
 /* No Orders Message */
@@ -204,7 +204,7 @@
 }
 
 .no-orders a {
-    color: hsl(var(--accent));
+    color: #5A3CC4;
     font-weight: 600;
     text-decoration: none;
 }
@@ -227,7 +227,7 @@
 }
 
 .modal-content {
-    background: var(--header-glass);
+    background: #fff;
     margin: 10% auto;
     padding: 20px;
     border-radius: 12px;
@@ -241,7 +241,7 @@
     right: 15px;
     font-size: 1.5rem;
     cursor: pointer;
-    color: hsl(var(--text));
+    color: #111;
 }
 
 /* Footer */

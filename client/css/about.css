@@ -38,7 +38,7 @@
 }
 
 #hero-about .hero-title{
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font);
   font-weight: 700;
   font-size: clamp(2.2rem, 5vw, 3.2rem);
   margin-bottom: 10px;
