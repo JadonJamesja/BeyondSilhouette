@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import express from "express";
 import helmet from "helmet";
@@ -1232,6 +1233,37 @@ app.use("/api", (req, res) => {
 const clientDir = path.join(projectRoot, "client");
 
 // Static files (this comes AFTER admin gate middleware on purpose)
+
+// -----------------------------
+// Clean URLs: remove .html in production
+// - Redirect /page.html -> /page
+// - Serve /page -> /page.html when it exists
+// -----------------------------
+app.use((req, res, next) => {
+  try {
+    if (!req.path || typeof req.path !== 'string') return next();
+    // Never touch APIs
+    if (req.path.startsWith('/api/')) return next();
+    // Ignore static assets (has a file extension)
+    const hasExt = /\.[a-zA-Z0-9]+$/.test(req.path);
+    if (hasExt) {
+      // Redirect .html -> clean
+      if (req.path.toLowerCase().endsWith('.html')) {
+        const clean = req.path.slice(0, -5) || '/';
+        const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+        return res.redirect(301, clean + qs);
+      }
+      return next();
+    }
+    // If path already ends with '/', let static / index handling continue
+    // Attempt to serve matching .html file
+    const filePath = path.join(clientDir, req.path + '.html');
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+  } catch (_) {}
+  return next();
+});
 app.use(express.static(clientDir));
 
 // Serve homepage
@@ -1256,4 +1288,3 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
-

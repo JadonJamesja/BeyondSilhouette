@@ -6,7 +6,7 @@
 #shop-page {
     background-color: #fffefe;
     color: #000;
-    font-family: 'Arial', sans-serif;
+    font-family: var(--font);
 }
 
 /* Hero Section */

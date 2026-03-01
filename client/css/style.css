@@ -14,6 +14,18 @@
 :root {
   --font: "Nunito", sans-serif;
 
+  /* Typography scale */
+  --fs-base: 17px;
+  --fs-sm: 0.94rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.35rem;
+  --fs-2xl: 1.75rem;
+  --fs-3xl: 2.15rem;
+
+  --lh-tight: 1.25;
+  --lh-base: 1.65;
+
   /* Brand accents (softer, premium, not harsh/masculine) */
   --accent: 212 75% 54%;   /* softer ocean blue */
   --accent2: 332 55% 62%;  /* soft mauve */
@@ -51,17 +63,10 @@
 
 body {
   font-family: var(--font);
-  line-height: 1.65;
+  line-height: var(--lh-base);
   background-color: hsl(var(--bg));
   color: hsl(var(--text));
-  font-size: 16px; /* was implicit/smaller */
-}
-
-/* ------------------------------
-   2. HEADER
------------------------------- */
-#site-header {
-  position: fixed;
+  font-size: var(--fs-base);n: fixed;
   top: 0;
   left: 0;
   width: 100%;
@@ -317,7 +322,8 @@ body {
 }
 
 /* Primary button (shared) */
-.btn-primary {
+.btn-primary,
+.btn--primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -334,7 +340,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
-.btn-primary:hover {
+.btn-primary:hover,
+.btn--primary:hover {
   background: var(--btn-bg-hover);
   transform: translateY(-1px);
 }
@@ -344,7 +351,8 @@ body {
 }
 
 /* Secondary button (NOW global) */
-.btn-secondary {
+.btn-secondary,
+.btn--secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -363,7 +371,8 @@ body {
   border: 1px solid hsla(var(--border), 0.95);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover,
+.btn--secondary:hover {
   background: rgba(0, 0, 0, 0.06);
   transform: translateY(-1px);
 }
@@ -472,7 +481,8 @@ body {
 }
 
 /* Keep About button vibe, but match new accent2 token */
-#about-preview .btn-secondary {
+#about-preview .btn-secondary,
+.btn--secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -488,7 +498,8 @@ body {
   background: hsla(var(--accent2), 0.08);
 }
 
-#about-preview .btn-secondary:hover {
+#about-preview .btn-secondary:hover,
+.btn--secondary:hover {
   background: hsla(var(--accent2), 0.14);
   border-color: hsla(var(--accent2), 0.95);
 }
@@ -517,12 +528,14 @@ body {
 }
 
 /* Home page CTA polish (Featured section) */
-#featured .featured-cta .btn-primary {
+#featured .featured-cta .btn-primary,
+.btn--primary {
   width: 16rem;
   box-shadow: var(--shadow-soft);
 }
 
-#featured .featured-cta .btn-primary:hover {
+#featured .featured-cta .btn-primary:hover,
+.btn--primary:hover {
   box-shadow: var(--shadow-med);
 }
 
@@ -655,6 +668,7 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
 }
 
 a.btn-primary,
-a.btn-secondary {
+a.btn-secondary,
+.btn--secondary {
   display: inline-flex;
 }

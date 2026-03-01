@@ -12,6 +12,12 @@
 
 'use strict';
 
+// Force LIGHT theme only (production design standard)
+try {
+  document.documentElement.setAttribute('data-theme','light');
+} catch(_) {}
+
+
 const SITE = {
   session: 'bs_session_v1',
   users: 'bs_users_v1',
@@ -216,10 +222,10 @@ function readTheme() {
   return (t === 'light' || t === 'dark') ? t : 'dark';
 }
 
-function applyTheme(theme) {
-  const t = (String(theme || '').toLowerCase() === 'light') ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', t);
-  localStorage.setItem(ADMIN.theme, t);
+function applyTheme(_theme) {
+  // Light theme only (production).
+  try { document.documentElement.setAttribute('data-theme', 'light'); } catch (_) {}
+  try { localStorage.removeItem(ADMIN.theme); } catch (_) {}
 }
 
 function toggleTheme() {
@@ -773,7 +779,7 @@ async function initProductsManager() {
     if (publishedList) publishedList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
 
     // Always fetch from DB on page load/refresh
-    const data = await apiAdminJSON("https://bs-api-live.up.railway.app/api/admin/products", { method: "GET" });
+    const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
     const db = Array.isArray(data?.products) ? data.products : [];
 
     // Convert DB -> your UI shape

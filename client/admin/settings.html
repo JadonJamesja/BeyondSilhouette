@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="utf-8" />
@@ -43,8 +43,7 @@
         </div>
       </div>
       <div class="sidebar-actions">
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+                <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
       </div>
     </div>
   </aside>
@@ -53,19 +52,16 @@
     <header class="topbar">
       <div>
         <h1 class="h1">Settings</h1>
-        <p class="muted">Brand, store preferences, and deployment prep.</p>
+        <p class="muted">Production settings will be enabled here once DB-backed configuration is finalized.</p>
       </div>
 
-      <div class="topbar-actions">
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Toggle theme</button>
-      </div>
-    </header>
+          </header>
 
     <section class="grid two">
       <article class="card">
         <div class="card-head">
           <h2 class="h2">Brand</h2>
-          <p class="muted">These become editable & stored in DB later.</p>
+          <p class="muted">Reserved for upcoming DB-backed settings.</p>
         </div>
 
         <form class="form">
@@ -80,12 +76,12 @@
           </label>
 
           <div class="row-between">
-            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Reset (demo).">Reset</button>
-            <button class="btn btn-primary" type="button" data-action="toast" data-toast="Saved (demo).">Save</button>
+            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Reset">Reset</button>
+            <button class="btn btn-primary" type="button" data-action="toast" data-toast="Saved">Save</button>
           </div>
 
           <div class="hint">
-            After DB: this becomes real settings storage, with validation + roles.
+            Next: DB-backed Home Page CMS (Sprint 2) will land here as a real settings module.
           </div>
         </form>
       </article>
