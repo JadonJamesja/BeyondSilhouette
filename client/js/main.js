@@ -1709,6 +1709,8 @@
     const main = document.querySelector('main');
     if (!main) return;
 
+    await Products.ensureLoaded();
+
     const items = Cart.load();
     const st = readState();
     const cache = st.productCache || {};
