@@ -7,24 +7,24 @@
   "use strict";
 
   const API_BASE = "";
-const CACHE_TTL_MS = 60 * 1000; // 60s (in-memory)
-  let __memCache = null;
-  let __memAt = 0;
-// 60s
+  const CACHE_KEY = "bs_products_cache_v1";
+  const CACHE_TTL_MS = 60 * 1000; // 60s
 
   function safeParse(s) {
     try { return JSON.parse(s); } catch { return null; }
   }
 
   function writeCache(products) {
-    __memCache = Array.isArray(products) ? products : [];
-    __memAt = Date.now();
+    const payload = { at: Date.now(), products: Array.isArray(products) ? products : [] };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   }
 
   function readCache() {
-    if (!Array.isArray(__memCache) || !Number.isFinite(__memAt)) return null;
-    if (Date.now() - __memAt > CACHE_TTL_MS) return null;
-    return __memCache;
+    const raw = localStorage.getItem(CACHE_KEY);
+    const obj = raw ? safeParse(raw) : null;
+    if (!obj || !Array.isArray(obj.products) || !Number.isFinite(obj.at)) return null;
+    if (Date.now() - obj.at > CACHE_TTL_MS) return null;
+    return obj.products;
   }
 
   function normalizeApiProduct(p) {

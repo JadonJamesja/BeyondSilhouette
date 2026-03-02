@@ -1712,9 +1712,32 @@ const main = document.querySelector('main');
     const st = readState();
     const cache = st.productCache || {};
 
+    // Lookup map: if a cart item references a product that isn't in the published list cache,
+    // we ask the server for display fields so checkout can still render reliably.
+    const lookupById = new Map();
+
+    try {
+      const missingIds = Array.from(new Set(items.map(it => String(it.productId || '')).filter(Boolean)))
+        .filter(id => !Products.findById(id));
+
+      if (missingIds.length) {
+        const url = `/api/products/lookup?ids=${encodeURIComponent(missingIds.join(','))}`;
+        const r = await fetch(url, { credentials: 'omit' });
+        const j = await r.json().catch(() => null);
+        if (r.ok && j && j.ok === true && Array.isArray(j.products)) {
+          j.products.forEach(p => {
+            if (p && p.id) lookupById.set(String(p.id), p);
+          });
+        }
+      }
+    } catch (_) {
+      // Non-fatal: checkout can still fall back to productCache or item fields.
+    }
+
+
     function resolveProduct(it) {
       const pid = String(it.productId || '');
-      const p = Products.findById(pid);
+      const p = Products.findById(pid) || lookupById.get(pid);
       if (p) {
         return {
           name: p.title || p.name || it.name || 'Item',

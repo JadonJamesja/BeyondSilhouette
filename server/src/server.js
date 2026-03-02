@@ -135,6 +135,83 @@ app.get("/api/products", async (req, res) => {
 });
 
 // -----------------------------
+// PUBLIC PRODUCTS LOOKUP (by ids) — used by checkout to recover display info
+// GET /api/products/lookup?ids=id1,id2,...
+// Returns the SAME public shape as /api/products for just the requested ids.
+// -----------------------------
+app.get("/api/products/lookup", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  const idsRaw = String(req.query?.ids || "").trim();
+  const ids = idsRaw
+    .split(",")
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .slice(0, 200);
+
+  if (!ids.length) {
+    return res.status(400).json({ ok: false, error: "Missing ids" });
+  }
+
+  try {
+    const products = await prisma.product.findMany({
+      where: { id: { in: ids }, isPublished: true },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        priceJMD: true,
+        isPublished: true,
+        createdAt: true,
+        updatedAt: true,
+        images: {
+          orderBy: { sortOrder: "asc" },
+          select: { url: true, alt: true, sortOrder: true },
+        },
+        inventory: {
+          orderBy: { size: "asc" },
+          select: { size: true, stock: true },
+        },
+      },
+    });
+
+    const mapped = products.map((p) => {
+      const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
+
+      for (const row of p.inventory || []) {
+        const k = String(row.size || "").trim().toUpperCase();
+        if (k === "S" || k === "M" || k === "L" || k === "XL") {
+          stockBySize[k] = Number.isFinite(Number(row.stock))
+            ? Math.max(0, Math.round(Number(row.stock)))
+            : 0;
+        }
+      }
+
+      const coverUrl = p.images && p.images.length > 0 ? String(p.images[0].url) : "";
+
+      return {
+        id: p.id,
+        slug: p.slug || null,
+        title: p.name,
+        description: p.description || "",
+        priceJMD: p.priceJMD,
+        status: p.isPublished ? "published" : "draft",
+        sizes: ["S", "M", "L", "XL"],
+        stockBySize,
+        media: { coverUrl },
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      };
+    });
+
+    return res.json({ ok: true, products: mapped });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to lookup products" });
+  }
+});
+
+// -----------------------------
 // AUTH (backend foundation)
 // -----------------------------
 app.get("/api/me", async (req, res) => {
