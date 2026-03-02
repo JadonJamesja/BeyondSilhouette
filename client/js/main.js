@@ -612,6 +612,52 @@ const Cart = (() => {
     clear
   };
 })();
+// -----------------------------
+// PRODUCTS (DB-backed via /api/products)
+// - Provides the legacy API main.js expects: ensureLoaded, setAll, listPublished, findById
+// - Avoids localStorage product cache; server is source of truth
+// -----------------------------
+const Products = (() => {
+  let _all = [];
+  let _loaded = false;
+
+  function _asArray(v) { return Array.isArray(v) ? v : []; }
+
+  function setAll(list) {
+    _all = _asArray(list);
+    _loaded = true;
+    return _all;
+  }
+
+  async function ensureLoaded() {
+    if (_loaded && _all.length) return _all;
+
+    // Prefer BSProducts store if present
+    if (window.BSProducts && typeof window.BSProducts.refresh === "function") {
+      await window.BSProducts.refresh();
+      const list = (typeof window.BSProducts.readAll === "function") ? window.BSProducts.readAll() : [];
+      return setAll(list);
+    }
+
+    // Fallback direct fetch
+    const res = await fetch("/api/products", { credentials: "omit" });
+    const ct = String(res.headers.get("content-type") || "");
+    if (!res.ok || !ct.includes("application/json")) throw new Error("Products fetch failed");
+    const data = await res.json();
+    if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error("Bad products response");
+    return setAll(data.products);
+  }
+
+  function readAll() { return _asArray(_all); }
+  function listPublished() { return readAll().filter(p => !!p?.isPublished || String(p?.status||"").toLowerCase()==="published"); }
+  function findById(id) {
+    const pid = String(id || "");
+    return readAll().find(p => String(p?.id) === pid) || null;
+  }
+
+  return { ensureLoaded, setAll, readAll, listPublished, findById };
+})();
+
 
 // -----------------------------
   // ORDERS (LOCAL DEMO)
@@ -636,7 +682,7 @@ const Cart = (() => {
   // -----------------------------
   const UI = {
     updateCartBadges() {
-      const total = Cart.totalQty(Cart.load());
+      const total = Cart.count();
       $$('.cart-count').forEach(el => el.textContent = String(total));
     },
 
@@ -924,7 +970,7 @@ await Products.ensureLoaded();
 
     const legacyContainer = $('.cart-container');
 
-    const items = Cart.load();
+    const items = Cart.items();
 
     const st = readState();
     const cache = st.productCache || {};
@@ -1521,7 +1567,7 @@ const main = document.querySelector('main');
     await Products.ensureLoaded();
     await Cart.ensureLoaded();
 
-    const items = Cart.load();
+    const items = Cart.items();
     const st = readState();
     const cache = st.productCache || {};
 
