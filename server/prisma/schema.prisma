@@ -9,33 +9,31 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  role         String   @default("customer")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  orders        Order[]
-  statusChanges OrderStatusHistory[] @relation("OrderStatusActor")
+  id                 String               @id @default(cuid())
+  email              String               @unique
+  name               String?
+  passwordHash       String
+  role               String               @default("customer")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  OrderStatusHistory OrderStatusHistory[]
+  orders             Order[]
 
   @@map("users")
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  slug        String?  @unique
+  id          String         @id @default(cuid())
+  slug        String?        @unique
   name        String
   description String?
   priceJMD    Int
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  images    ProductImage[]
-  inventory Inventory[]
-  items     OrderItem[]
+  isPublished Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  inventory   Inventory[]
+  items       OrderItem[]
+  images      ProductImage[]
 
   @@map("products")
 }
@@ -47,8 +45,7 @@ model ProductImage {
   alt       String?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@map("product_images")
@@ -60,61 +57,38 @@ model Inventory {
   size      String
   stock     Int      @default(0)
   updatedAt DateTime @updatedAt
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, size])
   @@index([productId])
   @@map("inventory")
 }
 
-model InventoryReservation {
-  id        String   @id @default(cuid())
-  userId    String
-  productId String
-  size      String
-  qty       Int
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([productId, size])
-  @@index([expiresAt])
-  @@unique([userId, productId, size])
-  @@map("inventory_reservations")
-}
-
 model Order {
-  id        String   @id @default(cuid())
-  userId    String
-  subtotal  Int
-  total     Int
-  currency  String   @default("JMD")
-  status    String   @default("processing")
-  createdAt DateTime @default(now())
-
-  user  User       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  items OrderItem[]
-
-  history   OrderStatusHistory[]
+  id                 String               @id @default(cuid())
+  userId             String
+  subtotal           Int
+  total              Int
+  currency           String               @default("JMD")
+  status             String               @default("processing")
+  createdAt          DateTime             @default(now())
+  OrderStatusHistory OrderStatusHistory[]
+  items              OrderItem[]
+  user               User                 @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("orders")
 }
 
 model OrderItem {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   orderId   String
   productId String
   size      String
   quantity  Int
   unitPrice Int
-
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
 
   @@index([orderId])
   @@index([productId])
@@ -122,20 +96,16 @@ model OrderItem {
 }
 
 model OrderStatusHistory {
-  id         String   @id @default(cuid())
+  id         String   @id
   orderId    String
-  actorId    String?  // admin who changed it (nullable)
+  actorId    String?
   fromStatus String
   toStatus   String
   note       String?
   createdAt  DateTime @default(now())
+  users      User?    @relation(fields: [actorId], references: [id])
+  orders     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  // Who changed it (admin). If the admin user gets deleted, keep history.
-  actor User? @relation("OrderStatusActor", fields: [actorId], references: [id], onDelete: SetNull)
-
-  @@index([orderId])
   @@index([actorId])
-  @@map("order_status_history")
+  @@index([orderId])
 }
