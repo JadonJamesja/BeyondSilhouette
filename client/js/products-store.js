@@ -6,25 +6,20 @@
 (() => {
   "use strict";
 
-  const API_BASE = "";
-  const CACHE_KEY = "bs_products_cache_v1";
-  const CACHE_TTL_MS = 60 * 1000; // 60s
-
-  function safeParse(s) {
-    try { return JSON.parse(s); } catch { return null; }
-  }
+  const CACHE_TTL_MS = 60 * 1000; // 60s (in-memory)
+  let __memCache = null;
+  let __memAt = 0;
+  // 60s
 
   function writeCache(products) {
-    const payload = { at: Date.now(), products: Array.isArray(products) ? products : [] };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
+    __memCache = Array.isArray(products) ? products : [];
+    __memAt = Date.now();
   }
 
   function readCache() {
-    const raw = localStorage.getItem(CACHE_KEY);
-    const obj = raw ? safeParse(raw) : null;
-    if (!obj || !Array.isArray(obj.products) || !Number.isFinite(obj.at)) return null;
-    if (Date.now() - obj.at > CACHE_TTL_MS) return null;
-    return obj.products;
+    if (!Array.isArray(__memCache) || !Number.isFinite(__memAt)) return null;
+    if (Date.now() - __memAt > CACHE_TTL_MS) return null;
+    return __memCache;
   }
 
   function normalizeApiProduct(p) {
@@ -38,7 +33,7 @@
     // cover image: prefer first image url if present
     const coverUrl =
       (Array.isArray(p?.images) && p.images[0]?.url) ? String(p.images[0].url) :
-      (p?.media?.coverUrl ? String(p.media.coverUrl) : "");
+        (p?.media?.coverUrl ? String(p.media.coverUrl) : "");
 
     // build stockBySize from inventory[] if present
     const stockBySize = {};

@@ -110,58 +110,71 @@
     }, 2400);
   }
 
-  // -----------------------------
-  // STATE
-  // -----------------------------
-  function readState() {
-    const raw = localStorage.getItem(KEYS.state);
-    const st = raw ? (safeParse(raw) || {}) : {};
-    st.cartByUser = st.cartByUser || {};
-    st.productCache = st.productCache || {};
-    st.ordersByUser = st.ordersByUser || {};
-    return st;
-  }
 
-  function writeState(st) {
-    localStorage.setItem(KEYS.state, JSON.stringify(st));
-  }
+// -----------------------------
+// STATE (NO localStorage in production)
+// - Any legacy “demo” state is in-memory only.
+// - Auth is cookie-based (server) and cart is DB-backed (/api/cart).
+// -----------------------------
+const __mem = {
+  state: { cartByUser: {}, productCache: {}, ordersByUser: {} },
+  session: null,
+  users: {},
+  pwResets: {}
+};
 
-  function readSession() {
-    const raw = localStorage.getItem(KEYS.session);
-    return raw ? (safeParse(raw) || null) : null;
-  }
+function readState() {
+  return __mem.state;
+}
 
-  function writeSession(sess) {
-    localStorage.setItem(KEYS.session, JSON.stringify(sess));
-  }
+function writeState(st) {
+  __mem.state = st || { cartByUser: {}, productCache: {}, ordersByUser: {} };
+}
 
-  function clearSession() {
-    localStorage.removeItem(KEYS.session);
-  }
+function readSession() {
+  return __mem.session;
+}
 
-  function readUsers() {
-    const raw = localStorage.getItem(KEYS.users);
-    return raw ? (safeParse(raw) || {}) : {};
-  }
+function writeSession(sess) {
+  __mem.session = sess || null;
+}
 
-  function writeUsers(users) {
-    localStorage.setItem(KEYS.users, JSON.stringify(users || {}));
-  }
+function clearSession() {
+  __mem.session = null;
+}
 
-  // -----------------------------
-  // PASSWORD RESET STORE (OPTION B)
-  // -----------------------------
-  function readPwResets() {
-    const raw = localStorage.getItem(KEYS.pwReset);
-    const obj = raw ? (safeParse(raw) || {}) : {};
-    return (obj && typeof obj === 'object') ? obj : {};
-  }
+function readUsers() {
+  return __mem.users || {};
+}
 
-  function writePwResets(map) {
-    localStorage.setItem(KEYS.pwReset, JSON.stringify(map || {}));
-  }
+function writeUsers(users) {
+  __mem.users = users || {};
+}
 
-  function isExpiredISO(iso) {
+// -----------------------------
+// PASSWORD RESET STORE (legacy demo, in-memory only)
+// -----------------------------
+function readPwResets() {
+  return __mem.pwResets || {};
+}
+
+function writePwResets(map) {
+  __mem.pwResets = map || {};
+}
+
+function getReturnToFromUrl() {
+  const u = new URL(window.location.href);
+  const rt = u.searchParams.get("returnTo");
+  return rt ? String(rt) : "";
+}
+
+function buildLoginUrl(returnToHref) {
+  const rt = String(returnToHref || "").trim();
+  if (!rt) return "login.html";
+  return `login.html?returnTo=${encodeURIComponent(rt)}`;
+}
+
+function isExpiredISO(iso) {
     if (!iso) return true;
     const t = new Date(iso).getTime();
     if (!Number.isFinite(t)) return true;
@@ -534,239 +547,73 @@
   // -----------------------------
   // CART
   // -----------------------------
-  const Cart = {
-    userKey() {
-      const u = Auth.currentUser();
-      return u ? u.email : USER_GUEST;
-    },
+  
+// -----------------------------
+// CART (DB-backed; no localStorage; no guest cart)
+// -----------------------------
+const Cart = (() => {
+  let _items = [];
+  let _loaded = false;
 
-    load() {
-      const st = readState();
-      const key = this.userKey();
-      const items = st.cartByUser[key]?.items || [];
-      return Array.isArray(items) ? items : [];
-    },
+  function _sumQty(items) {
+    return (items || []).reduce((s, it) => s + (Number(it?.qty) || 0), 0);
+  }
 
-    save(items) {
-      const st = readState();
-      const key = this.userKey();
-      st.cartByUser[key] = { items: Array.isArray(items) ? items : [] };
-      writeState(st);
-    },
-
-    add(productId, size, qty = 1) {
-      const items = this.load();
-      const pid = String(productId);
-      const sz = String(size || '');
-      const qAdd = Math.max(1, Number(qty || 1));
-
-      const product = Products.findById(pid);
-      const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
-      const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
-
-      const existing = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-
-      if (base !== null && Number.isFinite(base)) {
-        const otherQty = items.reduce((sum, row) => {
-          if (row !== existing && String(row.productId) === pid && String(row.size || '') === sz) {
-            return sum + Number(row.qty || 0);
-          }
-          return sum;
-        }, 0);
-
-        const maxAllowed = Math.max(0, base - otherQty);
-        if (maxAllowed <= 0) return;
-
-        const current = existing ? Number(existing.qty || 0) : 0;
-        const next = Math.min(maxAllowed, current + qAdd);
-
-        if (existing) existing.qty = next;
-        else items.push({ productId: pid, size: sz, qty: next });
-
-        this.save(items);
-        return;
-      }
-
-      if (existing) {
-        existing.qty = Number(existing.qty || 0) + qAdd;
-      } else {
-        items.push({ productId: pid, size: sz, qty: qAdd });
-      }
-
-      this.save(items);
-    },
-
-    remove(productId, size) {
-      const pid = String(productId);
-      const sz = String(size || '');
-      const items = this.load().filter(i => !(String(i.productId) === pid && String(i.size || '') === sz));
-      this.save(items);
-    },
-
-    setQty(productId, size, qty) {
-      const pid = String(productId);
-      const sz = String(size || '');
-      const items = this.load();
-      const it = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-      if (!it) return null;
-
-      const desired = Math.max(1, Number(qty || 1));
-
-      const product = Products.findById(pid);
-      const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
-      const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
-
-      if (base !== null && Number.isFinite(base)) {
-        const otherQty = items.reduce((sum, row) => {
-          if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
-            return sum + Number(row.qty || 0);
-          }
-          return sum;
-        }, 0);
-
-        const maxAllowed = Math.max(0, base - otherQty);
-
-        if (maxAllowed <= 0) {
-          const nextItems = items.filter(row => row !== it);
-          this.save(nextItems);
-          return 0;
-        }
-
-        const applied = Math.min(maxAllowed, desired);
-        it.qty = applied;
-        this.save(items);
-        return applied;
-      }
-
-      it.qty = desired;
-      this.save(items);
-      return desired;
-    },
-
-    clear() {
-      this.save([]);
-    },
-
-    totalQty(items) {
-      return (items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
-    },
-
-    mergeGuestIntoUser(email) {
-      const st = readState();
-      const guest = st.cartByUser[USER_GUEST]?.items || [];
-      if (!guest.length) return;
-
-      const userItems = st.cartByUser[email]?.items || [];
-      const merged = Array.isArray(userItems) ? userItems.slice() : [];
-
-      guest.forEach(g => {
-        const pid = String(g.productId);
-        const sz = String(g.size || '');
-        const existing = merged.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-        if (existing) existing.qty = Number(existing.qty || 0) + Number(g.qty || 0);
-        else merged.push({ productId: pid, size: sz, qty: Number(g.qty || 0) });
-      });
-
-      st.cartByUser[email] = { items: merged };
-      st.cartByUser[USER_GUEST] = { items: [] };
-      writeState(st);
+  async function refresh() {
+    const r = await apiJson("/api/cart");
+    if (r && r.ok) {
+      _items = Array.isArray(r.items) ? r.items : [];
+    } else {
+      _items = [];
     }
+    _loaded = true;
+    return _items;
+  }
+
+  async function ensureLoaded() {
+    if (_loaded) return _items;
+    return refresh();
+  }
+
+  async function setQty(productId, size, qty) {
+    await apiJson("/api/cart/item", {
+      method: "PATCH",
+      body: { productId, size, qty }
+    });
+    return refresh();
+  }
+
+  async function add(productId, size, qtyAdd = 1) {
+    await ensureLoaded();
+    const existing = _items.find(it => String(it?.productId) === String(productId) && String(it?.size) === String(size));
+    const next = (Number(existing?.qty) || 0) + (Number(qtyAdd) || 1);
+    return setQty(productId, size, next);
+  }
+
+  async function remove(productId, size) {
+    return setQty(productId, size, 0);
+  }
+
+  async function clear() {
+    await apiJson("/api/cart/clear", { method: "POST" });
+    _items = [];
+    _loaded = true;
+    return _items;
+  }
+
+  return {
+    ensureLoaded,
+    refresh,
+    items() { return Array.isArray(_items) ? _items : []; },
+    count() { return _sumQty(_items); },
+    add,
+    setQty,
+    remove,
+    clear
   };
+})();
 
-  // -----------------------------
-  // PRODUCTS STORE (API-backed)
-  // -----------------------------
-  const Products = (() => {
-    let _cache = [];
-
-    function buildStockBySize(p) {
-      // Prefer existing stockBySize if present
-      if (p && p.stockBySize && typeof p.stockBySize === 'object') return p.stockBySize;
-
-      // API-backed: inventory is [{ size, stock }]
-      const inv = Array.isArray(p?.inventory) ? p.inventory : [];
-      const map = {};
-      inv.forEach((row) => {
-        const size = String(row?.size || '').trim();
-        const stock = Number(row?.stock ?? 0);
-        if (!size) return;
-        map[size] = Number.isFinite(stock) ? stock : 0;
-      });
-      return map;
-    }
-
-    function pickCoverUrl(p) {
-      // API-backed: images is [{ url, alt, sortOrder }]
-      if (Array.isArray(p?.images) && p.images.length) {
-        const first = p.images
-          .slice()
-          .sort((a, b) => Number(a?.sortOrder ?? 0) - Number(b?.sortOrder ?? 0))[0];
-        if (first?.url) return String(first.url);
-      }
-
-      // Older shapes
-      if (p?.media?.coverUrl) return String(p.media.coverUrl);
-      if (p?.coverUrl) return String(p.coverUrl);
-
-      return '';
-    }
-
-    function normalize(p) {
-      const name = String(p?.title || p?.name || '').trim();
-      const coverUrl = pickCoverUrl(p);
-      const stockBySize = buildStockBySize(p);
-
-      // Make a consistent “published” signal across old/new shapes
-      const isPublished = (p?.isPublished === true) || (p?.status === 'published');
-
-      return {
-        ...p,
-        name: name || p?.name || p?.title || '',
-        title: p?.title || name || '',
-        isPublished,
-        status: isPublished ? 'published' : (p?.status || 'draft'),
-        media: p?.media || { coverUrl },
-        stockBySize
-      };
-    }
-
-    return {
-      setAll(products) {
-        _cache = (Array.isArray(products) ? products : []).map(normalize);
-      },
-
-      readAll() {
-        return _cache;
-      },
-
-      listPublished() {
-        // API uses isPublished, old demo used status
-        return _cache.filter(p => p?.isPublished === true || p?.status === 'published');
-      },
-
-      findById(id) {
-        const pid = String(id || "");
-        return _cache.find(p => String(p?.id) === pid) || null;
-      },
-
-      async ensureLoaded() {
-        if (Array.isArray(_cache) && _cache.length) return _cache;
-
-        const res = await fetch("/api/products", { credentials: "omit" }).catch(() => null);
-        if (!res || !res.ok) return _cache;
-
-        const ct = String(res.headers.get("content-type") || "");
-        if (!ct.includes("application/json")) return _cache;
-
-        const data = await res.json().catch(() => null);
-        if (!data || data.ok !== true || !Array.isArray(data.products)) return _cache;
-
-        _cache = data.products.map(normalize);
-        return _cache;
-      }
-    };
-  })();
-  // -----------------------------
+// -----------------------------
   // ORDERS (LOCAL DEMO)
   // -----------------------------
   const Orders = {
@@ -864,9 +711,8 @@
       // cookie session should be set by server
       await Auth.bootstrap();
 
-      const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-      localStorage.removeItem(KEYS.returnTo);
-      location.href = (rt && rt.href) ? rt.href : 'account.html';
+      const rt = getReturnToFromUrl();
+        location.href = rt || 'account.html';
     } catch (err) {
       toast('Google sign-in is not available yet (server endpoint missing).', { important: true });
     }
@@ -1090,8 +936,8 @@ await Products.ensureLoaded();
       if (p) {
         return {
           name: p.title || p.name || it.name || 'Item',
-          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
-          price: Number(p.priceJMD || it.price || 0)
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.imageUrl || it.image || ''),
+          price: Number(p.priceJMD || it.priceJMD || it.price || 0)
         };
       }
 
@@ -1099,15 +945,15 @@ await Products.ensureLoaded();
       if (c) {
         return {
           name: c.name || it.name || 'Item',
-          image: c.image || it.image || '',
-          price: Number(c.price || it.price || 0)
+          image: c.image || it.imageUrl || it.image || '',
+          price: Number(c.price || it.priceJMD || it.price || 0)
         };
       }
 
       return {
         name: it.name || 'Item',
-        image: it.image || '',
-        price: Number(it.price || 0)
+        image: it.imageUrl || it.image || '',
+        price: Number(it.priceJMD || it.price || 0)
       };
     }
 
@@ -1143,7 +989,7 @@ await Products.ensureLoaded();
         if (!clearBtn.dataset.bound) {
           clearBtn.dataset.bound = '1';
           clearBtn.addEventListener('click', async () => {
-            Cart.clear();
+            await Cart.clear();
             UI.updateCartBadges();
             await renderCartIfOnCartPage();
             toast('Cart cleared.');
@@ -1193,13 +1039,7 @@ await Products.ensureLoaded();
         const pid = row.getAttribute('data-id');
         const size = row.getAttribute('data-size') || null;
         const q = Math.max(1, Number(input.value || 1));
-        const applied = Cart.setQty(pid, size, q);
-        if (applied === 0) {
-          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-        } else if (typeof applied === 'number' && applied < q) {
-          input.value = String(applied);
-          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-        }
+        await Cart.setQty(pid, size, q);
         UI.updateCartBadges();
         await renderCartIfOnCartPage();
       });
@@ -1214,16 +1054,7 @@ await Products.ensureLoaded();
         const pid = row.getAttribute('data-id');
         const size = row.getAttribute('data-size') || null;
         const q = Math.max(1, Number(input.value || 1));
-
-        const applied = Cart.setQty(pid, size, q);
-
-        if (applied === 0) {
-          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-        } else if (typeof applied === 'number' && applied < q) {
-          input.value = String(applied);
-          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-        }
-
+        await Cart.setQty(pid, size, q);
         UI.updateCartBadges();
         await renderCartIfOnCartPage();
       });
@@ -1238,7 +1069,7 @@ await Products.ensureLoaded();
         const pid = row.getAttribute('data-id');
         const size = row.getAttribute('data-size') || null;
 
-        Cart.remove(pid, size);
+        await Cart.remove(pid, size);
         UI.updateCartBadges();
         await renderCartIfOnCartPage();
       });
@@ -1286,36 +1117,20 @@ await Products.ensureLoaded();
 
       qtyInput.addEventListener('input', async () => {
         const q = Math.max(1, Number(qtyInput.value || 1));
-        const applied = Cart.setQty(it.productId, it.size || null, q);
-
-        if (applied === 0) {
-          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-        } else if (typeof applied === 'number' && applied < q) {
-          qtyInput.value = String(applied);
-          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-        }
-
+        await Cart.setQty(pid, size, q);
         UI.updateCartBadges();
         await renderCartIfOnCartPage();
       });
 
       qtyInput.addEventListener('change', async () => {
         const q = Math.max(1, Number(qtyInput.value || 1));
-        const applied = Cart.setQty(it.productId, it.size || null, q);
-
-        if (applied === 0) {
-          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-        } else if (typeof applied === 'number' && applied < q) {
-          qtyInput.value = String(applied);
-          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-        }
-
+        await Cart.setQty(pid, size, q);
         UI.updateCartBadges();
         await renderCartIfOnCartPage();
       });
 
       removeBtn.addEventListener('click', async () => {
-        Cart.remove(it.productId, it.size || null);
+        await Cart.remove(it.productId, it.size || null);
         UI.updateCartBadges();
         await renderCartIfOnCartPage();
       });
@@ -1346,9 +1161,8 @@ await Products.ensureLoaded();
     const user = Auth.currentUser();
     if (user) return;
 
-    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
     toast('Please log in to continue.', { important: true });
-    location.href = 'login.html';
+    location.href = buildLoginUrl(window.location.href);
   }
 
   // -----------------------------
@@ -1371,9 +1185,8 @@ await Products.ensureLoaded();
         UI.updateNavAuthState();
         UI.updateCartBadges();
 
-        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-        localStorage.removeItem(KEYS.returnTo);
-        location.href = (rt && rt.href) ? rt.href : 'account.html';
+        const rt = getReturnToFromUrl();
+        location.href = rt || 'account.html';
       } catch (err) {
         toast(err?.message || 'Login failed.', { important: true });
       }
@@ -1504,9 +1317,8 @@ await Products.ensureLoaded();
 
     const user = Auth.currentUser();
     if (!user) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
       toast('Please log in to continue.', { important: true });
-      location.href = 'login.html';
+      location.href = buildLoginUrl('edit-profile.html');
       return;
     }
 
@@ -1707,56 +1519,34 @@ const main = document.querySelector('main');
     if (!main) return;
 
     await Products.ensureLoaded();
+    await Cart.ensureLoaded();
 
     const items = Cart.load();
     const st = readState();
     const cache = st.productCache || {};
 
-    // Lookup map: if a cart item references a product that isn't in the published list cache,
-    // we ask the server for display fields so checkout can still render reliably.
-    const lookupById = new Map();
-
-    try {
-      const missingIds = Array.from(new Set(items.map(it => String(it.productId || '')).filter(Boolean)))
-        .filter(id => !Products.findById(id));
-
-      if (missingIds.length) {
-        const url = `/api/products/lookup?ids=${encodeURIComponent(missingIds.join(','))}`;
-        const r = await fetch(url, { credentials: 'omit' });
-        const j = await r.json().catch(() => null);
-        if (r.ok && j && j.ok === true && Array.isArray(j.products)) {
-          j.products.forEach(p => {
-            if (p && p.id) lookupById.set(String(p.id), p);
-          });
-        }
-      }
-    } catch (_) {
-      // Non-fatal: checkout can still fall back to productCache or item fields.
-    }
-
-
     function resolveProduct(it) {
       const pid = String(it.productId || '');
-      const p = Products.findById(pid) || lookupById.get(pid);
+      const p = Products.findById(pid);
       if (p) {
         return {
           name: p.title || p.name || it.name || 'Item',
-          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
-          price: Number(p.priceJMD || it.price || 0)
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.imageUrl || it.image || ''),
+          price: Number(p.priceJMD || it.priceJMD || it.price || 0)
         };
       }
       const c = cache[pid];
       if (c) {
         return {
           name: c.name || it.name || 'Item',
-          image: c.image || it.image || '',
-          price: Number(c.price || it.price || 0)
+          image: c.image || it.imageUrl || it.image || '',
+          price: Number(c.price || it.priceJMD || it.price || 0)
         };
       }
       return {
         name: it.name || 'Item',
-        image: it.image || '',
-        price: Number(it.price || 0)
+        image: it.imageUrl || it.image || '',
+        price: Number(it.priceJMD || it.price || 0)
       };
     }
 
@@ -1797,92 +1587,28 @@ const main = document.querySelector('main');
     if (totalEl) totalEl.textContent = money(subtotal);
 
     if (btn) {
-      btn.onclick = async () => {
+      
+btn.onclick = async () => {
         const user = Auth.currentUser();
         if (!user) {
           toast('Please log in to continue.', { important: true });
-          localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
-          location.href = 'login.html';
+          location.href = buildLoginUrl('checkout.html');
           return;
         }
-
-        const orderItemsResolved = filled.map(it => ({
-          productId: String(it.productId),
-          size: String(it.size || ''),
-          qty: Number(it.qty || 0),
-          name: String(it.name || 'Item'),
-          price: Number(it.price || 0),
-          image: String(it.image || '')
-        }));
 
         try {
-          const payload = {
-            items: orderItemsResolved.map(it => ({
-              productId: it.productId,
-              size: it.size,
-              qty: it.qty
-            }))
-          };
+          // Server is the source of truth: it reads DB cart + prices and creates the order.
+          const resp = await apiJson('/api/orders', { method: 'POST', body: {} });
+          if (!resp || !resp.ok) throw new Error(resp?.error || 'Checkout failed');
 
-          const res = await fetch('/api/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            credentials: 'include'
-          });
-
-          const data = await res.json().catch(() => null);
-
-          if (!res.ok) {
-            throw new Error(data?.error || 'Could not place order.');
-          }
-
-          const orderId = String(data?.orderId || data?.order?.id || '').trim();
-          if (!orderId) throw new Error('Order placed but missing order id from server.');
-
-          Cart.clear();
+          await Cart.clear();
           UI.updateCartBadges();
           toast('Order placed.');
-          location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
-          return;
+          location.href = `receipt.html?order=${encodeURIComponent(resp.order.id)}`;
         } catch (err) {
-          const msg = String(err?.message || '');
-          const canFallback =
-            msg.toLowerCase().includes('failed to fetch') ||
-            msg.toLowerCase().includes('networkerror') ||
-            msg.toLowerCase().includes('not found') ||
-            msg.toLowerCase().includes('unexpected token');
-
-          if (!canFallback) {
-            toast(msg || 'Could not place order.', { important: true });
-            return;
-          }
+          console.error(err);
+          toast(err?.message || 'Could not place order.', { important: true });
         }
-
-        // --- DEMO FALLBACK ---
-        const now = nowISO();
-        const orderId = uid('ord_');
-        const totalJMD = Number(subtotal || 0);
-
-        const order = {
-          id: orderId,
-          createdAt: now,
-          status: 'Placed',
-          history: [{ at: now, by: 'System', from: '—', to: 'Placed' }],
-          totalJMD,
-          items: orderItemsResolved
-        };
-
-        const st2 = readState();
-        const em = String(user.email || '').trim().toLowerCase();
-        st2.ordersByUser[em] = Array.isArray(st2.ordersByUser[em]) ? st2.ordersByUser[em] : [];
-        st2.ordersByUser[em].unshift(order);
-        writeState(st2);
-
-        Cart.clear();
-        UI.updateCartBadges();
-        toast('Order placed (demo).');
-        location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
       };
     }
   }
@@ -2030,6 +1756,7 @@ const printBtn = document.getElementById('printReceiptBtn');
 
     // IMPORTANT: hydrate from server cookie session FIRST
     await Auth.bootstrap();
+    await Cart.ensureLoaded();
 
     UI.updateNavAuthState();
     UI.updateCartBadges();

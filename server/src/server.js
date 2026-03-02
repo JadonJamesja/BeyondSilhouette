@@ -135,83 +135,6 @@ app.get("/api/products", async (req, res) => {
 });
 
 // -----------------------------
-// PUBLIC PRODUCTS LOOKUP (by ids) — used by checkout to recover display info
-// GET /api/products/lookup?ids=id1,id2,...
-// Returns the SAME public shape as /api/products for just the requested ids.
-// -----------------------------
-app.get("/api/products/lookup", async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-
-  const idsRaw = String(req.query?.ids || "").trim();
-  const ids = idsRaw
-    .split(",")
-    .map((s) => String(s || "").trim())
-    .filter(Boolean)
-    .slice(0, 200);
-
-  if (!ids.length) {
-    return res.status(400).json({ ok: false, error: "Missing ids" });
-  }
-
-  try {
-    const products = await prisma.product.findMany({
-      where: { id: { in: ids }, isPublished: true },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        description: true,
-        priceJMD: true,
-        isPublished: true,
-        createdAt: true,
-        updatedAt: true,
-        images: {
-          orderBy: { sortOrder: "asc" },
-          select: { url: true, alt: true, sortOrder: true },
-        },
-        inventory: {
-          orderBy: { size: "asc" },
-          select: { size: true, stock: true },
-        },
-      },
-    });
-
-    const mapped = products.map((p) => {
-      const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
-
-      for (const row of p.inventory || []) {
-        const k = String(row.size || "").trim().toUpperCase();
-        if (k === "S" || k === "M" || k === "L" || k === "XL") {
-          stockBySize[k] = Number.isFinite(Number(row.stock))
-            ? Math.max(0, Math.round(Number(row.stock)))
-            : 0;
-        }
-      }
-
-      const coverUrl = p.images && p.images.length > 0 ? String(p.images[0].url) : "";
-
-      return {
-        id: p.id,
-        slug: p.slug || null,
-        title: p.name,
-        description: p.description || "",
-        priceJMD: p.priceJMD,
-        status: p.isPublished ? "published" : "draft",
-        sizes: ["S", "M", "L", "XL"],
-        stockBySize,
-        media: { coverUrl },
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-      };
-    });
-
-    return res.json({ ok: true, products: mapped });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to lookup products" });
-  }
-});
-
-// -----------------------------
 // AUTH (backend foundation)
 // -----------------------------
 app.get("/api/me", async (req, res) => {
@@ -585,18 +508,282 @@ function parseQty(v) {
 }
 
 // -----------------------------
+// CART (DB-backed) + INVENTORY RESERVATIONS
+// - No guest cart
+// - Cart persists in DB (cart_items)
+// - Stock is only decremented at checkout (/api/orders)
+// - Reservations expire automatically (inventory_reservations)
+// -----------------------------
+const RESERVATION_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+async function cleanupExpiredReservations(tx) {
+  const now = new Date();
+  await tx.inventoryReservation.deleteMany({
+    where: { expiresAt: { lt: now } },
+  });
+}
+
+async function getReservedByOthers(tx, productId, size, userId) {
+  const now = new Date();
+  const agg = await tx.inventoryReservation.aggregate({
+    where: {
+      productId,
+      size,
+      expiresAt: { gt: now },
+      NOT: { userId },
+    },
+    _sum: { qty: true },
+  });
+  return Number(agg?._sum?.qty || 0);
+}
+
+function clampInt(n, min, max) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return min;
+  return Math.max(min, Math.min(max, Math.floor(v)));
+}
+
+// POST /api/products/lookup  { ids: [...] }
+// Used by checkout/cart UI to fill in name/price/image when needed.
+app.post("/api/products/lookup", async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const clean = Array.from(new Set(ids.map((x) => String(x || "").trim()).filter(Boolean))).slice(0, 200);
+
+  if (!clean.length) return res.json({ ok: true, products: {} });
+
+  try {
+    const products = await prisma.product.findMany({
+      where: { id: { in: clean } },
+      select: {
+        id: true,
+        name: true,
+        priceJMD: true,
+        images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } },
+      },
+    });
+
+    const out = {};
+    for (const p of products) {
+      out[p.id] = {
+        id: p.id,
+        name: p.name,
+        priceJMD: p.priceJMD,
+        imageUrl: p.images?.[0]?.url || "",
+        imageAlt: p.images?.[0]?.alt || "",
+      };
+    }
+
+    return res.json({ ok: true, products: out });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to lookup products" });
+  }
+});
+
+// GET /api/cart
+app.get("/api/cart", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      await cleanupExpiredReservations(tx);
+
+      const cart = await tx.cartItem.findMany({
+        where: { userId: sess.userId },
+        orderBy: { updatedAt: "desc" },
+        select: { productId: true, size: true, qty: true, updatedAt: true },
+      });
+
+      if (!cart.length) return { items: [], subtotal: 0, totalQty: 0 };
+
+      const productIds = Array.from(new Set(cart.map((c) => c.productId)));
+      const [products, invRows] = await Promise.all([
+        tx.product.findMany({
+          where: { id: { in: productIds } },
+          select: {
+            id: true,
+            name: true,
+            priceJMD: true,
+            images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } },
+          },
+        }),
+        tx.inventory.findMany({
+          where: { productId: { in: productIds } },
+          select: { productId: true, size: true, stock: true },
+        }),
+      ]);
+
+      const productById = new Map(products.map((p) => [p.id, p]));
+      const stockMap = new Map(invRows.map((r) => [`${r.productId}::${r.size}`, Number(r.stock || 0)]));
+
+      const now = new Date();
+      const nextExpiry = new Date(now.getTime() + RESERVATION_TTL_MS);
+
+      const itemsOut = [];
+      let subtotal = 0;
+      let totalQty = 0;
+
+      for (const row of cart) {
+        const key = `${row.productId}::${row.size}`;
+        const p = productById.get(row.productId);
+        const stock = Number(stockMap.get(key) || 0);
+
+        const otherHeld = await getReservedByOthers(tx, row.productId, row.size, sess.userId);
+        const availableForUser = Math.max(0, stock - otherHeld);
+
+        const desired = clampInt(row.qty, 1, 9999);
+        const clamped = Math.min(desired, availableForUser);
+
+        // Keep DB consistent if we had to clamp down
+        if (clamped <= 0) {
+          await tx.cartItem.deleteMany({ where: { userId: sess.userId, productId: row.productId, size: row.size } });
+          await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId: row.productId, size: row.size } });
+          continue;
+        }
+
+        if (clamped !== desired) {
+          await tx.cartItem.updateMany({
+            where: { userId: sess.userId, productId: row.productId, size: row.size },
+            data: { qty: clamped },
+          });
+        }
+
+        // Refresh reservation TTL (best effort)
+        await tx.inventoryReservation.upsert({
+          where: { userId_productId_size: { userId: sess.userId, productId: row.productId, size: row.size } },
+          update: { qty: clamped, expiresAt: nextExpiry },
+          create: { userId: sess.userId, productId: row.productId, size: row.size, qty: clamped, expiresAt: nextExpiry },
+        });
+
+        const unitPrice = Number(p?.priceJMD || 0);
+        subtotal += unitPrice * clamped;
+        totalQty += clamped;
+
+        itemsOut.push({
+          productId: row.productId,
+          size: row.size,
+          qty: clamped,
+          name: p?.name || row.productId,
+          priceJMD: unitPrice,
+          imageUrl: p?.images?.[0]?.url || "",
+          imageAlt: p?.images?.[0]?.alt || "",
+          available: availableForUser,
+        });
+      }
+
+      return { items: itemsOut, subtotal, totalQty };
+    });
+
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to load cart" });
+  }
+});
+
+// PATCH /api/cart/item   { productId, size, qty }
+// qty <= 0 removes
+app.patch("/api/cart/item", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  const productId = String(req.body?.productId || "").trim();
+  const size = String(req.body?.size || "").trim();
+  const qtyIn = Number(req.body?.qty);
+
+  if (!productId || !size) return res.status(400).json({ ok: false, error: "Missing productId/size" });
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await cleanupExpiredReservations(tx);
+
+      if (!Number.isFinite(qtyIn) || qtyIn <= 0) {
+        await tx.cartItem.deleteMany({ where: { userId: sess.userId, productId, size } });
+        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
+        return;
+      }
+
+      // Ensure product exists
+      const p = await tx.product.findUnique({ where: { id: productId }, select: { id: true } });
+      if (!p) {
+        const e = new Error("NOT_FOUND");
+        e.code = "NOT_FOUND";
+        throw e;
+      }
+
+      const inv = await tx.inventory.findUnique({
+        where: { productId_size: { productId, size } },
+        select: { stock: true },
+      });
+
+      const stock = Number(inv?.stock || 0);
+      const otherHeld = await getReservedByOthers(tx, productId, size, sess.userId);
+      const availableForUser = Math.max(0, stock - otherHeld);
+
+      const desired = clampInt(qtyIn, 1, 9999);
+      const clamped = Math.min(desired, availableForUser);
+
+      if (clamped <= 0) {
+        await tx.cartItem.deleteMany({ where: { userId: sess.userId, productId, size } });
+        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
+        return;
+      }
+
+      await tx.cartItem.upsert({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        update: { qty: clamped },
+        create: { userId: sess.userId, productId, size, qty: clamped },
+      });
+
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + RESERVATION_TTL_MS);
+
+      await tx.inventoryReservation.upsert({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        update: { qty: clamped, expiresAt },
+        create: { userId: sess.userId, productId, size, qty: clamped, expiresAt },
+      });
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "NOT_FOUND") return res.status(404).json({ ok: false, error: "Product not found" });
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to update cart" });
+  }
+});
+
+// POST /api/cart/clear
+app.post("/api/cart/clear", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.cartItem.deleteMany({ where: { userId: sess.userId } });
+      await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId } });
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to clear cart" });
+  }
+});
+
+// -----------------------------
 // ORDERS (MVP)
 // -----------------------------
 app.post("/api/orders", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
-  const items = rawItems
+  // Source of truth: DB cart (no guest cart, no client-sent prices)
+  const cartItems = await prisma.cartItem.findMany({
+    where: { userId: sess.userId },
+    select: { productId: true, size: true, qty: true },
+  });
+
+  const items = cartItems
     .map((it) => ({
-      productId: String(it?.productId || "").trim(),
-      size: String(it?.size || "").trim(),
-      quantity: parseQty(it?.quantity ?? it?.qty),
+      productId: String(it.productId || "").trim(),
+      size: String(it.size || "").trim(),
+      quantity: parseQty(it.qty),
     }))
     .filter((it) => it.productId && it.size && it.quantity > 0);
 
@@ -665,7 +852,7 @@ app.post("/api/orders", async (req, res) => {
       const subtotal = orderItems.reduce((sum, li) => sum + li.unitPrice * li.quantity, 0);
       const total = subtotal;
 
-      return tx.order.create({
+      const created = await tx.order.create({
         data: {
           userId: sess.userId,
           subtotal,
@@ -676,6 +863,13 @@ app.post("/api/orders", async (req, res) => {
         },
         select: { id: true, subtotal: true, total: true, currency: true, status: true, createdAt: true },
       });
+
+// Clear cart + reservations after successful checkout
+await tx.cartItem.deleteMany({ where: { userId: sess.userId } });
+await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId } });
+
+return created;
+
     });
 
     return res.status(201).json({ ok: true, order });
