@@ -1,6 +1,6 @@
 /* BeyondSilhouette Admin UI (FULL FILE)
    Phase 1:
-   - Admin-only access using EXISTING site localStorage auth (bs_session_v1 + bs_users_v1)
+   - Admin-only access using EXISTING site server cookie session (/api/me)
    - DEV-only promotion via console: makeAdmin(email) lives in client/js/main.js
    - Persisted theme (dark/light)
    - Settings page persists admin settings (bs_admin_settings_v1)
@@ -24,6 +24,16 @@ const ADMIN = {
   settings: 'bs_admin_settings_v1',
   sidebar: 'bs_admin_sidebar_v1' // NEW: persist desktop collapse across pages
 };
+
+// In-memory preferences only (NO browser storage)
+const __MEM_ADMIN = {
+  theme: null,
+  sidebarCollapsed: false,
+  settings: {},
+  siteState: {},
+};
+
+
 
 const qs = (sel, root = document) => root.querySelector(sel);
 const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -211,7 +221,7 @@ function formatDateShort(iso) {
 
 /* ================= Theme (persisted) ================= */
 function readTheme() {
-  const raw = localStorage.getItem(ADMIN.theme);
+  const raw = __MEM_ADMIN.theme;
   const t = String(raw || '').trim().toLowerCase();
   return (t === 'light' || t === 'dark') ? t : 'dark';
 }
@@ -219,7 +229,7 @@ function readTheme() {
 function applyTheme(theme) {
   const t = (String(theme || '').toLowerCase() === 'light') ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', t);
-  localStorage.setItem(ADMIN.theme, t);
+  __MEM_ADMIN.theme = String(t);
 }
 
 function toggleTheme() {
@@ -230,12 +240,12 @@ function toggleTheme() {
 
 /* ================= Sidebar persistence + active nav ================= */
 function readSidebarPref() {
-  return localStorage.getItem(ADMIN.sidebar) === 'collapsed';
+  return __MEM_ADMIN.sidebarCollapsed === true;
 }
 
 function writeSidebarPref(isCollapsed) {
-  if (isCollapsed) localStorage.setItem(ADMIN.sidebar, 'collapsed');
-  else localStorage.removeItem(ADMIN.sidebar);
+  if (isCollapsed) __MEM_ADMIN.sidebarCollapsed = true;
+  else __MEM_ADMIN.sidebarCollapsed = false;
 }
 
 function applySidebarPref() {
@@ -282,7 +292,7 @@ function highlightActiveNav() {
 
 /* ================= Admin settings ================= */
 function readAdminSettings() {
-  const raw = localStorage.getItem(ADMIN.settings);
+  const raw = JSON.stringify(__MEM_ADMIN.settings || {});
   const obj = raw ? (safeParse(raw) || {}) : {};
   const lowStockThreshold = Number(obj.lowStockThreshold);
   return {
@@ -292,7 +302,7 @@ function readAdminSettings() {
 
 function writeAdminSettings(next) {
   const obj = next && typeof next === 'object' ? next : {};
-  localStorage.setItem(ADMIN.settings, JSON.stringify(obj));
+  __MEM_ADMIN.settings = (obj) || {};
 }
 
 /* ================= Sidebar + delegated actions ================= */
@@ -337,7 +347,7 @@ function bindDelegatedActions() {
   });
 }
 
-// ===== PRODUCTS (DB-backed instead of bs_products_v1 localStorage) =====
+// ===== PRODUCTS (DB-backed instead of bs_products_v1 DB) =====
 
 async function apiAdminJSON(path, opts = {}) {
   const res = await fetch(path, {
@@ -860,7 +870,7 @@ async function initProductsManager() {
 
 /* ================= Orders helpers (REAL) ================= */
 function readState() {
-  const raw = localStorage.getItem(SITE.state);
+  const raw = JSON.stringify(__MEM_ADMIN.siteState || {});
   const st = raw ? (safeParse(raw) || {}) : {};
   st.ordersByUser = st.ordersByUser || {};
   return st;
@@ -870,7 +880,7 @@ function writeState(st) {
   if (!obj.ordersByUser || typeof obj.ordersByUser !== 'object') {
     obj.ordersByUser = {};
   }
-  localStorage.setItem(SITE.state, JSON.stringify(obj));
+  __MEM_ADMIN.siteState = (obj) || {};
 }
 
 function setOrderStatusInState(email, orderId, nextStatus, actor) {
@@ -1605,8 +1615,8 @@ function initSettings() {
   }
 
   function reset() {
-    localStorage.removeItem(ADMIN.theme);
-    localStorage.removeItem(ADMIN.settings);
+    __MEM_ADMIN.theme = null;
+    __MEM_ADMIN.settings = {};
     applyTheme(readTheme());
     hydrate();
     toast('Settings reset.');

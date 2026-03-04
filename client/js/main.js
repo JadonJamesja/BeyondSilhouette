@@ -2,7 +2,7 @@
  * Beyond Silhouette — main.js (FULL SITE)
  * - Shop renders from Products Store (window.BSProducts) if present
  * - If total stock = 0 => prints "New stock coming soon."
- * - Cart + auth + checkout + orders remain local demo (localStorage)
+ * - Cart + auth + checkout + orders remain production (DB-backed)
  *
  * IMPORTANT:
  * - Checkout will ONLY render into an existing <main> element (to avoid wiping the header/nav).
@@ -21,16 +21,6 @@
   // -----------------------------
   // KEYS / STORAGE
   // -----------------------------
-  const KEYS = {
-    state: 'bs_state_v1',          // { cartByUser, productCache, ordersByUser }
-    session: 'bs_session_v1',      // { email, token, createdAt, provider }
-    users: 'bs_users_v1',          // { [email]: { email, name, passwordHash, createdAt, role } }
-    returnTo: 'bs_return_to_v1',   // { href }
-    pwReset: 'bs_pw_reset_v1'      // { [email]: { code, expiresAt }
-  };
-
-  const USER_GUEST = '__guest__';
-
   // -----------------------------
   // UTILS
   // -----------------------------
@@ -38,6 +28,17 @@
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
   const nowISO = () => new Date().toISOString();
+
+  const getReturnTo = () => {
+    try { return new URLSearchParams(location.search).get('returnTo'); } catch { return null; }
+  };
+  const withReturnTo = (href) => {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('returnTo', href);
+      return u.search;
+    } catch { return ''; }
+  };
   const uid = (p = '') => p + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
   const page = () => (location.pathname.split('/').pop() || '').toLowerCase();
@@ -113,9 +114,19 @@
   // -----------------------------
   // STATE
   // -----------------------------
+  
+  // -----------------------------
+  // IN-MEMORY STATE (NO browser storage)
+  // -----------------------------
+  const __MEM = {
+    state: { cartByUser: {}, productCache: {}, ordersByUser: {} },
+    session: null,
+    users: {},
+    pwResets: {},
+  };
+
   function readState() {
-    const raw = localStorage.getItem(KEYS.state);
-    const st = raw ? (safeParse(raw) || {}) : {};
+    const st = __MEM.state || {};
     st.cartByUser = st.cartByUser || {};
     st.productCache = st.productCache || {};
     st.ordersByUser = st.ordersByUser || {};
@@ -123,42 +134,35 @@
   }
 
   function writeState(st) {
-    localStorage.setItem(KEYS.state, JSON.stringify(st));
+    __MEM.state = st || { cartByUser: {}, productCache: {}, ordersByUser: {} };
   }
 
   function readSession() {
-    const raw = localStorage.getItem(KEYS.session);
-    return raw ? (safeParse(raw) || null) : null;
+    return __MEM.session || null;
   }
 
   function writeSession(sess) {
-    localStorage.setItem(KEYS.session, JSON.stringify(sess));
+    __MEM.session = sess || null;
   }
 
   function clearSession() {
-    localStorage.removeItem(KEYS.session);
+    __MEM.session = null;
   }
 
   function readUsers() {
-    const raw = localStorage.getItem(KEYS.users);
-    return raw ? (safeParse(raw) || {}) : {};
+    return __MEM.users || {};
   }
 
   function writeUsers(users) {
-    localStorage.setItem(KEYS.users, JSON.stringify(users || {}));
+    __MEM.users = users || {};
   }
 
-  // -----------------------------
-  // PASSWORD RESET STORE (OPTION B)
-  // -----------------------------
   function readPwResets() {
-    const raw = localStorage.getItem(KEYS.pwReset);
-    const obj = raw ? (safeParse(raw) || {}) : {};
-    return (obj && typeof obj === 'object') ? obj : {};
+    return __MEM.pwResets || {};
   }
 
   function writePwResets(map) {
-    localStorage.setItem(KEYS.pwReset, JSON.stringify(map || {}));
+    __MEM.pwResets = map || {};
   }
 
   function isExpiredISO(iso) {
@@ -249,7 +253,7 @@
           // Mark session provider as server (cookie is source of truth)
           writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'server' });
 
-          Cart.mergeGuestIntoUser(em);
+          await Cart.bootstrap();
           return true;
         }
 
@@ -323,7 +327,23 @@
       return data?.user || null;
     },
 
-    async logoutServer() {
+    
+    async loginWithGoogleCredential(credential) {
+      const token = String(credential || '').trim();
+      if (!token) throw new Error('Missing Google credential.');
+      const { ok, data } = await apiJson('/api/auth/google', {
+        method: 'POST',
+        body: { credential: token },
+      });
+      if (!ok || !data?.ok || !data?.user?.email) {
+        throw new Error(data?.error || 'Google sign-in failed.');
+      }
+      this._serverUser = data.user;
+      await Cart.bootstrap();
+      return data.user;
+    },
+
+async logoutServer() {
       // Cookie session clear
       await apiJson('/api/auth/logout', { method: 'POST' }).catch(() => null);
       this._serverUser = null;
@@ -332,83 +352,48 @@
     },
 
     // Public API used by forms (server-first, demo fallback)
+    
     async register({ fullname, email, password, confirmPassword }) {
       const em = String(email || '').trim().toLowerCase();
       const name = String(fullname || '').trim();
-
       const pw = String(password || '').trim();
       const cpw = String(confirmPassword || '').trim();
 
       if (!name || !em || !pw) throw new Error('Please fill in all required fields.');
+      if (confirmPassword != null && cpw !== '' && pw !== cpw) throw new Error('Passwords do not match.');
 
-      if (confirmPassword != null && cpw !== '' && pw !== cpw) {
-        throw new Error('Passwords do not match.');
+      const { ok, data } = await apiJson('/api/auth/register', {
+        method: 'POST',
+        body: { name, email: em, password: pw },
+      });
+
+      if (!ok || !data?.ok || !data?.user?.email) {
+        throw new Error(data?.error || 'Registration failed.');
       }
 
-      // Try server first
-      try {
-        const u = await this.registerServer({ fullname: name, email: em, password: pw });
-        return u;
-      } catch (err) {
-        // Only fallback if server endpoint is missing/unreachable
-        const msg = String(err?.message || '').toLowerCase();
-        const canFallback =
-          msg.includes('failed to fetch') ||
-          msg.includes('networkerror') ||
-          msg.includes('not found') ||
-          msg.includes('unexpected token');
-
-        if (!canFallback) throw err;
-      }
-
-      // ---- DEMO FALLBACK ----
-      const users = readUsers();
-      if (users[em]) throw new Error('An account already exists for this email.');
-
-      users[em] = {
-        email: em,
-        name: name,
-        passwordHash: demoHash(pw),
-        createdAt: nowISO(),
-        role: 'customer'
-      };
-
-      writeUsers(users);
-      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
-
-      Cart.mergeGuestIntoUser(em);
-      return users[em];
+      this._serverUser = data.user;
+      await Cart.bootstrap();
+      return data.user;
     },
 
+    
     async login({ email, password }) {
       const em = String(email || '').trim().toLowerCase();
       const pw = String(password || '').trim();
+      if (!em || !pw) throw new Error('Email and password are required.');
 
-      // Try server first
-      try {
-        const u = await this.loginServer({ email: em, password: pw });
-        return u;
-      } catch (err) {
-        const msg = String(err?.message || '').toLowerCase();
-        const canFallback =
-          msg.includes('failed to fetch') ||
-          msg.includes('networkerror') ||
-          msg.includes('not found') ||
-          msg.includes('unexpected token');
+      const { ok, data } = await apiJson('/api/auth/login', {
+        method: 'POST',
+        body: { email: em, password: pw },
+      });
 
-        if (!canFallback) throw err;
+      if (!ok || !data?.ok || !data?.user?.email) {
+        throw new Error(data?.error || 'Invalid credentials.');
       }
 
-      // ---- DEMO FALLBACK ----
-      const users = readUsers();
-      const u = users[em];
-
-      if (!u) throw new Error('No account found for this email.');
-      if (u.passwordHash !== demoHash(pw)) throw new Error('Incorrect password.');
-
-      writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'local' });
-      Cart.mergeGuestIntoUser(em);
-      return u;
+      this._serverUser = data.user;
+      await Cart.bootstrap();
+      return data.user;
     },
 
     updateProfile({ name, currentPassword, newPassword }) {
@@ -534,269 +519,90 @@
 // -----------------------------
 // CART
 // - Guest cart: local (existing behavior)
-// - Logged-in cart: server-backed (/api/cart) using InventoryReservation (no localStorage)
+// - Logged-in cart: server-backed (/api/cart) using InventoryReservation (DB-backed)
 // -----------------------------
-const Cart = (() => {
-  let _serverItems = [];
-  let _bootstrappedFor = null; // email last bootstrapped
 
-  function userKey() {
-    const u = Auth.currentUser();
-    return u ? u.email : USER_GUEST;
-  }
+const Cart = (() => {
+  let _items = []; // [{productId,size,qty,product:{id,name,priceJMD,image}}]
+  let _bootstrapped = false;
 
   function isLoggedIn() {
     const u = Auth.currentUser();
     return !!(u && u.email);
   }
 
-  function getGuestItems() {
-    const st = readState();
-    const items = st.cartByUser[USER_GUEST]?.items || [];
-    return Array.isArray(items) ? items : [];
+  function items() {
+    return Array.isArray(_items) ? _items : [];
   }
 
-  function setGuestItems(items) {
-    const st = readState();
-    st.cartByUser[USER_GUEST] = { items: Array.isArray(items) ? items : [] };
-    writeState(st);
-  }
-
-  function getServerItems() {
-    return Array.isArray(_serverItems) ? _serverItems : [];
-  }
-
-  function setServerItems(items) {
-    _serverItems = Array.isArray(items) ? items : [];
-  }
-
-  // Normalize server items -> { productId, size, qty }
-  function compactItems(items) {
-    return (Array.isArray(items) ? items : [])
-      .map((it) => ({
-        productId: String(it?.productId || '').trim(),
-        size: String(it?.size || '').trim(),
-        qty: Math.max(0, Number(it?.qty || 0)),
-      }))
-      .filter((it) => it.productId && it.size && it.qty > 0);
-  }
-
-  async function serverGet() {
-    const { ok, status, data } = await apiJson('/api/cart');
-    if (!ok) throw new Error(data?.error || `Cart load failed (${status})`);
-    return Array.isArray(data?.items) ? data.items : [];
-  }
-
-  async function serverPut(items) {
-    const { ok, status, data } = await apiJson('/api/cart', { method: 'PUT', body: { items } });
-    if (!ok) throw new Error(data?.error || `Cart update failed (${status})`);
-    return Array.isArray(data?.items) ? data.items : [];
-  }
-
-  async function serverAdd(productId, size, qty) {
-    const { ok, status, data } = await apiJson('/api/cart/add', {
-      method: 'POST',
-      body: { productId, size, qty }
-    });
-    if (!ok) throw new Error(data?.error || `Cart add failed (${status})`);
-    return Array.isArray(data?.items) ? data.items : [];
-  }
-
-  async function serverSetItem(productId, size, qty) {
-    const { ok, status, data } = await apiJson('/api/cart/item', {
-      method: 'PATCH',
-      body: { productId, size, qty }
-    });
-    if (!ok) throw new Error(data?.error || `Cart update failed (${status})`);
-    return Array.isArray(data?.items) ? data.items : [];
-  }
-
-  async function serverClear() {
-    const { ok, status, data } = await apiJson('/api/cart/clear', { method: 'POST' });
-    if (!ok) throw new Error(data?.error || `Cart clear failed (${status})`);
-    return true;
+  function count() {
+    return items().reduce((sum, it) => sum + Math.max(0, Number(it?.qty || 0)), 0);
   }
 
   async function bootstrap() {
-    const u = Auth.currentUser();
-    const email = u?.email ? String(u.email).toLowerCase() : null;
-
-    // Already bootstrapped for this user in this page session
-    if (email && _bootstrappedFor === email) return;
-
-    if (!email) {
-      // guest mode
-      _bootstrappedFor = null;
-      setServerItems([]);
-      return;
+    _bootstrapped = true;
+    if (!isLoggedIn()) {
+      _items = [];
+      return _items;
     }
-
-    // merge guest cart into server once, then clear guest cart
-    const guest = getGuestItems();
-    if (guest.length) {
-      try {
-        const merged = compactItems(guest);
-        const updated = await serverPut(merged);
-        setServerItems(updated);
-        setGuestItems([]);
-      } catch (e) {
-        // if server merge fails, don't destroy guest cart
-        console.warn('Cart merge failed:', e);
-      }
+    const { ok, data } = await apiJson('/api/cart');
+    if (ok && data?.ok && Array.isArray(data.items)) {
+      _items = data.items;
+    } else {
+      _items = [];
     }
-
-    try {
-      const items = await serverGet();
-      setServerItems(items);
-      _bootstrappedFor = email;
-    } catch (e) {
-      console.warn('Cart bootstrap failed:', e);
-      setServerItems([]);
-      _bootstrappedFor = email;
-    }
+    return _items;
   }
 
-  function load() {
-    return isLoggedIn() ? getServerItems() : getGuestItems();
-  }
-
-  function saveGuest(items) {
-    setGuestItems(Array.isArray(items) ? items : []);
+  async function refresh() {
+    if (!_bootstrapped) return bootstrap();
+    return bootstrap();
   }
 
   async function add(productId, size, qty = 1) {
-    const pid = String(productId);
-    const sz = String(size || '');
-    const qAdd = Math.max(1, Number(qty || 1));
-
-    if (isLoggedIn()) {
-      const updated = await serverAdd(pid, sz, qAdd);
-      setServerItems(updated);
+    if (!isLoggedIn()) {
+      // Require auth for DB cart
+      const rt = encodeURIComponent(location.pathname.replace(/^\//,'') || 'index.html');
+      location.href = `login.html?returnTo=${rt}`;
       return;
     }
-
-    // guest (existing clamp logic using Products stockBySize)
-    const items = load();
-    const product = Products.findById(pid);
-    const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
-    const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
-
-    const existing = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-
-    if (base !== null && Number.isFinite(base)) {
-      const otherQty = items.reduce((sum, row) => {
-        if (row !== existing && String(row.productId) === pid && String(row.size || '') === sz) {
-          return sum + Number(row.qty || 0);
-        }
-        return sum;
-      }, 0);
-
-      const maxAllowed = Math.max(0, base - otherQty);
-      if (maxAllowed <= 0) return;
-
-      const current = existing ? Number(existing.qty || 0) : 0;
-      const next = Math.min(maxAllowed, current + qAdd);
-
-      if (existing) existing.qty = next;
-      else items.push({ productId: pid, size: sz, qty: next });
-
-      saveGuest(items);
-      return;
-    }
-
-    if (existing) existing.qty = Number(existing.qty || 0) + qAdd;
-    else items.push({ productId: pid, size: sz, qty: qAdd });
-
-    saveGuest(items);
-  }
-
-  async function remove(productId, size) {
-    const pid = String(productId);
-    const sz = String(size || '');
-
-    if (isLoggedIn()) {
-      const updated = await serverSetItem(pid, sz, 0);
-      setServerItems(updated);
-      return;
-    }
-
-    const items = load().filter(i => !(String(i.productId) === pid && String(i.size || '') === sz));
-    saveGuest(items);
+    const payload = { productId: String(productId||'').trim(), size: String(size||'').trim(), qty: Math.max(1, Math.floor(Number(qty)||1)) };
+    const { ok, data } = await apiJson('/api/cart/add', { method: 'POST', body: payload });
+    if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to add to cart');
+    _items = Array.isArray(data.items) ? data.items : _items;
+    return _items;
   }
 
   async function setQty(productId, size, qty) {
-    const pid = String(productId);
-    const sz = String(size || '');
-
-    if (isLoggedIn()) {
-      const updated = await serverSetItem(pid, sz, qty);
-      setServerItems(updated);
-      return Number(qty || 0);
-    }
-
-    const items = load();
-    const it = items.find(i => String(i.productId) === pid && String(i.size || '') === sz);
-    if (!it) return null;
-
-    const desired = Math.max(1, Number(qty || 1));
-
-    const product = Products.findById(pid);
-    const hasStockMap = !!(product && product.stockBySize && typeof product.stockBySize === 'object' && sz);
-    const base = hasStockMap ? Number(product.stockBySize?.[sz] ?? 0) : null;
-
-    if (base !== null && Number.isFinite(base)) {
-      const otherQty = items.reduce((sum, row) => {
-        if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
-          return sum + Number(row.qty || 0);
-        }
-        return sum;
-      }, 0);
-
-      const maxAllowed = Math.max(0, base - otherQty);
-
-      if (maxAllowed <= 0) {
-        const nextItems = items.filter(row => row !== it);
-        saveGuest(nextItems);
-        return 0;
-      }
-
-      const applied = Math.min(maxAllowed, desired);
-      it.qty = applied;
-      saveGuest(items);
-      return applied;
-    }
-
-    it.qty = desired;
-    saveGuest(items);
-    return desired;
+    if (!isLoggedIn()) return;
+    const q = Math.max(0, Math.floor(Number(qty)||0));
+    const payload = { productId: String(productId||'').trim(), size: String(size||'').trim(), qty: q };
+    const { ok, data } = await apiJson('/api/cart/item', { method: 'PATCH', body: payload });
+    if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to update cart');
+    _items = Array.isArray(data.items) ? data.items : _items;
+    return _items;
   }
 
   async function clear() {
-    if (isLoggedIn()) {
-      await serverClear();
-      setServerItems([]);
-      return;
-    }
-    saveGuest([]);
-  }
-
-  function totalQty(items) {
-    return (items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
+    if (!isLoggedIn()) return;
+    const { ok, data } = await apiJson('/api/cart/clear', { method: 'POST' });
+    if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to clear cart');
+    _items = Array.isArray(data.items) ? data.items : [];
+    return _items;
   }
 
   return {
-    userKey,
+    load: bootstrap,
     bootstrap,
-    load,
+    refresh,
+    items,
+    count,
     add,
-    remove,
     setQty,
     clear,
-    totalQty,
   };
 })();
-
-  // -----------------------------
+// -----------------------------
   // PRODUCTS STORE (API-backed)
   // -----------------------------
   const Products = (() => {
@@ -987,26 +793,50 @@ const Cart = (() => {
       // cookie session should be set by server
       await Auth.bootstrap();
 
-      const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-      localStorage.removeItem(KEYS.returnTo);
       location.href = (rt && rt.href) ? rt.href : 'account.html';
     } catch (err) {
       toast('Google sign-in is not available yet (server endpoint missing).', { important: true });
     }
   }
 
-  function bindGoogleSignInIfPresent() {
+  
+  async function bindGoogleSignInIfPresent() {
     const p = page();
     if (p !== 'login.html' && p !== 'register.html' && p !== 'login' && p !== 'register') return;
 
-    const hasOnload = !!document.getElementById('g_id_onload');
-    const hasSignin = !!document.querySelector('.g_id_signin');
-    if (!hasOnload && !hasSignin) return;
+    const btnHost = document.querySelector('.g_id_signin');
+    if (!btnHost) return;
+
+    // Google Identity Services must be loaded (login.html includes it)
+    const gis = window.google?.accounts?.id;
+    if (!gis) return;
+
+    // Get client_id from server (no hardcoding in HTML)
+    const { ok, data } = await apiJson('/api/public/config');
+    const clientId = String(data?.googleClientId || '').trim();
+    if (!ok || !clientId) {
+      console.warn('Google client id not configured on server.');
+      return;
+    }
 
     window.BSGoogleLoginCallback = async (response) => {
       const credential = response?.credential;
       await handleGoogleCredential(credential);
     };
+
+    try {
+      gis.initialize({
+        client_id: clientId,
+        callback: window.BSGoogleLoginCallback,
+        auto_select: false,
+      });
+
+      // Render button
+      gis.renderButton(btnHost, { type: 'standard', size: 'large' });
+      gis.prompt(); // optional
+    } catch (e) {
+      console.error('Google init failed:', e);
+    }
   }
 
   // -----------------------------
@@ -1470,8 +1300,8 @@ const Cart = (() => {
     const user = Auth.currentUser();
     if (user) return;
 
-    localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: `${p}` }));
-    toast('Please log in to continue.', { important: true });
+    /* returnTo stored in URL */
+toast('Please log in to continue.', { important: true });
     location.href = 'login.html';
   }
 
@@ -1495,8 +1325,6 @@ const Cart = (() => {
         UI.updateNavAuthState();
         UI.updateCartBadges();
 
-        const rt = safeParse(localStorage.getItem(KEYS.returnTo));
-        localStorage.removeItem(KEYS.returnTo);
         location.href = (rt && rt.href) ? rt.href : 'account.html';
       } catch (err) {
         toast(err?.message || 'Login failed.', { important: true });
@@ -1628,8 +1456,8 @@ const Cart = (() => {
 
     const user = Auth.currentUser();
     if (!user) {
-      localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'edit-profile.html' }));
-      toast('Please log in to continue.', { important: true });
+      /* returnTo stored in URL */
+toast('Please log in to continue.', { important: true });
       location.href = 'login.html';
       return;
     }
@@ -1904,8 +1732,8 @@ const Cart = (() => {
         const user = Auth.currentUser();
         if (!user) {
           toast('Please log in to continue.', { important: true });
-          localStorage.setItem(KEYS.returnTo, JSON.stringify({ href: 'checkout.html' }));
-          location.href = 'login.html';
+          /* returnTo stored in URL */
+location.href = 'login.html';
           return;
         }
 

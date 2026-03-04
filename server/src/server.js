@@ -41,6 +41,15 @@ app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 // -----------------------------
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString() });
+
+// Public runtime config (safe to expose)
+app.get("/api/public/config", (req, res) => {
+  res.json({
+    ok: true,
+    googleClientId: GOOGLE_CLIENT_ID || null,
+  });
+});
+
 });
 
 // DB connectivity smoke test (Prisma)
@@ -332,41 +341,8 @@ function requireAdmin(req, res) {
   return sess;
 }
 
-// ADMIN: list orders
-app.get("/api/admin/orders", async (req, res) => {
-  const sess = requireAdmin(req, res);
-  if (!sess) return;
+// ===== ADMIN ORDERS =====
 
-  try {
-    const orders = await prisma.order.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        user: { select: { email: true, name: true } },
-        items: true,
-      },
-    });
-
-    res.json({
-      ok: true,
-      orders: orders.map((o) => ({
-        id: o.id,
-        createdAt: o.createdAt,
-        status: o.status,           // lowercase if that's what you store
-        totalJMD: o.total,          // your schema uses total
-        email: (o.user?.email || "").toLowerCase(),
-        customerName: o.user?.name || null,
-        items: o.items.map((it) => ({
-          name: it.productId,       // you do NOT store item name in order_items; you store productId
-          size: it.size,
-          qty: it.quantity,
-          priceJMD: it.unitPrice,
-        })),
-      })),
-    });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to list orders" });
-  }
-});
 
 // ADMIN: single order (includes history)
 app.get("/api/admin/orders/:id", async (req, res) => {
@@ -1518,6 +1494,22 @@ app.use((req, res, next) => {
   } catch (_) {}
   return next();
 });
+
+// -----------------------------
+// CLEAN URLS (no .html in production)
+// - /shop-page -> /shop-page.html (if exists)
+// - /cart -> /cart.html, etc.
+// -----------------------------
+app.get(/^\/(?!api\/|admin\/)([^.\/]+)\/?$/, (req, res, next) => {
+  try {
+    const name = String(req.params[0] || '').trim();
+    if (!name) return next();
+    const file = path.join(clientDir, `${name}.html`);
+    if (fs.existsSync(file)) return res.sendFile(file);
+  } catch (_) {}
+  return next();
+});
+
 app.use(express.static(clientDir));
 
 // Serve homepage
