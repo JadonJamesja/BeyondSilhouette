@@ -134,6 +134,58 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
+// ===============================
+// CART (DB-backed)
+// ===============================
+
+app.get("/api/cart", async (req, res) => {
+  try {
+
+    const session = await readSession(req);
+
+    if (!session?.userId) {
+      return res.status(401).json({
+        ok: false,
+        error: "Not authenticated"
+      });
+    }
+
+    const items = await prisma.cartItem.findMany({
+      where: { userId: session.userId },
+      include: {
+        product: {
+          include: {
+            images: true,
+            inventory: true
+          }
+        }
+      }
+    });
+
+    const formatted = items.map(i => ({
+      id: i.id,
+      productId: i.productId,
+      size: i.size,
+      quantity: i.quantity,
+      name: i.product.name,
+      priceJMD: i.product.priceJMD,
+      coverUrl: i.product.images?.[0]?.url || ""
+    }));
+
+    res.json({
+      ok: true,
+      items: formatted
+    });
+
+  } catch (err) {
+    console.error("Cart error:", err);
+    res.status(500).json({
+      ok: false,
+      error: "Cart failed"
+    });
+  }
+});
+
 // -----------------------------
 // AUTH (backend foundation)
 // -----------------------------
