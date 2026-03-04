@@ -20,9 +20,8 @@ model User {
   orders        Order[]
   statusChanges OrderStatusHistory[] @relation("OrderStatusActor")
 
-
   cartItems    CartItem[]
-    reservations InventoryReservation[]
+  reservations InventoryReservation[]
 
   @@map("users")
 }
@@ -41,9 +40,8 @@ model Product {
   inventory Inventory[]
   items     OrderItem[]
 
-
   cartItems    CartItem[]
-    reservations InventoryReservation[]
+  reservations InventoryReservation[]
 
   @@map("products")
 }
@@ -85,10 +83,9 @@ model Order {
   status    String   @default("processing")
   createdAt DateTime @default(now())
 
-  user  User       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  items OrderItem[]
-
-  history   OrderStatusHistory[]
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items   OrderItem[]
+  history OrderStatusHistory[]
 
   @@index([userId])
   @@map("orders")
@@ -113,15 +110,13 @@ model OrderItem {
 model OrderStatusHistory {
   id         String   @id @default(cuid())
   orderId    String
-  actorId    String?  // admin who changed it (nullable)
+  actorId    String?
   fromStatus String
   toStatus   String
   note       String?
   createdAt  DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  // Who changed it (admin). If the admin user gets deleted, keep history.
   actor User? @relation("OrderStatusActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
