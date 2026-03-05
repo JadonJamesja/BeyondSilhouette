@@ -1411,8 +1411,38 @@ app.get(/^\/(?!api\/|admin\/)([^.\/]+)\/?$/, (req, res, next) => {
   return next();
 });
 
-app.use(express.static(clientDir));
+app.use(express.static(CLIENT_DIR));
 
+
+app.use((req, res, next) => {
+
+  // Ignore API routes
+  if (req.path.startsWith("/api")) {
+    return next();
+  }
+
+  // Ignore asset directories
+  if (
+    req.path.startsWith("/images") ||
+    req.path.startsWith("/css") ||
+    req.path.startsWith("/js") ||
+    req.path.startsWith("/assets")
+  ) {
+    return next();
+  }
+
+  // Ignore requests that already include file extensions
+  if (req.path.includes(".")) {
+    return next();
+  }
+
+  const filePath = path.join(CLIENT_DIR, `${req.path}.html`);
+
+  res.sendFile(filePath, (err) => {
+    if (err) next();
+  });
+
+});
 // Serve homepage
 app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));
 
