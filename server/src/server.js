@@ -21,6 +21,8 @@ const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : nul
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const CLIENT_DIR = path.join(__dirname, "../../client");
+
 const PORT = Number(process.env.PORT || 3000);
 
 const app = express();
@@ -168,17 +170,17 @@ app.get("/api/site/home", async (req, res) => {
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
     const featuredProducts = featuredIds.length
       ? await prisma.product.findMany({
-          where: { id: { in: featuredIds }, isPublished: true },
-          select: {
-            id: true,
-            slug: true,
-            name: true,
-            description: true,
-            priceJMD: true,
-            images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } },
-            inventory: { orderBy: { size: "asc" }, select: { size: true, stock: true } },
-          },
-        })
+        where: { id: { in: featuredIds }, isPublished: true },
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          priceJMD: true,
+          images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } },
+          inventory: { orderBy: { size: "asc" }, select: { size: true, stock: true } },
+        },
+      })
       : [];
 
     // Keep stable order according to featuredProductIds
@@ -1352,7 +1354,7 @@ app.use((err, req, res, next) => {
       if (res.headersSent) return next(err);
       return res.status(500).json({ ok: false, error: "Server error. Please try again." });
     }
-  } catch (_) {}
+  } catch (_) { }
   return next(err);
 });
 
@@ -1392,7 +1394,7 @@ app.use((req, res, next) => {
     if (fs.existsSync(filePath)) {
       return res.sendFile(filePath);
     }
-  } catch (_) {}
+  } catch (_) { }
   return next();
 });
 
@@ -1407,7 +1409,7 @@ app.get(/^\/(?!api\/|admin\/)([^.\/]+)\/?$/, (req, res, next) => {
     if (!name) return next();
     const file = path.join(clientDir, `${name}.html`);
     if (fs.existsSync(file)) return res.sendFile(file);
-  } catch (_) {}
+  } catch (_) { }
   return next();
 });
 
