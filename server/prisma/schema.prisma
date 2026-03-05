@@ -160,3 +160,23 @@ model InventoryReservation {
   @@index([expiresAt])
   @@map("inventory_reservations")
 }
+model SiteHomeSettings {
+  id                 String   @id @default("singleton")
+  headline           String?
+  subheadline        String?
+  slideshowUrls      String[] @default([])
+  featuredProductIds String[] @default([])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("site_home_settings")
+}
+
+model AdminConfig {
+  id               String   @id @default("singleton")
+  lowStockThreshold Int     @default(3)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("admin_config")
+}

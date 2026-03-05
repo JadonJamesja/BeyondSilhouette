@@ -57,110 +57,95 @@
 
           </header>
 
-    <section class="grid two">
+    
+    <section class="section">
       <article class="card">
         <div class="card-head">
-          <h2 class="h2">Brand</h2>
-          <p class="muted">Reserved for upcoming DB-backed settings.</p>
-        </div>
-
-        <form class="form">
-          <label class="field">
-            <span class="label">Store name</span>
-            <input class="input" value="BeyondSilhouette" />
-          </label>
-
-          <label class="field">
-            <span class="label">Support email</span>
-            <input class="input" value="support@beyondsilhouette.com" />
-          </label>
-
-          <div class="row-between">
-            <button class="btn btn-ghost" type="button" data-action="toast" data-toast="Reset">Reset</button>
-            <button class="btn btn-primary" type="button" data-action="toast" data-toast="Saved">Save</button>
+          <div>
+            <h2 class="card-title">Home Page CMS</h2>
+            <p class="muted">Controls the public homepage slideshow + featured products (DB-backed).</p>
           </div>
-
-          <div class="hint">
-            Next: DB-backed Home Page CMS (Sprint 2) will land here as a real settings module.
-          </div>
-        </form>
-      </article>
-
-      <article class="card">
-        <div class="card-head">
-          <h2 class="h2">Backend setup</h2>
-          <p class="muted">This is the next phase we’ll build in this chat.</p>
-        </div>
-
-        <div class="stack">
-          <div class="panel">
-            <div class="row-between">
-              <div>
-                <div class="panel-title">Recommended: Firebase</div>
-                <div class="muted">Auth + Firestore + Storage</div>
-              </div>
-              <span class="badge badge-soft">Fastest</span>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="row-between">
-              <div>
-                <div class="panel-title">Alternative: Supabase</div>
-                <div class="muted">Auth + Postgres + Storage</div>
-              </div>
-              <span class="badge badge-soft">Great</span>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="row-between">
-              <div>
-                <div class="panel-title">Current mode</div>
-                <div class="muted">UI-only • demo actions</div>
-              </div>
-              <span class="badge">Ready</span>
-            </div>
-          </div>
-
-          <!-- Phase 1.4: Backup / Restore (LOCAL ONLY) -->
-          <div class="panel">
-            <div class="row-between">
-              <div>
-                <div class="panel-title">Backup & Restore</div>
-                <div class="muted">Export/restore local demo data (products, users, orders).</div>
-              </div>
-              <span class="badge badge-soft">Local</span>
-            </div>
-
-            <div class="mt-12">
-              <div class="row" style="flex-wrap:wrap;">
-                <button class="btn btn-primary btn-sm" type="button" data-action="export-backup">Export JSON</button>
-
-                <label class="field" style="min-width:220px; margin:0;">
-                  <span class="label">Restore file</span>
-                  <input id="adminBackupFile" class="input input-sm" type="file" accept="application/json" />
-                </label>
-
-                <button class="btn btn-ghost btn-sm" type="button" data-action="import-backup">Restore</button>
-              </div>
-
-              <div class="hint mt-12">
-                Tip: Export before big edits. Restore will overwrite local demo data.
-              </div>
-            </div>
+          <div class="row gap-8">
+            <button class="btn btn-ghost btn-sm" type="button" data-action="home-refresh">Refresh</button>
+            <button class="btn btn-primary btn-sm" type="button" data-action="home-save">Save</button>
           </div>
         </div>
 
-        <div class="card-foot row-between">
-          <div class="muted">Next: choose backend + schema mapping.</div>
-          <button class="btn btn-primary btn-sm" type="button" data-action="toast"
-            data-toast="We’ll map the steps next.">Start roadmap</button>
+        <div class="card-body">
+          <form id="homeSettingsForm" class="grid grid-2 gap-16" autocomplete="off">
+            <div class="field">
+              <label class="label" for="homeHeadline">Headline</label>
+              <input class="input" id="homeHeadline" name="headline" type="text" placeholder="e.g., Redefine your silhouette." />
+            </div>
+
+            <div class="field">
+              <label class="label" for="homeSubheadline">Subheadline</label>
+              <input class="input" id="homeSubheadline" name="subheadline" type="text" placeholder="Short supporting line for the hero." />
+            </div>
+
+            <div class="field col-span-2">
+              <label class="label" for="homeSlideshow">Slideshow image URLs (one per line)</label>
+              <textarea class="textarea" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
+              <div class="hint">Tip: Keep to 3–6 images. Use full https URLs.</div>
+            </div>
+
+            <div class="field col-span-2">
+              <label class="label" for="homeFeatured">Featured product IDs (one per line)</label>
+              <textarea class="textarea" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
+              <div class="hint">These must be valid Product IDs. Published products only show publicly.</div>
+              <div class="mt-8">
+                <button class="btn btn-ghost btn-sm" type="button" data-action="pick-featured">Pick from products</button>
+              </div>
+            </div>
+          </form>
+
+          <div id="featuredPicker" class="modal" hidden>
+            <div class="modal-card">
+              <div class="modal-head row-between">
+                <div>
+                  <div class="modal-title">Pick Featured Products</div>
+                  <div class="muted">Select up to 12 products.</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" type="button" data-action="close-featured">Close</button>
+              </div>
+              <div class="modal-body">
+                <input class="input" id="featuredSearch" type="search" placeholder="Search products..." />
+                <div id="featuredList" class="mt-12"></div>
+              </div>
+              <div class="modal-foot row-between">
+                <div class="muted"><span id="featuredCount">0</span> selected</div>
+                <button class="btn btn-primary btn-sm" type="button" data-action="apply-featured">Apply</button>
+              </div>
+            </div>
+          </div>
+
         </div>
       </article>
     </section>
 
-    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+    <section class="section">
+      <article class="card">
+        <div class="card-head row-between">
+          <div>
+            <h2 class="card-title">Admin Config</h2>
+            <p class="muted">Controls admin thresholds used on the dashboard.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" type="button" data-action="config-save">Save</button>
+        </div>
+
+        <div class="card-body">
+          <form id="adminConfigForm" class="grid grid-2 gap-16" autocomplete="off">
+            <div class="field">
+              <label class="label" for="lowStockThreshold">Low stock threshold</label>
+              <input class="input" id="lowStockThreshold" type="number" min="0" step="1" value="3" />
+              <div class="hint">A product counts as “low stock” when any size is ≤ this number (and > 0).</div>
+            </div>
+          </form>
+          <div class="alert" data-ui="settingsError" hidden></div>
+        </div>
+      </article>
+    </section>
+<footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
   </div>
 
   <script src="./admin.js"></script>

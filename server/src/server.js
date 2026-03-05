@@ -41,6 +41,7 @@ app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 // -----------------------------
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString() });
+});
 
 // Public runtime config (safe to expose)
 app.get("/api/public/config", (req, res) => {
@@ -50,9 +51,7 @@ app.get("/api/public/config", (req, res) => {
   });
 });
 
-});
-
-// DB connectivity smoke test (Prisma)
+// DB connectivity smoke test (Prisma) (Prisma)
 app.get("/api/db/health", async (req, res) => {
   if (!process.env.DATABASE_URL) {
     return res.status(500).json({
@@ -142,6 +141,196 @@ app.get("/api/products", async (req, res) => {
       ok: false,
       error: err?.message || "Failed to load products",
     });
+  }
+});
+
+
+// -----------------------------
+// SITE HOME SETTINGS (public + admin)
+// -----------------------------
+
+// Public: GET /api/site/home
+// Returns the singleton home settings + featured products (published only).
+app.get("/api/site/home", async (req, res) => {
+  try {
+    const settings = await prisma.siteHomeSettings.findUnique({
+      where: { id: "singleton" },
+      select: {
+        id: true,
+        headline: true,
+        subheadline: true,
+        slideshowUrls: true,
+        featuredProductIds: true,
+        updatedAt: true,
+      },
+    });
+
+    const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
+    const featuredProducts = featuredIds.length
+      ? await prisma.product.findMany({
+          where: { id: { in: featuredIds }, isPublished: true },
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            description: true,
+            priceJMD: true,
+            images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } },
+            inventory: { orderBy: { size: "asc" }, select: { size: true, stock: true } },
+          },
+        })
+      : [];
+
+    // Keep stable order according to featuredProductIds
+    const byId = new Map(featuredProducts.map(p => [p.id, p]));
+    const orderedFeatured = featuredIds.map(id => byId.get(id)).filter(Boolean).map((p) => {
+      const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
+      for (const row of p.inventory || []) {
+        const k = String(row.size || "").trim().toUpperCase();
+        if (k === "S" || k === "M" || k === "L" || k === "XL") stockBySize[k] = Math.max(0, Number(row.stock || 0));
+      }
+      return {
+        id: p.id,
+        slug: p.slug || null,
+        title: p.name,
+        description: p.description || "",
+        priceJMD: p.priceJMD,
+        sizes: ["S", "M", "L", "XL"],
+        stockBySize,
+        media: { coverUrl: p.images?.[0]?.url || "" },
+        isPublished: true,
+      };
+    });
+
+    return res.json({
+      ok: true,
+      home: {
+        headline: settings?.headline || null,
+        subheadline: settings?.subheadline || null,
+        slideshowUrls: Array.isArray(settings?.slideshowUrls) ? settings.slideshowUrls : [],
+        featuredProductIds: featuredIds,
+        updatedAt: settings?.updatedAt || null,
+      },
+      featured: orderedFeatured,
+    });
+  } catch (err) {
+    console.error("GET /api/site/home failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load home settings" });
+  }
+});
+
+// Admin: GET /api/admin/site/home
+app.get("/api/admin/site/home", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    const settings = await prisma.siteHomeSettings.findUnique({
+      where: { id: "singleton" },
+      select: {
+        id: true,
+        headline: true,
+        subheadline: true,
+        slideshowUrls: true,
+        featuredProductIds: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      home: settings || {
+        id: "singleton",
+        headline: null,
+        subheadline: null,
+        slideshowUrls: [],
+        featuredProductIds: [],
+        createdAt: null,
+        updatedAt: null,
+      },
+    });
+  } catch (err) {
+    console.error("GET /api/admin/site/home failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load home settings" });
+  }
+});
+
+// Admin: PUT /api/admin/site/home (upsert singleton)
+app.put("/api/admin/site/home", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const headline = req.body?.headline === null || req.body?.headline === undefined ? null : String(req.body.headline).trim() || null;
+  const subheadline = req.body?.subheadline === null || req.body?.subheadline === undefined ? null : String(req.body.subheadline).trim() || null;
+
+  const slideshowUrlsIn = Array.isArray(req.body?.slideshowUrls) ? req.body.slideshowUrls : [];
+  const slideshowUrls = slideshowUrlsIn.map((u) => String(u || "").trim()).filter(Boolean).slice(0, 20);
+
+  const featuredIn = Array.isArray(req.body?.featuredProductIds) ? req.body.featuredProductIds : [];
+  const featuredProductIds = featuredIn.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20);
+
+  try {
+    const saved = await prisma.siteHomeSettings.upsert({
+      where: { id: "singleton" },
+      update: { headline, subheadline, slideshowUrls, featuredProductIds },
+      create: { id: "singleton", headline, subheadline, slideshowUrls, featuredProductIds },
+      select: {
+        id: true,
+        headline: true,
+        subheadline: true,
+        slideshowUrls: true,
+        featuredProductIds: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.json({ ok: true, home: saved });
+  } catch (err) {
+    console.error("PUT /api/admin/site/home failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to save home settings" });
+  }
+});
+
+// -----------------------------
+// ADMIN CONFIG (thresholds, etc.)
+// -----------------------------
+
+app.get("/api/admin/config", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    const cfg = await prisma.adminConfig.findUnique({
+      where: { id: "singleton" },
+      select: { id: true, lowStockThreshold: true, updatedAt: true },
+    });
+    return res.json({ ok: true, config: cfg || { id: "singleton", lowStockThreshold: 3, updatedAt: null } });
+  } catch (err) {
+    console.error("GET /api/admin/config failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load admin config" });
+  }
+});
+
+app.put("/api/admin/config", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const n = Number(req.body?.lowStockThreshold);
+  const lowStockThreshold = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 3;
+
+  try {
+    const cfg = await prisma.adminConfig.upsert({
+      where: { id: "singleton" },
+      update: { lowStockThreshold },
+      create: { id: "singleton", lowStockThreshold },
+      select: { id: true, lowStockThreshold: true, updatedAt: true },
+    });
+    return res.json({ ok: true, config: cfg });
+  } catch (err) {
+    console.error("PUT /api/admin/config failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to save admin config" });
   }
 });
 // -----------------------------
@@ -341,112 +530,92 @@ function requireAdmin(req, res) {
   return sess;
 }
 
-// ===== ADMIN ORDERS =====
+// ===== ADMIN (requires admin role) =====
 
-
-// ADMIN: single order (includes history)
-app.get("/api/admin/orders/:id", async (req, res) => {
+// ADMIN: list users (no password hashes)
+app.get("/api/admin/users", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
 
-  const id = String(req.params.id || "").trim();
-  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+
+    return res.json({ ok: true, users });
+  } catch (err) {
+    console.error("GET /api/admin/users failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load users" });
+  }
+});
+
+// ADMIN: update a user's role (no delete; prevents self-demotion)
+app.patch("/api/admin/users/:id/role", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const id = String(req.params?.id || "").trim();
+  const role = String(req.body?.role || "").trim().toLowerCase();
+
+  if (!id) return res.status(400).json({ ok: false, error: "Missing user id" });
+
+  const allowed = new Set(["customer", "admin"]);
+  if (!allowed.has(role)) return res.status(400).json({ ok: false, error: "Invalid role" });
+
+  if (id === sess.userId && role !== "admin") {
+    return res.status(400).json({ ok: false, error: "You cannot remove your own admin role." });
+  }
 
   try {
-    const order = await prisma.order.findUnique({
+    const user = await prisma.user.update({
       where: { id },
-      include: {
-        user: { select: { email: true, name: true } },
-        items: { include: { product: { select: { name: true } } } }, // so UI gets real item name
-        history: {
-          orderBy: { createdAt: "desc" },
-          include: { actor: { select: { email: true, name: true } } },
-        },
-      },
+      data: { role },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
     });
 
-    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
-
-    res.json({
-      ok: true,
-      order: {
-        id: order.id,
-        createdAt: order.createdAt,
-        status: order.status,
-        totalJMD: order.total,
-        email: (order.user?.email || "").toLowerCase(),
-        customerName: order.user?.name || null,
-        items: order.items.map((it) => ({
-          name: it.product?.name || it.productId,
-          size: it.size,
-          qty: it.quantity,
-          priceJMD: it.unitPrice,
-        })),
-        history: order.history.map((h) => ({
-          id: h.id,
-          at: h.createdAt,
-          from: h.fromStatus,
-          to: h.toStatus,
-          by: h.actor
-            ? (h.actor.name ? `${h.actor.name} (${h.actor.email})` : h.actor.email)
-            : "admin",
-          note: h.note || null,
-        })),
-      },
-    });
+    return res.json({ ok: true, user });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
+    console.error("PATCH /api/admin/users/:id/role failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to update user role" });
   }
 });
 
-// ADMIN: update status + write history row
-app.patch("/api/admin/orders/:id/status", async (req, res) => {
+// ADMIN: dashboard stats (real DB)
+app.get("/api/admin/stats", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
 
-  const id = String(req.params.id || "").trim();
-  const nextStatus = String(req.body?.status || "").trim().toLowerCase();
-
-  if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
-  if (!nextStatus) return res.status(400).json({ ok: false, error: "Missing status" });
-
-  const allowed = new Set(["placed", "processing", "shipped", "delivered", "cancelled"]);
-  if (!allowed.has(nextStatus)) {
-    return res.status(400).json({ ok: false, error: "Invalid status" });
-  }
-
   try {
-    const order = await prisma.order.findUnique({ where: { id } });
-    if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
-
-    const prev = String(order.status || "placed").toLowerCase();
-    if (prev === nextStatus) return res.json({ ok: true, order });
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.order.update({
-        where: { id },
-        data: { status: nextStatus },
-      });
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: id,
-          actorId: sess.userId,
-          fromStatus: prev,
-          toStatus: nextStatus,
-        },
-      });
-
-      return u;
+    const cfg = await prisma.adminConfig.findUnique({
+      where: { id: "singleton" },
+      select: { lowStockThreshold: true },
     });
+    const threshold = Number(cfg?.lowStockThreshold ?? 3);
 
-    res.json({ ok: true, order: updated });
+    const [usersCount, ordersCount, lowInvRows, revenueAgg] = await Promise.all([
+      prisma.user.count(),
+      prisma.order.count(),
+      prisma.inventory.findMany({
+        where: { stock: { gt: 0, lte: threshold } },
+        distinct: ["productId"],
+        select: { productId: true },
+      }),
+      prisma.order.aggregate({ _sum: { total: true } }),
+    ]);
+
+    const lowStockCount = Array.isArray(lowInvRows) ? lowInvRows.length : 0;
+    const revenueJMD = Number(revenueAgg?._sum?.total || 0);
+
+    return res.json({
+      ok: true,
+      stats: { usersCount, ordersCount, lowStockCount, revenueJMD, lowStockThreshold: threshold },
+    });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to update status" });
+    console.error("GET /api/admin/stats failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load stats" });
   }
 });
-
-// ===== ADMIN ORDERS =====
 
 // ADMIN: list orders
 app.get("/api/admin/orders", async (req, res) => {
@@ -458,11 +627,11 @@ app.get("/api/admin/orders", async (req, res) => {
       orderBy: { createdAt: "desc" },
       include: {
         user: { select: { email: true, name: true } },
-        items: { include: { product: { select: { name: true } } } }, // ✅ add this
+        items: { include: { product: { select: { name: true } } } },
       },
     });
 
-    res.json({
+    return res.json({
       ok: true,
       orders: orders.map((o) => ({
         id: o.id,
@@ -472,7 +641,7 @@ app.get("/api/admin/orders", async (req, res) => {
         email: (o.user?.email || "").toLowerCase(),
         customerName: o.user?.name || null,
         items: o.items.map((it) => ({
-          name: it.product?.name || it.productId, // ✅ now real name
+          name: it.product?.name || it.productId,
           size: it.size,
           qty: it.quantity,
           priceJMD: it.unitPrice,
@@ -480,9 +649,11 @@ app.get("/api/admin/orders", async (req, res) => {
       })),
     });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to list orders" });
+    console.error("GET /api/admin/orders failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to list orders" });
   }
 });
+
 // ADMIN: single order (includes history)
 app.get("/api/admin/orders/:id", async (req, res) => {
   const sess = requireAdmin(req, res);
@@ -496,11 +667,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
       where: { id },
       include: {
         user: { select: { email: true, name: true } },
-        items: {
-          include: {
-            product: { select: { name: true } },
-          },
-        },
+        items: { include: { product: { select: { name: true } } } },
         history: {
           orderBy: { createdAt: "desc" },
           include: { actor: { select: { email: true, name: true } } },
@@ -510,7 +677,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
 
     if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
 
-    res.json({
+    return res.json({
       ok: true,
       order: {
         id: order.id,
@@ -530,17 +697,14 @@ app.get("/api/admin/orders/:id", async (req, res) => {
           at: h.createdAt,
           from: h.fromStatus,
           to: h.toStatus,
-          by: h.actor
-            ? (h.actor.name
-                ? `${h.actor.name} (${h.actor.email})`
-                : h.actor.email)
-            : "admin",
+          by: h.actor ? (h.actor.name ? `${h.actor.name} (${h.actor.email})` : h.actor.email) : "admin",
           note: h.note || null,
         })),
       },
     });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
+    console.error("GET /api/admin/orders/:id failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load order" });
   }
 });
 
@@ -556,295 +720,32 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
   if (!nextStatus) return res.status(400).json({ ok: false, error: "Missing status" });
 
   const allowed = new Set(["placed", "processing", "shipped", "delivered", "cancelled"]);
-  if (!allowed.has(nextStatus)) {
-    return res.status(400).json({ ok: false, error: "Invalid status" });
-  }
+  if (!allowed.has(nextStatus)) return res.status(400).json({ ok: false, error: "Invalid status" });
 
   try {
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findUnique({ where: { id }, select: { id: true, status: true } });
     if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
 
     const prev = String(order.status || "placed").toLowerCase();
     if (prev === nextStatus) return res.json({ ok: true, order });
 
     const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.order.update({
-        where: { id },
-        data: { status: nextStatus },
-      });
+      const u = await tx.order.update({ where: { id }, data: { status: nextStatus } });
 
       await tx.orderStatusHistory.create({
-        data: {
-          orderId: id,
-          actorId: sess.userId,
-          fromStatus: prev,
-          toStatus: nextStatus,
-        },
+        data: { orderId: id, actorId: sess.userId, fromStatus: prev, toStatus: nextStatus },
       });
 
       return u;
     });
 
-    res.json({ ok: true, order: updated });
+    return res.json({ ok: true, order: updated });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || "Failed to update status" });
+    console.error("PATCH /api/admin/orders/:id/status failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to update status" });
   }
 });
 
-function parseQty(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.floor(n));
-}
-
-
-// -----------------------------
-// CART (DB-backed reservations)
-// - Stores the cart server-side in inventory_reservations.
-// - Does NOT decrement inventory.stock until checkout (/api/orders).
-// - Uses short-lived reservations to reduce oversell risk.
-// -----------------------------
-
-const CART_RES_TTL_MIN = Number(process.env.CART_RES_TTL_MIN || 15); // minutes
-function cartExpiresAt() {
-  const ms = Math.max(1, CART_RES_TTL_MIN) * 60 * 1000;
-  return new Date(Date.now() + ms);
-}
-
-async function cleanupExpiredReservations(tx) {
-  const now = new Date();
-  await tx.inventoryReservation.deleteMany({
-    where: { expiresAt: { lt: now } },
-  });
-}
-
-async function reservedQtyByOthers(tx, { productId, size, userId }) {
-  const now = new Date();
-  const agg = await tx.inventoryReservation.aggregate({
-    where: {
-      productId,
-      size,
-      expiresAt: { gt: now },
-      userId: { not: userId },
-    },
-    _sum: { qty: true },
-  });
-  return Number(agg?._sum?.qty || 0);
-}
-
-async function availableStockForUser(tx, { productId, size, userId }) {
-  const inv = await tx.inventory.findUnique({
-    where: { productId_size: { productId, size } },
-    select: { stock: true },
-  });
-  const stock = Number(inv?.stock || 0);
-  const otherReserved = await reservedQtyByOthers(tx, { productId, size, userId });
-  return Math.max(0, stock - otherReserved);
-}
-
-async function readUserCart(tx, userId) {
-  await cleanupExpiredReservations(tx);
-
-  const rows = await tx.inventoryReservation.findMany({
-    where: { userId, expiresAt: { gt: new Date() } },
-    orderBy: { createdAt: "asc" },
-    select: {
-      productId: true,
-      size: true,
-      qty: true,
-      expiresAt: true,
-      product: {
-        select: {
-          id: true,
-          name: true,
-          priceJMD: true,
-          images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } },
-        },
-      },
-    },
-  });
-
-  return rows.map((r) => ({
-    productId: r.productId,
-    size: r.size,
-    qty: r.qty,
-    expiresAt: r.expiresAt,
-    product: {
-      id: r.product?.id || r.productId,
-      name: r.product?.name || "Item",
-      priceJMD: Number(r.product?.priceJMD || 0),
-      image: r.product?.images?.[0]?.url || "",
-    },
-  }));
-}
-
-// GET /api/cart  -> current cart (reservations)
-app.get("/api/cart", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  try {
-    const items = await prisma.$transaction((tx) => readUserCart(tx, sess.userId));
-    return res.json({ ok: true, items });
-  } catch (err) {
-    console.error("GET /api/cart failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to load cart" });
-  }
-});
-
-// PUT /api/cart  -> replace cart with provided items [{productId,size,qty}]
-app.put("/api/cart", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  const rawItems = Array.isArray(req.body?.items) ? req.body.items : Array.isArray(req.body) ? req.body : [];
-  const itemsIn = rawItems
-    .map((it) => ({
-      productId: String(it?.productId || "").trim(),
-      size: String(it?.size || "").trim(),
-      qty: parseQty(it?.qty ?? it?.quantity),
-    }))
-    .filter((it) => it.productId && it.size && it.qty > 0);
-
-  try {
-    const items = await prisma.$transaction(async (tx) => {
-      await cleanupExpiredReservations(tx);
-
-      // wipe existing user cart
-      await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId } });
-
-      for (const it of itemsIn) {
-        const avail = await availableStockForUser(tx, { productId: it.productId, size: it.size, userId: sess.userId });
-        const clamped = Math.min(avail, it.qty);
-        if (clamped <= 0) continue;
-
-        await tx.inventoryReservation.upsert({
-          where: { userId_productId_size: { userId: sess.userId, productId: it.productId, size: it.size } },
-          update: { qty: clamped, expiresAt: cartExpiresAt() },
-          create: {
-            userId: sess.userId,
-            productId: it.productId,
-            size: it.size,
-            qty: clamped,
-            expiresAt: cartExpiresAt(),
-          },
-        });
-      }
-
-      return readUserCart(tx, sess.userId);
-    });
-
-    return res.json({ ok: true, items });
-  } catch (err) {
-    console.error("PUT /api/cart failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to update cart" });
-  }
-});
-
-// POST /api/cart/add  -> add qty for a specific item
-app.post("/api/cart/add", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  const productId = String(req.body?.productId || "").trim();
-  const size = String(req.body?.size || "").trim();
-  const addQty = parseQty(req.body?.qty ?? req.body?.quantity ?? 1);
-
-  if (!productId || !size || addQty <= 0) {
-    return res.status(400).json({ ok: false, error: "productId, size, qty required" });
-  }
-
-  try {
-    const items = await prisma.$transaction(async (tx) => {
-      await cleanupExpiredReservations(tx);
-
-      const existing = await tx.inventoryReservation.findUnique({
-        where: { userId_productId_size: { userId: sess.userId, productId, size } },
-        select: { qty: true },
-      });
-      const current = Number(existing?.qty || 0);
-
-      const avail = await availableStockForUser(tx, { productId, size, userId: sess.userId });
-      const next = Math.min(avail, current + addQty);
-
-      if (next <= 0) {
-        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
-      } else {
-        await tx.inventoryReservation.upsert({
-          where: { userId_productId_size: { userId: sess.userId, productId, size } },
-          update: { qty: next, expiresAt: cartExpiresAt() },
-          create: { userId: sess.userId, productId, size, qty: next, expiresAt: cartExpiresAt() },
-        });
-      }
-
-      return readUserCart(tx, sess.userId);
-    });
-
-    return res.json({ ok: true, items });
-  } catch (err) {
-    console.error("POST /api/cart/add failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to add to cart" });
-  }
-});
-
-// PATCH /api/cart/item -> set qty for an item
-app.patch("/api/cart/item", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  const productId = String(req.body?.productId || "").trim();
-  const size = String(req.body?.size || "").trim();
-  const qty = parseQty(req.body?.qty ?? req.body?.quantity);
-
-  if (!productId || !size) {
-    return res.status(400).json({ ok: false, error: "productId and size required" });
-  }
-
-  try {
-    const items = await prisma.$transaction(async (tx) => {
-      await cleanupExpiredReservations(tx);
-
-      if (qty <= 0) {
-        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
-        return readUserCart(tx, sess.userId);
-      }
-
-      const avail = await availableStockForUser(tx, { productId, size, userId: sess.userId });
-      const clamped = Math.min(avail, qty);
-
-      if (clamped <= 0) {
-        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
-      } else {
-        await tx.inventoryReservation.upsert({
-          where: { userId_productId_size: { userId: sess.userId, productId, size } },
-          update: { qty: clamped, expiresAt: cartExpiresAt() },
-          create: { userId: sess.userId, productId, size, qty: clamped, expiresAt: cartExpiresAt() },
-        });
-      }
-
-      return readUserCart(tx, sess.userId);
-    });
-
-    return res.json({ ok: true, items });
-  } catch (err) {
-    console.error("PATCH /api/cart/item failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to update cart item" });
-  }
-});
-
-// POST /api/cart/clear -> remove all items
-app.post("/api/cart/clear", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  try {
-    await prisma.inventoryReservation.deleteMany({ where: { userId: sess.userId } });
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error("POST /api/cart/clear failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to clear cart" });
-  }
-});
 
 // -----------------------------
 // ORDERS (MVP)

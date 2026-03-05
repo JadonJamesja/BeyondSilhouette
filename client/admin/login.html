@@ -6,6 +6,7 @@
 <link rel="icon" type="image/png" href="/assets/favicon.png">
   <title>BeyondSilhouette • Admin Login</title>
   <link rel="stylesheet" href="./admin.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 
 <body class="auth">
@@ -64,7 +65,10 @@
         <div class="hint">Log in with an account that has been promoted to <code>admin</code>.</div>
 
         <div class="alert" data-ui="error" hidden></div>
-      </form>
+      
+      <div class="or muted">or</div>
+      <div id="adminGoogleBtn" class="g_id_signin"></div>
+    </form>
     </main>
 
     <footer class="auth-footer muted">

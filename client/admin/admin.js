@@ -1,1672 +1,821 @@
-/* BeyondSilhouette Admin UI (FULL FILE)
-   Phase 1:
-   - Admin-only access using EXISTING site server cookie session (/api/me)
-   - DEV-only promotion via console: makeAdmin(email) lives in client/js/main.js
-   - Persisted theme (dark/light)
-   - Settings page persists admin settings (bs_admin_settings_v1)
-   - Products Manager wired to existing Products Store (bs_products_v1) and your existing UI
-   - Dashboard wired to real orders + customers + products low-stock
-   - Orders page wired to real orders; includes real Order Details modal (if present in HTML)
-   - Customers page wired to real site users + orders
+/* Beyond Silhouette — Admin (DB-backed, no localStorage)
+   - Uses same-domain /api/* endpoints (Railway)
+   - Customers + Orders + Dashboard + Settings now pull from DB
+   - Admin Settings = Home Page CMS + Admin Config
 */
+(() => {
+  'use strict';
 
-'use strict';
+  // -----------------------------
+  // DOM utils
+  // -----------------------------
+  const qs = (sel, root = document) => root.querySelector(sel);
+  const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-const SITE = {
-  session: 'bs_session_v1',
-  users: 'bs_users_v1',
-  products: 'bs_products_v1',
-  state: 'bs_state_v1'
-};
-
-const ADMIN = {
-  theme: 'bs_admin_theme',
-  settings: 'bs_admin_settings_v1',
-  sidebar: 'bs_admin_sidebar_v1' // NEW: persist desktop collapse across pages
-};
-
-// In-memory preferences only (NO browser storage)
-const __MEM_ADMIN = {
-  theme: null,
-  sidebarCollapsed: false,
-  settings: {},
-  siteState: {},
-};
-
-
-
-const qs = (sel, root = document) => root.querySelector(sel);
-const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
-/* ================= Admin Auth (DB-backed via /api/me) ================= */
-
-let __ME_CACHE = null;
-
-function inAdminFolder() {
-  const p = location.pathname.replace(/\\/g, '/').toLowerCase();
-  return p.includes('/admin/');
-}
-
-function isAdminLoginPage() {
-  const p = location.pathname.replace(/\\/g, '/').toLowerCase();
-  return p.endsWith('/admin/login.html') || p.endsWith('/admin/login');
-}
-
-async function apiJSON(path, opts = {}) {
-  const res = await fetch(path, {
-    credentials: 'include',
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(opts.headers || {})
-    }
-  });
-
-  const data = await res.json().catch(() => ({}));
-  return { res, data };
-}
-
-async function fetchMe({ force = false } = {}) {
-  if (!force && __ME_CACHE) return __ME_CACHE;
-
-  const { res, data } = await apiJSON('/api/me', { method: 'GET' });
-
-  if (!res.ok) {
-    __ME_CACHE = null;
-    return null;
-  }
-
-  const user = data && data.user ? data.user : null;
-  __ME_CACHE = user && typeof user === 'object' ? user : null;
-  return __ME_CACHE;
-}
-
-function isAdminUser(user) {
-  return !!(user && String(user.role || '').toLowerCase() === 'admin');
-}
-
-async function requireAdminGate() {
-  if (!inAdminFolder()) return;
-
-  const me = await fetchMe();
-
-  if (!me) {
-    location.href = '../login.html';
-    return;
-  }
-
-  if (!isAdminUser(me)) {
-    location.href = '../index.html';
-    return;
-  }
-
-  if (isAdminLoginPage()) {
-    location.href = './dashboard.html';
-  }
-}
-
-async function hydrateAdminName() {
-  const me = __ME_CACHE || (await fetchMe());
-  const display =
-    me && (me.name || me.email)
-      ? String(me.name || me.email)
-      : 'Admin';
-
-  qsa('[data-ui="adminName"]').forEach((n) => {
-    n.textContent = display;
-  });
-}
-
-async function logoutSite() {
-  await apiJSON('/api/auth/logout', { method: 'POST' }).catch(() => null);
-  __ME_CACHE = null;
-}
-
-/* ================= Legacy shims (temporary) =================
-   NOTE:
-   - Your admin Orders/Customers/Dashboard code still expects "site users" + "orders"
-   - But /api/admin/users and /api/admin/orders do NOT exist yet (in your backend ZIP),
-     so we return safe empty data to prevent crashes.
-*/
-
-function getCurrentUser() {
-  // Use the DB /api/me cache from the auth block
-  return (typeof __ME_CACHE !== 'undefined' && __ME_CACHE) ? __ME_CACHE : null;
-}
-
-function readSiteUsers() {
-  // Until /api/admin/users exists, we can't DB-drive users here.
-  // Returning {} keeps dashboard/orders/customers from crashing.
-  return {};
-}
-
-/* ================= Core utils ================= */
-function safeParse(s) {
-  try { return JSON.parse(s); } catch { return null; }
-}
-
-function escapeHtml(s) {
-  return String(s || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
-function toInt(v) {
-  const n = Number(String(v == null ? '' : v).replace(/[^\d-]/g, ''));
-  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
-}
-
-function toPriceJMD(v) {
-  const n = Number(String(v == null ? '' : v).replace(/[^\d.]/g, ''));
-  return Number.isFinite(n) ? Math.max(0, n) : 0;
-}
-
-function statusKey(s) {
-  return String(s || '').trim().toLowerCase();
-}
-function statusLabel(s) {
-  const k = statusKey(s) || 'placed';
-  return k.charAt(0).toUpperCase() + k.slice(1);
-}
-
-function formatJ(n) {
-  const num = Math.round(Number(n || 0));
-  return 'J$ ' + num.toLocaleString('en-JM', { maximumFractionDigits: 0 });
-}
-
-function toast(message) {
-  let el = qs('.toast');
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'toast';
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-live', 'polite');
-    document.body.appendChild(el);
-  }
-  el.textContent = String(message || '');
-  el.classList.add('show');
-  window.clearTimeout(toast._t);
-  toast._t = window.setTimeout(() => el.classList.remove('show'), 2200);
-}
-
-function setYear() {
-  const year = new Date().getFullYear();
-  qsa('[data-ui="year"]').forEach(n => (n.textContent = String(year)));
-}
-
-function nowISO() {
-  return new Date().toISOString();
-}
-
-function uid(prefix = 'prod_') {
-  return prefix + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
-}
-
-function slugify(s) {
-  return String(s || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
-
-function formatDateShort(iso) {
-  const d = iso ? new Date(iso) : null;
-  if (!d || !Number.isFinite(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-}
-
-/* ================= Theme (persisted) ================= */
-function readTheme() {
-  const raw = __MEM_ADMIN.theme;
-  const t = String(raw || '').trim().toLowerCase();
-  return (t === 'light' || t === 'dark') ? t : 'dark';
-}
-
-function applyTheme(theme) {
-  const t = (String(theme || '').toLowerCase() === 'light') ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', t);
-  __MEM_ADMIN.theme = String(t);
-}
-
-function toggleTheme() {
-  const next = readTheme() === 'dark' ? 'light' : 'dark';
-  applyTheme(next);
-  toast(`Theme: ${next}`);
-}
-
-/* ================= Sidebar persistence + active nav ================= */
-function readSidebarPref() {
-  return __MEM_ADMIN.sidebarCollapsed === true;
-}
-
-function writeSidebarPref(isCollapsed) {
-  if (isCollapsed) __MEM_ADMIN.sidebarCollapsed = true;
-  else __MEM_ADMIN.sidebarCollapsed = false;
-}
-
-function applySidebarPref() {
-  if (!document.body) return;
-
-  // Mobile uses overlay drawer; never persist overlay-open
-  const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 920px)').matches);
-
-  // Always clear mobile overlay state on load + breakpoint changes
-  document.body.classList.remove('sidebar-open');
-
-  if (isMobile) {
-    document.body.classList.remove('sidebar-collapsed');
-    return;
-  }
-
-  if (readSidebarPref()) document.body.classList.add('sidebar-collapsed');
-  else document.body.classList.remove('sidebar-collapsed');
-}
-
-function bindSidebarMediaListener() {
-  if (!window.matchMedia) return;
-  const mql = window.matchMedia('(max-width: 920px)');
-  const onChange = () => applySidebarPref();
-  if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onChange);
-  else if (typeof mql.addListener === 'function') mql.addListener(onChange);
-}
-
-function highlightActiveNav() {
-  const path = location.pathname.replace(/\\/g, '/');
-  const current = (path.split('/').pop() || '').toLowerCase();
-
-  qsa('nav.nav a.nav-item[href]').forEach(a => {
-    const href = (a.getAttribute('href') || '').split('/').pop().toLowerCase();
-    if (href && href === current) {
-      a.classList.add('active');
-      a.setAttribute('aria-current', 'page');
-    } else {
-      a.classList.remove('active');
-      a.removeAttribute('aria-current');
-    }
-  });
-}
-
-/* ================= Admin settings ================= */
-function readAdminSettings() {
-  const raw = JSON.stringify(__MEM_ADMIN.settings || {});
-  const obj = raw ? (safeParse(raw) || {}) : {};
-  const lowStockThreshold = Number(obj.lowStockThreshold);
-  return {
-    lowStockThreshold: Number.isFinite(lowStockThreshold) ? Math.max(0, Math.floor(lowStockThreshold)) : 3
+  const fmtJMD = (n) => {
+    const v = Number(n);
+    const safe = Number.isFinite(v) ? v : 0;
+    return `J$ ${safe.toLocaleString('en-JM')}`;
   };
-}
 
-function writeAdminSettings(next) {
-  const obj = next && typeof next === 'object' ? next : {};
-  __MEM_ADMIN.settings = (obj) || {};
-}
+  const escapeHtml = (s) =>
+    String(s ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
 
-/* ================= Sidebar + delegated actions ================= */
-function bindDelegatedActions() {
-  document.addEventListener('click', (e) => {
-    const el = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
-    if (!el) return;
-
-    const action = el.getAttribute('data-action');
-    if (!action) return;
-
-    if (action === 'toggle-theme') {
-      e.preventDefault();
-      toggleTheme();
-      return;
-    }
-
-    if (action === 'toggle-sidebar') {
-      e.preventDefault();
-      if (window.matchMedia && window.matchMedia('(max-width: 920px)').matches) {
-        document.body.classList.toggle('sidebar-open');
-      } else {
-        document.body.classList.toggle('sidebar-collapsed');
-        writeSidebarPref(document.body.classList.contains('sidebar-collapsed'));
-      }
-      return;
-    }
-
-    if (action === 'logout') {
-      e.preventDefault();
-      Promise.resolve(logoutSite()).finally(() => {
-        location.href = '../login.html';
-      });
-      return;
-    }
-
-    if (action === 'toast') {
-      e.preventDefault();
-      toast(el.getAttribute('data-toast') || 'Done.');
-      return;
-    }
-  });
-}
-
-// ===== PRODUCTS (DB-backed instead of bs_products_v1 DB) =====
-
-async function apiAdminJSON(path, opts = {}) {
-  const res = await fetch(path, {
-    credentials: "include",
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-  return data;
-}
-async function apiTry(path, opts = {}) {
-  try {
+  // -----------------------------
+  // API helper
+  // -----------------------------
+  async function apiJSON(path, opts = {}) {
     const res = await fetch(path, {
-      credentials: "include",
+      credentials: 'include',
       ...opts,
       headers: {
-        "Content-Type": "application/json",
-        ...(opts.headers || {})
-      }
-    });
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok, status: res.status, data };
-  } catch (e) {
-    return { ok: false, status: 0, data: {} };
-  }
-}
-
-async function apiListAdminUsers() {
-  const r = await apiTry("/api/admin/users", { method: "GET" });
-  return r.ok && Array.isArray(r.data?.users) ? r.data.users : null; // null means "endpoint not ready"
-}
-
-async function apiListAdminOrders() {
-  const r = await apiTry("/api/admin/orders", { method: "GET" });
-  return r.ok && Array.isArray(r.data?.orders) ? r.data.orders : null;
-}
-
-async function apiUpdateAdminOrderStatus(id, status) {
-  const r = await apiTry(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: statusKey(status) })
-  });
-  return r.ok ? (r.data?.order || null) : null;
-}
-async function apiListAdminProducts() {
-  const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
-  return Array.isArray(data?.products) ? data.products : [];
-}
-
-async function apiCreateAdminProduct(payload) {
-  const data = await apiAdminJSON("/api/admin/products", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return data?.product || null;
-}
-
-async function apiUpdateAdminProduct(id, payload) {
-  const data = await apiAdminJSON(
-    `/api/admin/products/${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }
-  );
-  return data?.product || null;
-}
-
-// DB -> UI shape (admin UI expects title/status/media/stockBySize)
-function toUIProduct(db) {
-  const inv = Array.isArray(db?.inventory) ? db.inventory : [];
-  const stockBySize = { S: 0, M: 0, L: 0, XL: 0 };
-  for (const row of inv) {
-    const k = String(row?.size || "").trim().toUpperCase();
-    if (k in stockBySize) stockBySize[k] = Number(row?.stock || 0);
-  }
-
-  const images = Array.isArray(db?.images) ? db.images : [];
-  const coverUrl = images[0]?.url ? String(images[0].url) : "";
-
-  return {
-    id: db.id,
-    title: db.name || "",
-    description: db.description || "",
-    priceJMD: db.priceJMD ?? 0,
-    status: db.isPublished ? "published" : "draft",
-    media: { coverUrl },
-    stockBySize,
-  };
-}
-
-// UI -> DB payload (backend expects name/isPublished)
-function toDBPayload(ui) {
-  const name = String(ui?.title || "").trim();
-  const description = String(ui?.description || "").trim();
-  const priceJMD = Number(ui?.priceJMD || 0);
-  const isPublished = String(ui?.status || "draft") === "published";
-
-  const coverUrl = String(ui?.media?.coverUrl || "").trim();
-  const images = coverUrl ? [{ url: coverUrl, alt: name || null, sortOrder: 0 }] : [];
-
-  const sb = ui?.stockBySize || {};
-  const inventory = ["S", "M", "L", "XL"].map((size) => ({
-    size,
-    stock: Number(sb[size] || 0),
-  }));
-
-  return { name, description, priceJMD, isPublished, images, inventory };
-}
-
-// Replaces old readProductsRaw()
-async function readProductsRaw() {
-  const dbProducts = await apiListAdminProducts();
-  return dbProducts.map(toUIProduct);
-}
-
-// Old writeProductsRaw becomes no-op (DB is truth)
-function writeProductsRaw(_) { }
-
-// Replaces old upsertProduct()
-async function upsertProduct(product) {
-  const ui = product || {};
-  const payload = toDBPayload(ui);
-
-  if (!payload.name) throw new Error("Title is required.");
-
-  if (!ui.id) {
-    const created = await apiCreateAdminProduct(payload);
-    if (!created) throw new Error("Create failed.");
-    return toUIProduct(created);
-  }
-
-  const updated = await apiUpdateAdminProduct(ui.id, payload);
-  if (!updated) throw new Error("Update failed.");
-  return toUIProduct(updated);
-}
-// Publish/unpublish via PATCH (DB-backed)
-async function setPublished(id, yes) {
-  const pid = String(id || '').trim();
-  if (!pid) throw new Error('Missing product id.');
-
-  // Minimal PATCH that only toggles publish
-  const payload = { isPublished: !!yes };
-
-  const data = await apiAdminJSON(
-    `/api/admin/products/${encodeURIComponent(pid)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }
-  );
-
-  if (!data?.product) throw new Error("Publish update failed.");
-  return toUIProduct(data.product);
-}
-
-
-/* ================= Products Manager (products.html) ================= */
-async function initProductsManager() {
-  const form = qs('#productForm');
-  if (!form) return;
-
-  const name = qs('input[name="name"]', form);
-  const desc = qs('textarea[name="description"]', form);
-  const price = qs('input[name="price"]', form);
-  const status = qs('select[name="status"]', form);
-  const sS = qs('input[name="stockS"]', form);
-  const sM = qs('input[name="stockM"]', form);
-  const sL = qs('input[name="stockL"]', form);
-  const sXL = qs('input[name="stockXL"]', form);
-
-  const totalBadge = qs('#stockTotalBadge');
-
-  const pvStatus = qs('#previewStatus');
-  const pvName = qs('#previewName');
-  const pvDesc = qs('#previewDesc');
-  const pvPrice = qs('#previewPrice');
-  const pvStock = qs('#previewStock');
-  const pvMedia = qs('#previewMedia');
-
-  const fileInput = qs('#productImages');
-  const imageGrid = qs('#imageGrid');
-
-  // Buttons (existing UI)
-  const saveDraftBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'save draft');
-  const deleteBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'delete');
-  const publishBtn = qsa('button', form).find(b => (b.textContent || '').trim().toLowerCase() === 'publish');
-
-  const topNewBtn = qsa('.topbar-actions button').find(b => (b.textContent || '').toLowerCase().includes('new product'));
-  const topOpenShopBtn = qsa('.topbar-actions button').find(b => (b.textContent || '').toLowerCase().includes('open shop'));
-
-  // Lists (existing UI has two .list blocks in the Preview card)
-  const listBlocks = qsa('.card .list');
-  const draftsList = listBlocks[0] || null;
-  const publishedList = listBlocks[1] || null;
-
-  // Editor state
-  let editingId = null;
-  let images = []; // [{ name, dataUrl }]
-  let coverDataUrl = '';
-
-  function totalStock() {
-    return toInt(sS?.value) + toInt(sM?.value) + toInt(sL?.value) + toInt(sXL?.value);
-  }
-
-  function readStockBySizeFromForm() {
-    return {
-      S: toInt(sS?.value),
-      M: toInt(sM?.value),
-      L: toInt(sL?.value),
-      XL: toInt(sXL?.value),
-    };
-  }
-
-  function renderTextPreview() {
-    const tName = (name?.value || '—').trim() || '—';
-    const tDesc = (desc?.value || '—').trim() || '—';
-    const tPrice = formatJ(toPriceJMD(price?.value));
-    const tStatus = (String(status?.value || '').toLowerCase() === 'published') ? 'Published' : 'Draft';
-    const tStock = totalStock();
-
-    if (pvName) pvName.textContent = tName;
-    if (pvDesc) pvDesc.textContent = tDesc;
-    if (pvPrice) pvPrice.textContent = tPrice;
-    if (pvStatus) pvStatus.textContent = tStatus;
-    if (pvStock) pvStock.textContent = 'Stock: ' + tStock;
-    if (totalBadge) totalBadge.textContent = 'Total: ' + tStock;
-  }
-
-  async function readFiles(files) {
-    const arr = Array.from(files || []);
-    return Promise.all(arr.map(f => new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve({ name: f.name, dataUrl: String(r.result || '') });
-      r.onerror = () => reject(new Error('read failed'));
-      r.readAsDataURL(f);
-    })));
-  }
-
-  function renderImages(list) {
-    if (imageGrid) imageGrid.innerHTML = '';
-
-    (list || []).forEach((img, idx) => {
-      const tile = document.createElement('div');
-      tile.className = 'image-tile';
-      tile.innerHTML = `
-          <img alt="Product image ${idx + 1}" src="${img.dataUrl}">
-          <div class="meta">${escapeHtml(img.name)}</div>
-        `;
-      imageGrid && imageGrid.appendChild(tile);
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
     });
 
-    if (pvMedia) {
-      pvMedia.innerHTML = '';
-      const first = list && list[0] ? list[0] : null;
-      const url = first ? first.dataUrl : coverDataUrl;
-      if (url) {
-        const im = document.createElement('img');
-        im.src = url;
-        im.alt = 'Preview image';
-        pvMedia.appendChild(im);
-      } else {
-        pvMedia.innerHTML = '<span class="muted">No image</span>';
-      }
-    }
+    const data = await res.json().catch(() => null);
+    return { res, data };
   }
 
-  function clearForm() {
-    editingId = null;
-    images = [];
-    coverDataUrl = '';
-    if (name) name.value = '';
-    if (desc) desc.value = '';
-    if (price) price.value = '';
-    if (status) status.value = 'draft';
-    if (sS) sS.value = '';
-    if (sM) sM.value = '';
-    if (sL) sL.value = '';
-    if (sXL) sXL.value = '';
-    if (fileInput) fileInput.value = '';
-    if (imageGrid) imageGrid.innerHTML = '';
-    if (pvMedia) pvMedia.innerHTML = '<span class="muted">No image</span>';
-    renderTextPreview();
+  // -----------------------------
+  // Auth / gate
+  // -----------------------------
+  let __ME_CACHE = null;
+
+  async function fetchMe() {
+    if (__ME_CACHE) return __ME_CACHE;
+    const { res, data } = await apiJSON('/api/me');
+    if (!res.ok || !data?.ok) return null;
+    __ME_CACHE = data.user || null;
+    return __ME_CACHE;
   }
 
-  function loadProductIntoForm(p) {
-    if (!p) return;
-    editingId = String(p.id || '');
-    if (name) name.value = String(p.title || '');
-    if (desc) desc.value = String(p.description || '');
-    if (price) price.value = String(Number(p.priceJMD || 0));
-    if (status) status.value = String(p.status || 'draft').toLowerCase() === 'published' ? 'published' : 'draft';
-
-    const stock = (p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
-    if (sS) sS.value = String(toInt(stock.S));
-    if (sM) sM.value = String(toInt(stock.M));
-    if (sL) sL.value = String(toInt(stock.L));
-    if (sXL) sXL.value = String(toInt(stock.XL));
-
-    coverDataUrl = (p && p.media && p.media.coverUrl) ? String(p.media.coverUrl) : '';
-    images = coverDataUrl ? [{ name: 'cover', dataUrl: coverDataUrl }] : [];
-    renderImages(images);
-    renderTextPreview();
+  function isAdminUser(u) {
+    return !!u && String(u.role || '').toLowerCase() === 'admin';
   }
 
-  // --- DB/API-backed save/publish/delete/list for Products page ---
-
-  async function saveCurrentProduct({ forceStatus } = {}) {
-    const title = (name?.value || "").trim();
-    if (!title) throw new Error("Please enter a product name.");
-
-    const desiredStatus =
-      forceStatus ||
-      (String(status?.value || "").toLowerCase() === "published" ? "published" : "draft");
-
-    const stockBySize = readStockBySizeFromForm();
-
-    // NOTE: your current UI stores images as dataURLs.
-    // For now we will store the FIRST image dataUrl as coverUrl.
-    // (Not ideal long-term, but it gets DB-backed products working immediately.)
-    const coverUrl =
-      (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : (coverDataUrl || "");
-
-    const payloadUI = {
-      id: editingId || null,
-      title,
-      description: String(desc?.value || ""),
-      priceJMD: toPriceJMD(price?.value),
-      status: desiredStatus,
-      media: { coverUrl },
-      stockBySize
-    };
-
-    // IMPORTANT: call the OUTER async upsertProduct() (DB-backed).
-    // We named this saveCurrentProduct to avoid shadowing.
-    const saved = await upsertProduct(payloadUI);
-
-    // Update editor state from saved result
-    editingId = String(saved.id || "");
-    if (status) status.value = String(saved.status || "draft");
-    coverDataUrl = (saved.media && saved.media.coverUrl) ? String(saved.media.coverUrl) : coverDataUrl;
-
-    toast(desiredStatus === "published" ? "Published to DB ✅" : "Saved to DB ✅");
-    await renderLists();
-    return saved;
+  function inAdminFolder() {
+    return location.pathname.includes('/admin/');
   }
 
-  async function deleteCurrent() {
-    // You do not have a server delete endpoint yet.
-    // Don’t fake-delete locally (it will confuse production).
-    if (!editingId) {
-      toast("No product selected.");
-      return;
-    }
-    toast("Delete is not implemented on the server yet.");
+  function isAdminLoginPage() {
+    return location.pathname.endsWith('/admin/login.html');
   }
 
-  async function setPublishedUI(id, yes) {
-    // IMPORTANT: call the OUTER async setPublished() (DB-backed).
-    await setPublished(id, !!yes);
-    await renderLists();
-  }
+  async function requireAdminGate() {
+    if (!inAdminFolder()) return;
 
-  function renderListInto(listEl, items, kind) {
-    if (!listEl) return;
+    const me = await fetchMe();
 
-    if (!Array.isArray(items) || items.length === 0) {
-      listEl.innerHTML = `<div class="muted" style="padding:12px;">No ${kind} products.</div>`;
+    // Allow unauthenticated users to remain on admin login page
+    if (!me && isAdminLoginPage()) return;
+
+    if (!me) {
+      location.href = './login.html';
       return;
     }
 
-    listEl.innerHTML = items.map((p) => {
-      const title = escapeHtml(p.title || "Untitled");
-      const price = formatJ(p.priceJMD || 0);
-      const badge = (String(p.status || "").toLowerCase() === "published")
-        ? `<span class="chip chip-ok">Published</span>`
-        : `<span class="chip">Draft</span>`;
+    if (!isAdminUser(me)) {
+      location.href = '../index.html';
+      return;
+    }
 
-      return `
-      <div class="list-item" data-id="${escapeHtml(p.id)}" style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
-        <div style="min-width:0;">
-          <div class="list-title">${title}</div>
-          <div class="muted" style="font-size:12.5px;">${escapeHtml(price)}</div>
-        </div>
-        <div class="row" style="gap:10px;">
-          ${badge}
-          <button type="button" class="btn btn-ghost btn-sm" data-action="edit">Edit</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-action="toggle">
-            ${kind === "published" ? "Unpublish" : "Publish"}
-          </button>
-        </div>
-      </div>
-    `;
-    }).join("");
-
-    // Bind actions
-    qsa(".list-item", listEl).forEach((row) => {
-      const id = row.getAttribute("data-id");
-
-      const editBtn = qs('[data-action="edit"]', row);
-      if (editBtn) {
-        editBtn.addEventListener("click", () => {
-          const p = items.find(x => String(x.id) === String(id));
-          if (!p) return;
-          loadProductIntoForm(p);
-          toast("Loaded.");
-        });
-      }
-
-      const toggleBtn = qs('[data-action="toggle"]', row);
-      if (toggleBtn) {
-        toggleBtn.addEventListener("click", () => {
-          (async () => {
-            try {
-              await setPublishedUI(id, kind !== "published");
-              toast(kind === "published" ? "Unpublished ✅" : "Published ✅");
-            } catch (err) {
-              toast(err?.message || "Could not update publish state.");
-            }
-          })();
-        });
-      }
-    });
+    if (isAdminLoginPage()) {
+      location.href = './dashboard.html';
+    }
   }
 
-  async function renderLists() {
-    if (draftsList) draftsList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
-    if (publishedList) publishedList.innerHTML = `<div class="muted" style="padding:12px;">Loading…</div>`;
-
-    // Always fetch from DB on page load/refresh
-    const data = await apiAdminJSON("/api/admin/products", { method: "GET" });
-    const db = Array.isArray(data?.products) ? data.products : [];
-
-    // Convert DB -> your UI shape
-    const products = db.map(toUIProduct);
-
-    const drafts = products.filter(p => String(p?.status || "").toLowerCase() !== "published");
-    const published = products.filter(p => String(p?.status || "").toLowerCase() === "published");
-
-    renderListInto(draftsList, drafts, "drafts");
-    renderListInto(publishedList, published, "published");
+  async function logoutEverywhere() {
+    await apiJSON('/api/auth/logout', { method: 'POST' }).catch(() => null);
+    __ME_CACHE = null;
   }
 
-  // Bind input -> preview (run once)
-  ['input', 'change'].forEach(evt => {
-    [name, desc, price, status, sS, sM, sL, sXL].forEach(el => {
-      if (!el) return;
-      el.addEventListener(evt, renderTextPreview);
-    });
-  });
-
-  // Bind image picker (run once)
-  if (fileInput) {
-    fileInput.addEventListener('change', async () => {
-      try {
-        images = await readFiles(fileInput.files);
-        coverDataUrl = (images && images[0] && images[0].dataUrl) ? images[0].dataUrl : coverDataUrl;
-        renderImages(images);
-      } catch {
-        toast('Could not read images. Try smaller files.');
-      }
-    });
+  function hydrateAdminName() {
+    const me = __ME_CACHE;
+    const display = me && (me.name || me.email) ? String(me.name || me.email) : 'Admin';
+    qsa('[data-ui="adminName"]').forEach((n) => (n.textContent = display));
   }
 
-  // Override buttons with real actions (run once)
-  if (saveDraftBtn && !saveDraftBtn.dataset.bound) {
-    saveDraftBtn.dataset.bound = '1';
-    saveDraftBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      (async () => {
-        try { await saveCurrentProduct({ forceStatus: "draft" }); }
-        catch (err) { toast(err && err.message ? err.message : "Could not save."); }
-      })();
-    });
-  }
-
-  if (publishBtn && !publishBtn.dataset.bound) {
-    publishBtn.dataset.bound = '1';
-    publishBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      (async () => {
-        try { await saveCurrentProduct({ forceStatus: "published" }); }
-        catch (err) { toast(err && err.message ? err.message : "Could not publish."); }
-      })();
-    });
-  }
-
-  if (deleteBtn && !deleteBtn.dataset.bound) {
-    deleteBtn.dataset.bound = '1';
-    deleteBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      deleteCurrent();
-    });
-  }
-
-  if (topNewBtn && !topNewBtn.dataset.bound) {
-    topNewBtn.dataset.bound = '1';
-    topNewBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      clearForm();
-      toast('New product.');
-    });
-  }
-
-  if (topOpenShopBtn && !topOpenShopBtn.dataset.bound) {
-    topOpenShopBtn.dataset.bound = '1';
-    topOpenShopBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      location.href = '../shop-page.html';
-    });
-  }
-  // Initial load of DB products when page opens
-  await renderLists();
-}
-
-/* ================= Orders helpers (REAL) ================= */
-function readState() {
-  const raw = JSON.stringify(__MEM_ADMIN.siteState || {});
-  const st = raw ? (safeParse(raw) || {}) : {};
-  st.ordersByUser = st.ordersByUser || {};
-  return st;
-}
-function writeState(st) {
-  const obj = (st && typeof st === 'object') ? st : {};
-  if (!obj.ordersByUser || typeof obj.ordersByUser !== 'object') {
-    obj.ordersByUser = {};
-  }
-  __MEM_ADMIN.siteState = (obj) || {};
-}
-
-function setOrderStatusInState(email, orderId, nextStatus, actor) {
-  const em = String(email || '').trim().toLowerCase();
-  const oid = String(orderId || '').trim();
-  const status = String(nextStatus || '').trim() || 'Placed';
-
-  if (!em || !oid) return false;
-
-  const st = readState();
-  const list = Array.isArray(st.ordersByUser[em]) ? st.ordersByUser[em] : [];
-  const idx = list.findIndex(o => o && String(o.id || '') === oid);
-
-  if (idx < 0) return false;
-
-  const order = list[idx];
-  const prev = String(order.status || 'Placed');
-
-  // Avoid spam entries if status didn’t actually change
-  if (prev === status) return true;
-
-  // Ensure history array exists
-  if (!Array.isArray(order.history)) order.history = [];
-
-  // Who changed it?
-  const by = actor && actor.by ? String(actor.by) : 'admin';
-  const at = new Date().toISOString();
-
-  order.history.push({ at, by, from: prev, to: status });
-
-  // Update status
-  order.status = status;
-
-  list[idx] = order;
-  st.ordersByUser[em] = list;
-  writeState(st);
-
-  return true;
-}
-
-function flattenOrders() {
-  const st = readState();
-  const map = (st && st.ordersByUser && typeof st.ordersByUser === 'object') ? st.ordersByUser : {};
-  const out = [];
-
-  Object.keys(map).forEach((email) => {
-    const arr = map[email];
-    if (!Array.isArray(arr)) return;
-
-    arr.forEach((o) => {
-      if (!o || typeof o !== 'object') return;
-      out.push({
-        email: String(email || '').trim().toLowerCase(),
-        id: String(o.id || ''),
-        createdAt: String(o.createdAt || ''),
-        status: String(o.status || 'Placed'),
-        totalJMD: Number(o.totalJMD || 0),
-        items: Array.isArray(o.items) ? o.items : [],
-        raw: o
+  // -----------------------------
+  // Theme toggle (non-persistent)
+  // -----------------------------
+  function bindThemeToggle() {
+    qsa('[data-action="toggle-theme"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const html = document.documentElement;
+        const cur = html.getAttribute('data-theme') || 'light';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
       });
     });
-  });
-
-  out.sort((a, b) => {
-    const ta = new Date(a.createdAt || 0).getTime();
-    const tb = new Date(b.createdAt || 0).getTime();
-    return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-  });
-
-  return out;
-}
-
-function getAdminActor() {
-  const u = getCurrentUser();
-  const email = u && u.email ? String(u.email).trim().toLowerCase() : 'admin';
-  const name = u && u.name ? String(u.name).trim() : '';
-  return { by: name ? `${name} (${email})` : email };
-}
-
-/* ================= Orders page (REAL) ================= */
-function initOrders() {
-  const tbody = qs('#ordersTbody');
-  if (!tbody) return;
-
-  const search = qs('#orderSearch');
-
-  let all = [];
-
-  const modal = qs('#orderModal');
-  const modalTitle = qs('#orderModalTitle');
-  const modalMeta = qs('#orderModalMeta');
-  const modalItems = qs('#orderModalItems');
-  const modalHistory = qs('#orderModalHistory');
-  const modalClose = qs('#orderModalClose');
-
-  function matchesQuery(row, q) {
-    const needle = String(q || '').trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      String(row.id || '').toLowerCase().includes(needle) ||
-      String(row.email || '').toLowerCase().includes(needle) ||
-      String(row.customerName || '').toLowerCase().includes(needle)
-    );
   }
 
-  function render(rows) {
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="muted">No orders found.</td></tr>`;
-      return;
-    }
+  // Sidebar toggle (non-persistent)
+  function bindSidebarToggle() {
+    const toggle = qs('[data-action="toggle-sidebar"]');
+    const sidebar = qs('.sidebar');
+    const main = qs('.main');
+    if (!toggle || !sidebar || !main) return;
 
-    tbody.innerHTML = rows.map((r) => {
-      const stKey = statusKey(r.status) || 'placed';
-      const st = statusLabel(stKey);
-      const stClass =
-        stKey === 'delivered' ? 'chip-delivered' :
-        stKey === 'shipped' ? 'chip-shipped' :
-        stKey === 'processing' ? 'chip-processing' :
-        stKey === 'cancelled' ? 'chip-cancelled' :
-        'chip-placed';
-
-      return `
-        <tr>
-          <td>#${escapeHtml(r.id)}</td>
-          <td>${escapeHtml(formatDateShort(r.createdAt))}</td>
-          <td>${escapeHtml(r.customerName ? `${r.customerName} (${r.email})` : r.email)}</td>
-          <td><span class="chip chip-status ${stClass}">${escapeHtml(st)}</span></td>
-          <td class="right">${escapeHtml(formatJ(r.totalJMD))}</td>
-          <td class="right">
-            <select class="input input-sm"
-              data-order-status="1"
-              data-order-id="${escapeHtml(r.id)}">
-              <option value="placed" ${stKey === 'placed' ? 'selected' : ''}>Placed</option>
-              <option value="processing" ${stKey === 'processing' ? 'selected' : ''}>Processing</option>
-              <option value="shipped" ${stKey === 'shipped' ? 'selected' : ''}>Shipped</option>
-              <option value="delivered" ${stKey === 'delivered' ? 'selected' : ''}>Delivered</option>
-              <option value="cancelled" ${stKey === 'cancelled' ? 'selected' : ''}>Cancelled</option>
-            </select>
-            <button class="btn btn-ghost btn-sm"
-              data-open-order="1"
-              data-order-id="${escapeHtml(r.id)}">Open</button>
-          </td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  async function refresh() {
-    const list = await apiListAdminOrders();
-    all = Array.isArray(list) ? list : [];
-    render(all);
-  }
-
-  async function openModal(orderId) {
-    const row = await apiAdminJSON(`/api/admin/orders/${encodeURIComponent(orderId)}`, { method: "GET" });
-    const o = row?.order;
-    if (!o) return toast("Order not found.");
-
-    modalTitle.textContent = `Order #${o.id}`;
-    modalMeta.innerHTML = `
-      <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(o.createdAt))}</span></div>
-      <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(o.customerName ? `${o.customerName} (${o.email})` : o.email)}</span></div>
-      <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(statusLabel(o.status))}</span></div>
-    `;
-
-    modalItems.innerHTML = `
-      <div class="table-wrap">
-        <table class="table">
-          <tbody>
-            ${o.items.map(it => `
-              <tr>
-                <td>${escapeHtml(it.name)}</td>
-                <td>${escapeHtml(it.size)}</td>
-                <td>${escapeHtml(it.qty)}</td>
-                <td>${escapeHtml(formatJ(it.priceJMD))}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    if (modalHistory) {
-      const hist = Array.isArray(o.history) ? o.history : [];
-      modalHistory.innerHTML = hist.length
-        ? hist.map(h => `
-            <div><strong>${escapeHtml(statusLabel(h.from))}</strong> → <strong>${escapeHtml(statusLabel(h.to))}</strong><br>
-            <span class="muted">${escapeHtml(formatDateShort(h.at))} • ${escapeHtml(h.by)}</span></div>
-          `).join('')
-        : `<div class="muted">No status changes yet.</div>`;
-    }
-
-    modal.hidden = false;
-    document.body.classList.add('modal-open');
-  }
-
-  tbody.addEventListener('change', async (e) => {
-    const sel = e.target.closest('[data-order-status]');
-    if (!sel) return;
-
-    const id = sel.getAttribute('data-order-id');
-    const status = sel.value;
-
-    await apiUpdateAdminOrderStatus(id, status);
-    await refresh();
-    toast(`Status updated.`);
-  });
-
-  tbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-open-order]');
-    if (!btn) return;
-    openModal(btn.getAttribute('data-order-id'));
-  });
-
-  if (search) {
-    search.addEventListener('input', () => {
-      const q = search.value;
-      render(all.filter(r => matchesQuery(r, q)));
+    toggle.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+      main.classList.toggle('expanded');
     });
   }
 
-  refresh();
-}
-
-/* ================= Dashboard helpers ================= */
-function parseDateInput(value) {
-  const v = String(value || '').trim();
-  if (!v) return null;
-  const t = new Date(v + 'T00:00:00').getTime();
-  return Number.isFinite(t) ? new Date(t) : null;
-}
-
-function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfDay(d) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
-function inRangeISO(iso, start, end) {
-  const t = new Date(iso || 0).getTime();
-  if (!Number.isFinite(t)) return false;
-  return t >= start.getTime() && t <= end.getTime();
-}
-
-/* ================= Dashboard (REAL) ================= */
-function initDashboard() {
-  const revEl = qs('#statRevenueValue');
-  if (!revEl) return;
-
-  const ordersEl = qs('#statOrdersValue');
-  const customersEl = qs('#statCustomersValue');
-  const lowEl = qs('#statLowStockValue');
-
-  const revSub = qs('#statRevenueSub');
-  const ordersSub = qs('#statOrdersSub');
-  const customersSub = qs('#statCustomersSub');
-  const lowSub = qs('#statLowStockSub');
-
-  const preset = qs('#rangePreset');
-  const startInput = qs('#rangeStart');
-  const endInput = qs('#rangeEnd');
-  const applyBtn = qs('#applyRangeBtn');
-  const tbody = qs('#recentOrdersTbody');
-
-  const products = [];
-
-  let allUsers = [];
-  let allOrders = [];
-
-  // Load products/users/orders from DB
-  Promise.all([
-    readProductsRaw().catch(() => []),
-    apiListAdminUsers().catch(() => null),
-    apiListAdminOrders().catch(() => null),
-  ]).then(([plist, users, orders]) => {
-    products.splice(0, products.length, ...(Array.isArray(plist) ? plist : []));
-    allUsers = Array.isArray(users) ? users : [];
-    allOrders = Array.isArray(orders) ? orders : [];
-
-    const r = defaultRange();
-    setInputsFromRange(r);
-    renderForRange(r);
-  });
-
-  const settings = readAdminSettings();
-
-  function fmtDate(d) {
-    const x = new Date(d);
-    return x.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+  // Toast helper (uses existing data-action="toast" buttons)
+  function bindToasts() {
+    qsa('[data-action="toast"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const msg = btn.getAttribute('data-toast') || 'Done.';
+        alert(msg);
+      });
+    });
   }
 
-  function sumRevenue(rows) {
-    return rows.reduce((sum, r) => sum + Number(r.totalJMD || 0), 0);
-  }
+  // -----------------------------
+  // Admin Login (email/password + Google)
+  // -----------------------------
+  async function initAdminLogin() {
+    if (!isAdminLoginPage()) return;
 
-  function defaultRange() {
-    const today = new Date();
-    const s = startOfDay(today);
-    const e = endOfDay(today);
-    return { start: s, end: e };
-  }
-
-  function setInputsFromRange(r) {
-    if (startInput) startInput.valueAsDate = startOfDay(r.start);
-    if (endInput) endInput.valueAsDate = startOfDay(r.end);
-  }
-
-  function deriveRangeFromPreset(p) {
-    const today = new Date();
-    const t0 = startOfDay(today);
-    const t1 = endOfDay(today);
-
-    if (p === 'today') return { start: t0, end: t1 };
-    if (p === 'yesterday') {
-      const y = new Date(today); y.setDate(y.getDate() - 1);
-      return { start: startOfDay(y), end: endOfDay(y) };
-    }
-    if (p === 'last7') {
-      const s = new Date(today); s.setDate(s.getDate() - 6);
-      return { start: startOfDay(s), end: t1 };
-    }
-    if (p === 'last30') {
-      const s = new Date(today); s.setDate(s.getDate() - 29);
-      return { start: startOfDay(s), end: t1 };
-    }
-    // fallback
-    return { start: t0, end: t1 };
-  }
-
-  function previousRange(r) {
-    const days = Math.max(1, Math.round((r.end.getTime() - r.start.getTime()) / (24 * 3600 * 1000)) + 1);
-    const prevEnd = new Date(r.start); prevEnd.setDate(prevEnd.getDate() - 1);
-    const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - (days - 1));
-    return { start: startOfDay(prevStart), end: endOfDay(prevEnd) };
-  }
-
-  function pct(a, b) {
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-    if (b <= 0) return null;
-    return ((a - b) / b) * 100;
-  }
-
-  function normalizeOrderRow(o) {
-    const total = Number(o?.total ?? o?.totalJMD ?? 0);
-    const createdAt = o?.createdAt || o?.created_at || null;
-    const status = o?.status || 'processing';
-    const email = o?.user?.email || o?.email || '';
-    const name = o?.user?.name || o?.customerName || '';
-    return {
-      id: String(o?.id || ''),
-      totalJMD: total,
-      createdAt,
-      status,
-      email,
-      name,
+    const form = qs('#loginForm');
+    const errorBox = qs('[data-ui="error"]');
+    const setError = (msg) => {
+      if (!errorBox) return;
+      if (!msg) {
+        errorBox.hidden = true;
+        errorBox.textContent = '';
+      } else {
+        errorBox.hidden = false;
+        errorBox.textContent = msg;
+      }
     };
-  }
 
-  function renderRecentOrders(allRows) {
-    if (!tbody) return;
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        setError('');
 
-    const rows = allRows.slice(0, 4);
-    if (!rows.length) {
-      tbody.innerHTML = `
-          <tr>
-            <td colspan="4" class="muted">No orders yet.</td>
-          </tr>
-        `;
+        const email = String(qs('#email')?.value || '').trim().toLowerCase();
+        const password = String(qs('#password')?.value || '');
+
+        const { res, data } = await apiJSON('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!res.ok || !data?.ok) {
+          setError(data?.error || 'Login failed.');
+          return;
+        }
+
+        __ME_CACHE = data.user || null;
+        const me = await fetchMe();
+
+        if (!isAdminUser(me)) {
+          await logoutEverywhere();
+          setError('This account is not an admin.');
+          return;
+        }
+
+        location.href = './dashboard.html';
+      });
+    }
+
+    // Google Sign-In
+    const googleBtn = qs('#adminGoogleBtn');
+    if (!googleBtn) return;
+
+    const { res: cfgRes, data: cfg } = await apiJSON('/api/public/config');
+    const clientId = cfg?.googleClientId;
+    if (!cfgRes.ok || !clientId || !window.google?.accounts?.id) {
+      // Hide if not configured
+      googleBtn.hidden = true;
       return;
     }
 
-    tbody.innerHTML = rows.map((r) => {
-      const customer = r.name ? `${r.name} (${r.email})` : r.email;
-      return `
-          <tr>
-            <td>#${escapeHtml(r.id)}</td>
-            <td>${escapeHtml(customer)}</td>
-            <td><span class="chip chip-ok">${escapeHtml(r.status || 'Placed')}</span></td>
-            <td class="right">${escapeHtml(formatJ(r.totalJMD))}</td>
-          </tr>
+    function onCredential(resp) {
+      setError('');
+      const credential = String(resp?.credential || '').trim();
+      if (!credential) return;
+
+      apiJSON('/api/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential }),
+      })
+        .then(async ({ res, data }) => {
+          if (!res.ok || !data?.ok) throw new Error(data?.error || 'Google login failed');
+          __ME_CACHE = data.user || null;
+          const me = await fetchMe();
+          if (!isAdminUser(me)) {
+            await logoutEverywhere();
+            setError('This account is not an admin.');
+            return;
+          }
+          location.href = './dashboard.html';
+        })
+        .catch((e) => setError(String(e?.message || 'Google login failed.')));
+    }
+
+    // Render the button into the container
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: onCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+
+    window.google.accounts.id.renderButton(googleBtn, {
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'pill',
+      width: 280,
+    });
+  }
+
+  // -----------------------------
+  // Dashboard (DB stats)
+  // -----------------------------
+  async function initDashboard() {
+    if (!location.pathname.endsWith('/admin/dashboard.html')) return;
+
+    const { res, data } = await apiJSON('/api/admin/stats');
+    if (!res.ok || !data?.ok) return;
+
+    const s = data.stats || {};
+    const revenue = qs('#statRevenueValue');
+    const orders = qs('#statOrdersValue');
+    const customers = qs('#statCustomersValue');
+    const lowStock = qs('#statLowStockValue');
+
+    if (revenue) revenue.textContent = fmtJMD(s.revenueJMD);
+    if (orders) orders.textContent = String(s.ordersCount ?? 0);
+    if (customers) customers.textContent = String(s.usersCount ?? 0);
+    if (lowStock) lowStock.textContent = String(s.lowStockCount ?? 0);
+
+    const lowSub = qs('#statLowStockSub');
+    if (lowSub) lowSub.textContent = `≤ ${Number(s.lowStockThreshold ?? 3)} in stock`;
+  }
+
+  // -----------------------------
+  // Orders
+  // -----------------------------
+  async function initOrders() {
+    if (!location.pathname.endsWith('/admin/orders.html')) return;
+
+    const tbody = qs('#ordersTbody');
+    const search = qs('#orderSearch');
+    const modal = qs('#orderModal');
+    const modalClose = qs('#orderModalClose');
+    const modalTitle = qs('#orderModalTitle');
+    const modalMeta = qs('#orderModalMeta');
+    const modalHistory = qs('#orderModalHistory');
+    const modalItems = qs('#orderModalItems');
+
+    const setModalOpen = (open) => {
+      if (!modal) return;
+      modal.hidden = !open;
+    };
+    modalClose?.addEventListener('click', () => setModalOpen(false));
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) setModalOpen(false);
+    });
+
+    let orders = [];
+
+    async function load() {
+      const { res, data } = await apiJSON('/api/admin/orders');
+      if (!res.ok || !data?.ok) return;
+      orders = Array.isArray(data.orders) ? data.orders : [];
+      render();
+    }
+
+    function render() {
+      if (!tbody) return;
+      const q = String(search?.value || '').trim().toLowerCase();
+
+      const rows = orders.filter((o) => {
+        if (!q) return true;
+        return (
+          String(o.id || '').toLowerCase().includes(q) ||
+          String(o.email || '').toLowerCase().includes(q) ||
+          String(o.status || '').toLowerCase().includes(q)
+        );
+      });
+
+      tbody.innerHTML = rows
+        .map((o) => {
+          const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+          return `
+            <tr data-order-id="${escapeHtml(o.id)}">
+              <td class="mono">${escapeHtml(o.id)}</td>
+              <td>${escapeHtml(o.email || '')}</td>
+              <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
+              <td>${fmtJMD(o.totalJMD)}</td>
+              <td>${escapeHtml(date)}</td>
+              <td><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
+
+    async function openOrder(id) {
+      const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}`);
+      if (!res.ok || !data?.ok) return;
+
+      const o = data.order;
+      if (modalTitle) modalTitle.textContent = `Order ${o.id}`;
+      if (modalMeta) {
+        const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+        modalMeta.innerHTML = `
+          <div class="grid grid-2 gap-12">
+            <div><div class="muted">Customer</div><div>${escapeHtml(o.customerName || o.email || '')}</div></div>
+            <div><div class="muted">Status</div><div>${escapeHtml(String(o.status || '').toUpperCase())}</div></div>
+            <div><div class="muted">Total</div><div>${fmtJMD(o.totalJMD)}</div></div>
+            <div><div class="muted">Placed</div><div>${escapeHtml(date)}</div></div>
+          </div>
         `;
-    }).join('');
-  }
+      }
 
-  function computeLowStockCount() {
-    // count published products with any size stock <= threshold
-    const threshold = Number(settings?.lowStockThreshold || 3);
-    let count = 0;
-    products.forEach((p) => {
-      const sizes = Array.isArray(p.sizes) ? p.sizes : [];
-      const stock = p.stockBySize || {};
-      const anyLow = sizes.some((s) => Number(stock[s] || 0) > 0 && Number(stock[s] || 0) <= threshold);
-      if (anyLow) count += 1;
-    });
-    return count;
-  }
-
-  function renderForRange(range) {
-    const all = (Array.isArray(allOrders) ? allOrders : []).map(normalizeOrderRow).filter(o => o.id);
-    const inRange = all.filter(o => inRangeISO(o.createdAt, range.start, range.end));
-
-    const revenue = sumRevenue(inRange);
-    const ordersCount = inRange.length;
-    const customersCount = Array.isArray(allUsers) ? allUsers.length : 0;
-    const lowCount = computeLowStockCount();
-
-    const prev = previousRange(range);
-    const prevInRange = all.filter(o => inRangeISO(o.createdAt, prev.start, prev.end));
-
-    const prevRev = sumRevenue(prevInRange);
-    const prevOrders = prevInRange.length;
-
-    const revDelta = pct(revenue, prevRev);
-    const ordDelta = pct(ordersCount, prevOrders);
-
-    if (revEl) revEl.textContent = formatJ(revenue);
-    if (ordersEl) ordersEl.textContent = String(ordersCount);
-    if (customersEl) customersEl.textContent = String(customersCount);
-    if (lowEl) lowEl.textContent = String(lowCount);
-
-    if (revSub) revSub.textContent = revDelta == null ? `vs prev period` : `${revDelta >= 0 ? '+' : ''}${revDelta.toFixed(1)}% vs prev`;
-    if (ordersSub) ordersSub.textContent = ordDelta == null ? `vs prev period` : `${ordDelta >= 0 ? '+' : ''}${ordDelta.toFixed(1)}% vs prev`;
-    if (customersSub) customersSub.textContent = `Total customers`;
-    if (lowSub) lowSub.textContent = `Low stock threshold: ${Number(settings?.lowStockThreshold || 3)}`;
-
-    // Sort by newest, then render recent
-    const newest = [...all].sort((a,b) => new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime());
-    renderRecentOrders(newest);
-  }
-
-  function applyPreset() {
-    const p = preset ? String(preset.value || '') : 'today';
-    const r = deriveRangeFromPreset(p);
-    setInputsFromRange(r);
-    renderForRange(r);
-  }
-
-  function applyCustomRange() {
-    const s = startInput && startInput.valueAsDate ? startOfDay(startInput.valueAsDate) : null;
-    const e = endInput && endInput.valueAsDate ? endOfDay(endInput.valueAsDate) : null;
-    if (!s || !e) return applyPreset();
-    renderForRange({ start: s, end: e });
-  }
-
-  if (preset) preset.addEventListener('change', applyPreset);
-  if (applyBtn) applyBtn.addEventListener('click', (e) => { e.preventDefault(); applyCustomRange(); });
-
-  // Initial render (will be replaced after Promise.all above resolves)
-  applyPreset();
-}
-
-
-/* ================= Customers (REAL) ================= */
-
-function initCustomers() {
-  const tbody = qs('#customersTbody');
-  if (!tbody) return;
-
-  const search = qs('#customerSearch');
-
-  // Optional modals (only if your HTML includes them)
-  const cusModal = qs('#customerModal');
-  const cusModalTitle = qs('#customerModalTitle');
-  const cusModalMeta = qs('#customerModalMeta');
-  const cusModalOrders = qs('#customerModalOrders');
-  const cusModalClose = qs('#customerModalClose');
-
-  // Reused order modal (if present on this page)
-  const ordModal = qs('#orderModal');
-  const ordModalTitle = qs('#orderModalTitle');
-  const ordModalMeta = qs('#orderModalMeta');
-  const ordModalItems = qs('#orderModalItems');
-  const ordModalHistory = qs('#orderModalHistory');
-  const ordModalClose = qs('#orderModalClose');
-
-  let allUsers = [];
-  let allOrders = [];
-  let byEmailOrders = new Map();
-
-  function rebuildOrderIndex() {
-    byEmailOrders = new Map();
-    allOrders.forEach((o) => {
-      const em = String(o.email || '').trim().toLowerCase();
-      if (!em) return;
-      if (!byEmailOrders.has(em)) byEmailOrders.set(em, []);
-      byEmailOrders.get(em).push(o);
-    });
-  }
-
-  function matchesQuery(row, q) {
-    const needle = String(q || '').trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      String(row.email || '').toLowerCase().includes(needle) ||
-      String(row.name || '').toLowerCase().includes(needle)
-    );
-  }
-
-  function render(rows) {
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">No customers found.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = rows.map((u) => {
-      const name = u.name || '—';
-      const email = u.email || '';
-      const orders = Number(u.orderCount || 0);
-      const ltv = Number(u.lifetimeValueJMD || 0);
-
-      return `
-        <tr>
-          <td>${escapeHtml(name)}</td>
-          <td>${escapeHtml(email)}</td>
-          <td>${orders}</td>
-          <td class="right">${escapeHtml(formatJ(ltv))}</td>
-          <td class="right">
-            <button class="btn btn-ghost btn-sm"
-              data-open-customer="1"
-              data-email="${escapeHtml(email)}"
-              data-user-id="${escapeHtml(u.id)}">Open</button>
-          </td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  function openCustomerModalByEmail(email) {
-    if (!cusModal) return;
-    const em = String(email || '').trim().toLowerCase();
-    const u = allUsers.find(x => String(x.email || '').toLowerCase() === em);
-    if (!u) return toast('Customer not found.');
-
-    const orders = byEmailOrders.get(em) || [];
-    const orderCount = Number(u.orderCount || 0);
-    const ltv = Number(u.lifetimeValueJMD || 0);
-
-    if (cusModalTitle) cusModalTitle.textContent = u.name ? u.name : em;
-    if (cusModalMeta) {
-      cusModalMeta.innerHTML = `
-        <div class="meta-row"><span class="muted">Email</span><span>${escapeHtml(em)}</span></div>
-        <div class="meta-row"><span class="muted">Orders</span><span>${escapeHtml(String(orderCount))}</span></div>
-        <div class="meta-row"><span class="muted">Lifetime Value</span><span>${escapeHtml(formatJ(ltv))}</span></div>
-        <div class="meta-row"><span class="muted">Joined</span><span>${escapeHtml(formatDateShort(u.createdAt))}</span></div>
-      `;
-    }
-
-    if (cusModalOrders) {
-      const recent = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
-
-      cusModalOrders.innerHTML = recent.length
-        ? `
+      if (modalItems) {
+        const items = Array.isArray(o.items) ? o.items : [];
+        modalItems.innerHTML = `
           <div class="table-wrap">
             <table class="table">
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th class="right">Total</th>
-                  <th class="right">Action</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Price</th></tr></thead>
               <tbody>
-                ${recent.map(o => `
+                ${items
+                  .map(
+                    (it) => `
                   <tr>
-                    <td>#${escapeHtml(o.id)}</td>
-                    <td>${escapeHtml(formatDateShort(o.createdAt))}</td>
-                    <td>${escapeHtml(String(o.status || 'placed'))}</td>
-                    <td class="right">${escapeHtml(formatJ(o.totalJMD || 0))}</td>
-                    <td class="right">
-                      <button class="btn btn-ghost btn-sm"
-                        data-open-order="1"
-                        data-order-id="${escapeHtml(o.id)}">Open</button>
-                    </td>
+                    <td>${escapeHtml(it.name || 'Item')}</td>
+                    <td>${escapeHtml(it.size || '')}</td>
+                    <td>${escapeHtml(String(it.qty ?? ''))}</td>
+                    <td>${fmtJMD(it.priceJMD)}</td>
                   </tr>
-                `).join('')}
+                `
+                  )
+                  .join('')}
               </tbody>
             </table>
           </div>
-        `
-        : `<div class="muted">No orders yet.</div>`;
+        `;
+      }
+
+      if (modalHistory) {
+        const hist = Array.isArray(o.history) ? o.history : [];
+        modalHistory.innerHTML = hist.length
+          ? `<ul class="timeline">
+              ${hist
+                .map(
+                  (h) => `
+                <li>
+                  <div class="muted">${escapeHtml(new Date(h.at).toLocaleString())}</div>
+                  <div><strong>${escapeHtml(String(h.from || '').toUpperCase())}</strong> → <strong>${escapeHtml(
+                    String(h.to || '').toUpperCase()
+                  )}</strong></div>
+                  <div class="muted">By: ${escapeHtml(h.by || 'admin')}</div>
+                </li>
+              `
+                )
+                .join('')}
+            </ul>`
+          : `<div class="muted">No status history yet.</div>`;
+      }
+
+      setModalOpen(true);
     }
 
-    cusModal.hidden = false;
-    document.body.classList.add('modal-open');
-  }
-
-  function closeOverlay(el) {
-    if (!el) return;
-    el.hidden = true;
-    document.body.classList.remove('modal-open');
-  }
-
-  async function openOrderModal(orderId) {
-    if (!ordModal) return;
-
-    const row = await apiAdminJSON(`/api/admin/orders/${encodeURIComponent(orderId)}`, { method: "GET" });
-    const o = row?.order;
-    if (!o) return toast("Order not found.");
-
-    if (ordModalTitle) ordModalTitle.textContent = `Order #${o.id}`;
-    if (ordModalMeta) {
-      ordModalMeta.innerHTML = `
-        <div class="meta-row"><span class="muted">Date</span><span>${escapeHtml(formatDateShort(o.createdAt))}</span></div>
-        <div class="meta-row"><span class="muted">Customer</span><span>${escapeHtml(o.customerName ? `${o.customerName} (${o.email})` : o.email)}</span></div>
-        <div class="meta-row"><span class="muted">Status</span><span>${escapeHtml(statusLabel(o.status))}</span></div>
-      `;
-    }
-
-    if (ordModalItems) {
-      ordModalItems.innerHTML = `
-        <div class="table-wrap">
-          <table class="table">
-            <tbody>
-              ${o.items.map(it => `
-                <tr>
-                  <td>${escapeHtml(it.name)}</td>
-                  <td class="muted">${escapeHtml(it.size)} × ${escapeHtml(String(it.qty))}</td>
-                  <td class="right">${escapeHtml(formatJ((it.priceJMD || 0) * (it.qty || 0)))}</td>
-                </tr>
-              `).join('')}
-              <tr>
-                <td colspan="2" class="right"><strong>Total</strong></td>
-                <td class="right"><strong>${escapeHtml(formatJ(o.totalJMD || 0))}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    if (ordModalHistory) {
-      const hist = Array.isArray(o.history) ? o.history : [];
-      ordModalHistory.innerHTML = hist.length
-        ? hist.map(h => `
-            <div><strong>${escapeHtml(statusLabel(h.from))}</strong> → <strong>${escapeHtml(statusLabel(h.to))}</strong><br>
-            <span class="muted">${escapeHtml(formatDateShort(h.at))} • ${escapeHtml(h.by)}</span></div>
-          `).join('')
-        : `<div class="muted">No status changes yet.</div>`;
-    }
-
-    ordModal.hidden = false;
-    document.body.classList.add('modal-open');
-  }
-
-  async function refresh() {
-    const [users, orders] = await Promise.all([
-      apiListAdminUsers(),
-      apiListAdminOrders(),
-    ]);
-
-    allUsers = Array.isArray(users) ? users : [];
-    allOrders = Array.isArray(orders) ? orders : [];
-    rebuildOrderIndex();
-
-    const q = search ? search.value : '';
-    render(allUsers.filter(u => matchesQuery(u, q)));
-  }
-
-  tbody.addEventListener('click', (e) => {
-    const btnCus = e.target.closest('[data-open-customer]');
-    if (btnCus) {
-      openCustomerModalByEmail(btnCus.getAttribute('data-email'));
-      return;
-    }
-  });
-
-  if (search) {
-    search.addEventListener('input', () => {
-      const q = search.value;
-      render(allUsers.filter(u => matchesQuery(u, q)));
-    });
-  }
-
-  // Customer modal events
-  if (cusModalClose && cusModal) {
-    cusModalClose.addEventListener('click', () => closeOverlay(cusModal));
-    cusModal.addEventListener('click', (e) => {
-      if (e.target === cusModal) closeOverlay(cusModal);
-    });
-
-    // Delegate order opens inside customer modal
-    cusModal.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-open-order]');
+    tbody?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="view-order"]');
       if (!btn) return;
-      openOrderModal(btn.getAttribute('data-order-id'));
+      const tr = e.target.closest('tr');
+      const id = tr?.getAttribute('data-order-id');
+      if (id) openOrder(id);
     });
+
+    search?.addEventListener('input', render);
+
+    await load();
   }
 
-  // Order modal close
-  if (ordModalClose && ordModal) {
-    ordModalClose.addEventListener('click', () => closeOverlay(ordModal));
-    ordModal.addEventListener('click', (e) => {
-      if (e.target === ordModal) closeOverlay(ordModal);
+  // -----------------------------
+  // Customers
+  // -----------------------------
+  async function initCustomers() {
+    if (!location.pathname.endsWith('/admin/customers.html')) return;
+
+    const tbody = qs('#customersTbody');
+    const search = qs('#customerSearch');
+
+    const modal = qs('#customerModal');
+    const modalClose = qs('#customerModalClose');
+    const modalTitle = qs('#customerModalTitle');
+    const modalMeta = qs('#customerModalMeta');
+    const modalOrders = qs('#customerModalOrders');
+
+    const setModalOpen = (open) => {
+      if (!modal) return;
+      modal.hidden = !open;
+    };
+
+    modalClose?.addEventListener('click', () => setModalOpen(false));
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) setModalOpen(false);
     });
-  }
 
-  refresh();
-}
+    let users = [];
+    let orders = [];
 
+    async function load() {
+      const [u, o] = await Promise.all([
+        apiJSON('/api/admin/users'),
+        apiJSON('/api/admin/orders'),
+      ]);
 
-function initSettings() {
-  const form = qs('#adminSettingsForm');
-  if (!form) return;
+      if (u.res.ok && u.data?.ok) users = Array.isArray(u.data.users) ? u.data.users : [];
+      if (o.res.ok && o.data?.ok) orders = Array.isArray(o.data.orders) ? o.data.orders : [];
 
-  const themeSelect = qs('#adminThemeSelect', form);
-  const lowStockInput = qs('#lowStockThreshold', form);
+      render();
+    }
 
-  function hydrate() {
-    const t = readTheme();
-    if (themeSelect) themeSelect.value = (t === 'light' ? 'light' : 'dark');
+    function userStatsByEmail(email) {
+      const em = String(email || '').toLowerCase();
+      const mine = orders.filter((o) => String(o.email || '').toLowerCase() === em);
+      const count = mine.length;
+      const spend = mine.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0);
+      return { count, spend, orders: mine };
+    }
 
-    const st = readAdminSettings();
-    if (lowStockInput) lowStockInput.value = String(st.lowStockThreshold);
-  }
+    function render() {
+      if (!tbody) return;
+      const q = String(search?.value || '').trim().toLowerCase();
 
-  function save() {
-    const nextTheme = String(themeSelect?.value || '').toLowerCase() === 'light' ? 'light' : 'dark';
-    applyTheme(nextTheme);
+      const rows = users.filter((u) => {
+        if (!q) return true;
+        return (
+          String(u.email || '').toLowerCase().includes(q) ||
+          String(u.name || '').toLowerCase().includes(q) ||
+          String(u.role || '').toLowerCase().includes(q)
+        );
+      });
 
-    const n = Number(lowStockInput?.value);
-    const lowStockThreshold = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 3;
-    writeAdminSettings({ lowStockThreshold });
-    toast('Settings saved.');
-  }
+      tbody.innerHTML = rows
+        .map((u) => {
+          const stats = userStatsByEmail(u.email);
+          const created = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '';
+          return `
+            <tr data-user-id="${escapeHtml(u.id)}">
+              <td>${escapeHtml(u.name || '—')}</td>
+              <td>${escapeHtml(u.email || '')}</td>
+              <td>${escapeHtml(String(u.role || '').toUpperCase())}</td>
+              <td>${escapeHtml(String(stats.count))}</td>
+              <td>${fmtJMD(stats.spend)}</td>
+              <td>${escapeHtml(created)}</td>
+              <td><button class="btn btn-ghost btn-sm" type="button" data-action="view-customer">View</button></td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
 
-  function reset() {
-    __MEM_ADMIN.theme = null;
-    __MEM_ADMIN.settings = {};
-    applyTheme(readTheme());
-    hydrate();
-    toast('Settings reset.');
-  }
+    async function openCustomer(id) {
+      const user = users.find((u) => String(u.id) === String(id));
+      if (!user) return;
 
-  if (!form.dataset.bound) {
-    form.dataset.bound = '1';
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      save();
+      const stats = userStatsByEmail(user.email);
+      if (modalTitle) modalTitle.textContent = user.name ? user.name : user.email;
+
+      if (modalMeta) {
+        modalMeta.innerHTML = `
+          <div class="grid grid-2 gap-12">
+            <div><div class="muted">Email</div><div>${escapeHtml(user.email)}</div></div>
+            <div><div class="muted">Role</div>
+              <div class="row gap-8">
+                <select class="select" id="userRoleSelect">
+                  <option value="customer"${String(user.role).toLowerCase() === 'customer' ? ' selected' : ''}>Customer</option>
+                  <option value="admin"${String(user.role).toLowerCase() === 'admin' ? ' selected' : ''}>Admin</option>
+                </select>
+                <button class="btn btn-primary btn-sm" type="button" data-action="save-role">Save</button>
+              </div>
+              <div class="hint mt-8">Role changes require DB update.</div>
+            </div>
+            <div><div class="muted">Orders</div><div>${escapeHtml(String(stats.count))}</div></div>
+            <div><div class="muted">Total spend</div><div>${fmtJMD(stats.spend)}</div></div>
+          </div>
+        `;
+      }
+
+      if (modalOrders) {
+        modalOrders.innerHTML = stats.orders.length
+          ? `<div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
+                <tbody>
+                  ${stats.orders
+                    .map((o) => {
+                      const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+                      return `
+                        <tr>
+                          <td class="mono">${escapeHtml(o.id)}</td>
+                          <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
+                          <td>${fmtJMD(o.totalJMD)}</td>
+                          <td>${escapeHtml(date)}</td>
+                        </tr>
+                      `;
+                    })
+                    .join('')}
+                </tbody>
+              </table>
+            </div>`
+          : `<div class="muted">No orders yet.</div>`;
+      }
+
+      setModalOpen(true);
+
+      // role save
+      const saveBtn = qs('[data-action="save-role"]', modalMeta);
+      saveBtn?.addEventListener(
+        'click',
+        async () => {
+          const role = String(qs('#userRoleSelect', modalMeta)?.value || '').trim().toLowerCase();
+          const { res, data } = await apiJSON(`/api/admin/users/${encodeURIComponent(user.id)}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role }),
+          });
+
+          if (!res.ok || !data?.ok) {
+            alert(data?.error || 'Failed to update role.');
+            return;
+          }
+
+          // Update local cache and rerender
+          users = users.map((u) => (u.id === user.id ? data.user : u));
+          alert('Role updated.');
+          setModalOpen(false);
+          render();
+        },
+        { once: true }
+      );
+    }
+
+    tbody?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="view-customer"]');
+      if (!btn) return;
+      const tr = e.target.closest('tr');
+      const id = tr?.getAttribute('data-user-id');
+      if (id) openCustomer(id);
     });
+
+    search?.addEventListener('input', render);
+
+    await load();
   }
 
-  const resetBtn = qs('[data-action="settings-reset"]');
-  if (resetBtn && !resetBtn.dataset.bound) {
-    resetBtn.dataset.bound = '1';
-    resetBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      reset();
+  // -----------------------------
+  // Settings (Home CMS + Admin Config)
+  // -----------------------------
+  async function initSettings() {
+    if (!location.pathname.endsWith('/admin/settings.html')) return;
+
+    const homeForm = qs('#homeSettingsForm');
+    const cfgForm = qs('#adminConfigForm');
+    const errBox = qs('[data-ui="settingsError"]');
+
+    const headline = qs('#homeHeadline');
+    const subheadline = qs('#homeSubheadline');
+    const slideshow = qs('#homeSlideshow');
+    const featured = qs('#homeFeatured');
+
+    const lowStock = qs('#lowStockThreshold');
+
+    const picker = qs('#featuredPicker');
+    const featuredList = qs('#featuredList');
+    const featuredSearch = qs('#featuredSearch');
+    const featuredCount = qs('#featuredCount');
+
+    let products = [];
+    let selected = new Set();
+
+    const setError = (msg) => {
+      if (!errBox) return;
+      if (!msg) {
+        errBox.hidden = true;
+        errBox.textContent = '';
+      } else {
+        errBox.hidden = false;
+        errBox.textContent = msg;
+      }
+    };
+
+    async function loadHome() {
+      const { res, data } = await apiJSON('/api/admin/site/home');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
+      const h = data.home || {};
+      if (headline) headline.value = h.headline || '';
+      if (subheadline) subheadline.value = h.subheadline || '';
+      if (slideshow) slideshow.value = (Array.isArray(h.slideshowUrls) ? h.slideshowUrls : []).join('\n');
+      if (featured) featured.value = (Array.isArray(h.featuredProductIds) ? h.featuredProductIds : []).join('\n');
+    }
+
+    async function saveHome() {
+      const payload = {
+        headline: headline ? headline.value.trim() : '',
+        subheadline: subheadline ? subheadline.value.trim() : '',
+        slideshowUrls: slideshow ? slideshow.value.split('\n').map((s) => s.trim()).filter(Boolean) : [],
+        featuredProductIds: featured ? featured.value.split('\n').map((s) => s.trim()).filter(Boolean) : [],
+      };
+
+      const { res, data } = await apiJSON('/api/admin/site/home', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
+    }
+
+    async function loadConfig() {
+      const { res, data } = await apiJSON('/api/admin/config');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load config');
+      const c = data.config || {};
+      if (lowStock) lowStock.value = String(c.lowStockThreshold ?? 3);
+    }
+
+    async function saveConfig() {
+      const n = Number(lowStock?.value);
+      const payload = { lowStockThreshold: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 3 };
+      const { res, data } = await apiJSON('/api/admin/config', { method: 'PUT', body: JSON.stringify(payload) });
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
+    }
+
+    async function loadProductsForPicker() {
+      const { res, data } = await apiJSON('/api/admin/products');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
+      products = Array.isArray(data.products) ? data.products : [];
+    }
+
+    function openPicker() {
+      if (!picker) return;
+      picker.hidden = false;
+
+      const currentIds = (featured?.value || '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      selected = new Set(currentIds);
+
+      renderPicker();
+    }
+
+    function closePicker() {
+      if (!picker) return;
+      picker.hidden = true;
+    }
+
+    function renderPicker() {
+      if (!featuredList) return;
+      const q = String(featuredSearch?.value || '').trim().toLowerCase();
+
+      const rows = products
+        .filter((p) => {
+          if (!q) return true;
+          return (
+            String(p.name || '').toLowerCase().includes(q) ||
+            String(p.id || '').toLowerCase().includes(q)
+          );
+        })
+        .slice(0, 200);
+
+      featuredList.innerHTML = rows
+        .map((p) => {
+          const checked = selected.has(p.id) ? 'checked' : '';
+          const badge = p.isPublished ? 'Published' : 'Draft';
+          return `
+            <label class="row-between card mini" style="padding:10px;margin:8px 0;">
+              <div>
+                <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
+                <div class="muted mono">${escapeHtml(p.id)}</div>
+              </div>
+              <div class="row gap-8">
+                <span class="badge badge-soft">${escapeHtml(badge)}</span>
+                <input type="checkbox" data-pid="${escapeHtml(p.id)}" ${checked}/>
+              </div>
+            </label>
+          `;
+        })
+        .join('');
+
+      if (featuredCount) featuredCount.textContent = String(selected.size);
+    }
+
+    featuredList?.addEventListener('change', (e) => {
+      const cb = e.target.closest('input[type="checkbox"][data-pid]');
+      if (!cb) return;
+      const id = cb.getAttribute('data-pid');
+      if (!id) return;
+
+      if (cb.checked) {
+        if (selected.size >= 12) {
+          cb.checked = false;
+          alert('Limit: 12 featured products.');
+          return;
+        }
+        selected.add(id);
+      } else {
+        selected.delete(id);
+      }
+
+      if (featuredCount) featuredCount.textContent = String(selected.size);
     });
+
+    featuredSearch?.addEventListener('input', renderPicker);
+
+    qs('[data-action="pick-featured"]')?.addEventListener('click', async () => {
+      setError('');
+      try {
+        if (!products.length) await loadProductsForPicker();
+        openPicker();
+      } catch (e) {
+        setError(String(e?.message || 'Failed to open picker'));
+      }
+    });
+
+    qs('[data-action="close-featured"]')?.addEventListener('click', closePicker);
+    qs('[data-action="apply-featured"]')?.addEventListener('click', () => {
+      if (featured) featured.value = Array.from(selected.values()).join('\n');
+      closePicker();
+    });
+
+    qs('[data-action="home-refresh"]')?.addEventListener('click', async () => {
+      setError('');
+      try {
+        await loadHome();
+        alert('Refreshed.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to refresh'));
+      }
+    });
+
+    qs('[data-action="home-save"]')?.addEventListener('click', async () => {
+      setError('');
+      try {
+        await saveHome();
+        alert('Home settings saved.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to save home settings'));
+      }
+    });
+
+    qs('[data-action="config-save"]')?.addEventListener('click', async () => {
+      setError('');
+      try {
+        await saveConfig();
+        alert('Config saved.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to save config'));
+      }
+    });
+
+    // initial load
+    try {
+      await Promise.all([loadHome(), loadConfig()]);
+    } catch (e) {
+      setError(String(e?.message || 'Failed to load settings'));
+    }
   }
 
-  hydrate();
-}
+  // -----------------------------
+  // Boot
+  // -----------------------------
+  async function init() {
+    // Year
+    qsa('[data-ui="year"]').forEach((n) => (n.textContent = String(new Date().getFullYear())));
 
-/* ================= App Boot ================= */
+    bindThemeToggle();
+    bindSidebarToggle();
+    bindToasts();
 
-document.addEventListener('DOMContentLoaded', () => {
-  (async () => {
-    // Core setup
-    applyTheme(readTheme());
-    setYear();
-
-    // Auth gate (DB session via /api/me)
     await requireAdminGate();
+    await fetchMe();
+    hydrateAdminName();
 
-    applySidebarPref();
-    bindSidebarMediaListener();
-    highlightActiveNav();
+    await initAdminLogin();
+    await initDashboard();
+    await initOrders();
+    await initCustomers();
+    await initSettings();
+  }
 
-    await hydrateAdminName();
-    bindDelegatedActions();
-
-    // Page-specific inits
-    initProductsManager();
-    initDashboard();
-    initOrders();
-    initCustomers();
-    initSettings();
-  })().catch((err) => {
-    console.error(err);
+  document.addEventListener('DOMContentLoaded', () => {
+    init().catch((e) => console.error(e));
   });
-});
+})();
