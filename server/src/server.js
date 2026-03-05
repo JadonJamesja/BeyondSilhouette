@@ -511,6 +511,125 @@ app.post("/api/dev/make-admin", async (req, res) => {
 });
 
 // -----------------------------
+// CART API
+// -----------------------------
+
+// GET current user's cart
+app.get("/api/cart", async (req, res) => {
+  const sess = readSession(req);
+
+  if (!sess?.userId) {
+    return res.json({
+      ok: true,
+      items: [],
+      totalQty: 0,
+      totalPrice: 0
+    });
+  }
+
+  try {
+    const items = await prisma.cartItem.findMany({
+      where: { userId: sess.userId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            priceJMD: true,
+            images: { take: 1, select: { url: true } }
+          }
+        }
+      }
+    });
+
+    const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+
+    const totalPrice = items.reduce((sum, i) => {
+      return sum + (i.quantity * Number(i.product?.priceJMD || 0));
+    }, 0);
+
+    return res.json({
+      ok: true,
+      items,
+      totalQty,
+      totalPrice
+    });
+
+  } catch (err) {
+    console.error("GET /api/cart failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load cart" });
+  }
+});
+
+
+// ADD item to cart
+app.post("/api/cart/add", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  const productId = String(req.body?.productId || "");
+  const size = String(req.body?.size || "").toUpperCase();
+  const qty = Math.max(1, Number(req.body?.qty || 1));
+
+  if (!productId || !size) {
+    return res.status(400).json({ ok: false, error: "Missing product or size" });
+  }
+
+  try {
+    const existing = await prisma.cartItem.findFirst({
+      where: {
+        userId: sess.userId,
+        productId,
+        size
+      }
+    });
+
+    if (existing) {
+      await prisma.cartItem.update({
+        where: { id: existing.id },
+        data: { quantity: existing.quantity + qty }
+      });
+    } else {
+      await prisma.cartItem.create({
+        data: {
+          userId: sess.userId,
+          productId,
+          size,
+          quantity: qty
+        }
+      });
+    }
+
+    return res.json({ ok: true });
+
+  } catch (err) {
+    console.error("POST /api/cart/add failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to add to cart" });
+  }
+});
+
+
+// REMOVE item
+app.delete("/api/cart/:id", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  const id = String(req.params.id || "");
+
+  try {
+    await prisma.cartItem.delete({
+      where: { id }
+    });
+
+    return res.json({ ok: true });
+
+  } catch (err) {
+    console.error("DELETE /api/cart failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to remove item" });
+  }
+});
+
+// -----------------------------
 // HELPERS (auth gates used below)
 // -----------------------------
 function requireUser(req, res) {
