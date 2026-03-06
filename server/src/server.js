@@ -514,6 +514,56 @@ app.post("/api/dev/make-admin", async (req, res) => {
 // CART API
 // -----------------------------
 
+async function getCartPayload(userId) {
+  const items = await prisma.cartItem.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          priceJMD: true,
+          images: {
+            orderBy: { sortOrder: "asc" },
+            take: 1,
+            select: { url: true },
+          },
+        },
+      },
+    },
+  });
+
+  const mapped = items.map((item) => ({
+    id: item.id,
+    productId: item.productId,
+    size: item.size,
+    qty: Number(item.qty || 0),
+    product: item.product
+      ? {
+          id: item.product.id,
+          name: item.product.name,
+          priceJMD: item.product.priceJMD,
+          image: item.product.images?.[0]?.url || "",
+        }
+      : null,
+    name: item.product?.name || "Item",
+    image: item.product?.images?.[0]?.url || "",
+    price: Number(item.product?.priceJMD || 0),
+    priceJMD: Number(item.product?.priceJMD || 0),
+  }));
+
+  const totalQty = mapped.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  const totalPrice = mapped.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.priceJMD || 0)), 0);
+
+  return {
+    ok: true,
+    items: mapped,
+    totalQty,
+    totalPrice,
+  };
+}
+
 // GET current user's cart
 app.get("/api/cart", async (req, res) => {
   const sess = readSession(req);
@@ -523,71 +573,48 @@ app.get("/api/cart", async (req, res) => {
       ok: true,
       items: [],
       totalQty: 0,
-      totalPrice: 0
+      totalPrice: 0,
     });
   }
 
   try {
-    const items = await prisma.cartItem.findMany({
-      where: { userId: sess.userId },
-      include: {
-        product: {
-          select: {
-            id: true,
-            name: true,
-            priceJMD: true,
-            images: { take: 1, select: { url: true } }
-          }
-        }
-      }
-    });
-
-    const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
-
-    const totalPrice = items.reduce((sum, i) => {
-      return sum + (i.quantity * Number(i.product?.priceJMD || 0));
-    }, 0);
-
-    return res.json({
-      ok: true,
-      items,
-      totalQty,
-      totalPrice
-    });
-
+    const payload = await getCartPayload(sess.userId);
+    return res.json(payload);
   } catch (err) {
     console.error("GET /api/cart failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load cart" });
   }
 });
 
-
 // ADD item to cart
 app.post("/api/cart/add", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const productId = String(req.body?.productId || "");
-  const size = String(req.body?.size || "").toUpperCase();
-  const qty = Math.max(1, Number(req.body?.qty || 1));
+  const productId = String(req.body?.productId || "").trim();
+  const size = String(req.body?.size || "").trim().toUpperCase();
+  const qty = parseQty(req.body?.qty || 1);
 
-  if (!productId || !size) {
-    return res.status(400).json({ ok: false, error: "Missing product or size" });
+  if (!productId || !size || qty <= 0) {
+    return res.status(400).json({ ok: false, error: "Missing or invalid product, size, or quantity" });
   }
 
   try {
-    const existing = await prisma.cartItem.findFirst({
+    const existing = await prisma.cartItem.findUnique({
       where: {
-        userId: sess.userId,
-        productId,
-        size
-      }
+        userId_productId_size: {
+          userId: sess.userId,
+          productId,
+          size,
+        },
+      },
+      select: { id: true, qty: true },
     });
 
     if (existing) {
       await prisma.cartItem.update({
         where: { id: existing.id },
-        data: { quantity: existing.quantity + qty }
+        data: { qty: existing.qty + qty },
       });
     } else {
       await prisma.cartItem.create({
@@ -595,39 +622,146 @@ app.post("/api/cart/add", async (req, res) => {
           userId: sess.userId,
           productId,
           size,
-          quantity: qty
-        }
+          qty,
+        },
       });
     }
 
-    return res.json({ ok: true });
-
+    const payload = await getCartPayload(sess.userId);
+    return res.json(payload);
   } catch (err) {
     console.error("POST /api/cart/add failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to add to cart" });
   }
 });
 
-
-// REMOVE item
-app.delete("/api/cart/:id", async (req, res) => {
+// UPDATE cart item quantity
+app.patch("/api/cart/item", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const id = String(req.params.id || "");
+  const productId = String(req.body?.productId || "").trim();
+  const size = String(req.body?.size || "").trim().toUpperCase();
+  const qty = parseQty(req.body?.qty);
+
+  if (!productId || !size || !Number.isFinite(qty)) {
+    return res.status(400).json({ ok: false, error: "Missing or invalid product, size, or quantity" });
+  }
 
   try {
-    await prisma.cartItem.delete({
-      where: { id }
+    const existing = await prisma.cartItem.findUnique({
+      where: {
+        userId_productId_size: {
+          userId: sess.userId,
+          productId,
+          size,
+        },
+      },
+      select: { id: true },
     });
 
-    return res.json({ ok: true });
+    if (!existing) {
+      const payload = await getCartPayload(sess.userId);
+      return res.json(payload);
+    }
 
+    if (qty <= 0) {
+      await prisma.cartItem.delete({
+        where: { id: existing.id },
+      });
+    } else {
+      await prisma.cartItem.update({
+        where: { id: existing.id },
+        data: { qty },
+      });
+    }
+
+    const payload = await getCartPayload(sess.userId);
+    return res.json(payload);
   } catch (err) {
-    console.error("DELETE /api/cart failed:", err);
+    console.error("PATCH /api/cart/item failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to update cart" });
+  }
+});
+
+// REMOVE cart item
+app.delete("/api/cart/item", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  const productId = String(req.body?.productId || "").trim();
+  const size = String(req.body?.size || "").trim().toUpperCase();
+
+  if (!productId || !size) {
+    return res.status(400).json({ ok: false, error: "Missing product or size" });
+  }
+
+  try {
+    await prisma.cartItem.deleteMany({
+      where: {
+        userId: sess.userId,
+        productId,
+        size,
+      },
+    });
+
+    const payload = await getCartPayload(sess.userId);
+    return res.json(payload);
+  } catch (err) {
+    console.error("DELETE /api/cart/item failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to remove item" });
   }
 });
+
+// CLEAR cart
+app.post("/api/cart/clear", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  try {
+    await prisma.cartItem.deleteMany({
+      where: { userId: sess.userId },
+    });
+
+    await prisma.inventoryReservation.deleteMany({
+      where: { userId: sess.userId },
+    });
+
+    return res.json({
+      ok: true,
+      items: [],
+      totalQty: 0,
+      totalPrice: 0,
+    });
+  } catch (err) {
+    console.error("POST /api/cart/clear failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to clear cart" });
+  }
+});
+
+// -----------------------------
+// HELPERS (shared)
+// -----------------------------
+function parseQty(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
+async function reservedQtyByOthers(tx, { productId, size, userId }) {
+  const now = new Date();
+  const rows = await tx.inventoryReservation.findMany({
+    where: {
+      productId,
+      size,
+      expiresAt: { gt: now },
+      NOT: userId ? { userId } : undefined,
+    },
+    select: { qty: true },
+  });
+
+  return rows.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+}
 
 // -----------------------------
 // HELPERS (auth gates used below)

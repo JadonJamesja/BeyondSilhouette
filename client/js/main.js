@@ -811,7 +811,8 @@
         // cookie session should be set by server
         await Auth.bootstrap();
 
-        location.href = (rt && rt.href) ? rt.href : 'account.html';
+        const returnTo = getReturnTo();
+        location.href = returnTo || 'account.html';
       } catch (err) {
         toast('Google sign-in is not available yet (server endpoint missing).', { important: true });
       }
@@ -1343,7 +1344,8 @@
           UI.updateNavAuthState();
           UI.updateCartBadges();
 
-          location.href = (rt && rt.href) ? rt.href : 'account.html';
+          const returnTo = getReturnTo();
+        location.href = returnTo || 'account.html';
         } catch (err) {
           toast(err?.message || 'Login failed.', { important: true });
         }
