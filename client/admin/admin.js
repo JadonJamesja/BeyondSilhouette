@@ -1004,7 +1004,6 @@
     await fetchMe();
     hydrateAdminName();
 
-    await initAdminLogin();
     await initDashboard();
     await initOrders();
     await initCustomers();
