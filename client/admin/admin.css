@@ -422,24 +422,31 @@ select.input option {
 }
 
 .table-wrap {
-  overflow: auto;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-radius: var(--radius);
   border: 1px solid hsl(var(--border));
   margin: 0 24px 24px;
+  background: hsl(var(--panel));
   -webkit-overflow-scrolling: touch;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 720px;
+  table-layout: fixed;
+  min-width: 0;
 }
 
 .table th,
 .table td {
-  padding: 14px 14px;              /* more breathing room */
+  padding: 13px 14px;
   border-bottom: 1px solid hsl(var(--border));
-  font-size: 0.92rem;              /* was 13.5px */
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .table th {
@@ -655,6 +662,7 @@ body.admin {
 .main {
   padding: 32px;
   min-width: 0;
+  transition: padding .18s ease;
 }
 
 .sidebar {
@@ -667,6 +675,8 @@ body.admin {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 14px;
+  overflow: hidden;
+  transition: width .18s ease, min-width .18s ease, padding .18s ease, gap .18s ease, transform .18s ease;
 
   width: 272px;
   min-width: 272px;
@@ -962,7 +972,32 @@ body.sidebar-collapsed .sidebar {
   }
 
   body.sidebar-collapsed .nav {
-    display: none;
+    display: grid;
+    gap: 8px;
+    padding: 6px 0;
+  }
+
+  body.sidebar-collapsed .nav-item {
+    width: 100%;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    padding: 10px 6px;
+    font-size: 0;
+    position: relative;
+  }
+
+  body.sidebar-collapsed .nav-item::after {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: hsla(var(--text), .75);
+  }
+
+  body.sidebar-collapsed .nav-item.active::after {
+    background: hsla(var(--accent), .95);
+    box-shadow: 0 0 0 6px hsla(var(--accent), .14);
   }
 
   body.sidebar-collapsed .user-meta {
@@ -1331,9 +1366,12 @@ body.modal-open {
   cursor: pointer;
 }
 
+/* Compact responsive admin tables */
 .table-wrap {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid hsl(var(--border));
   border-radius: 18px;
   background: hsl(var(--panel));
@@ -1342,22 +1380,61 @@ body.modal-open {
 .table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 720px;
+  table-layout: fixed;
+  min-width: 0;
 }
 
 .table th,
 .table td {
-  padding: 14px 16px;
+  padding: 13px 14px;
   border-bottom: 1px solid hsl(var(--border));
   text-align: left;
   vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .table th {
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   color: hsl(var(--muted));
   letter-spacing: .02em;
   text-transform: uppercase;
+}
+
+.table td:last-child,
+.table th:last-child {
+  text-align: right;
+}
+
+.table .btn,
+.table button,
+.table select {
+  max-width: 100%;
+}
+
+body.admin:not(.sidebar-collapsed) .table th:nth-child(1),
+body.admin:not(.sidebar-collapsed) .table td:nth-child(1) {
+  width: 24%;
+}
+
+body.admin:not(.sidebar-collapsed) .table th:nth-child(2),
+body.admin:not(.sidebar-collapsed) .table td:nth-child(2) {
+  width: 20%;
+}
+
+body.admin:not(.sidebar-collapsed) .table th:nth-child(3),
+body.admin:not(.sidebar-collapsed) .table td:nth-child(3) {
+  width: 16%;
+}
+
+body.admin:not(.sidebar-collapsed) .table th:nth-child(4),
+body.admin:not(.sidebar-collapsed) .table td:nth-child(4) {
+  width: 16%;
+}
+
+body.admin:not(.sidebar-collapsed) .table th:nth-child(5),
+body.admin:not(.sidebar-collapsed) .table td:nth-child(5) {
+  width: 24%;
 }
 
 .badge {

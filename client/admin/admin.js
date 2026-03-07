@@ -131,12 +131,43 @@
   function bindSidebarToggle() {
     const toggle = qs('[data-action="toggle-sidebar"]');
     const sidebar = qs('.sidebar');
-    const main = qs('.main');
-    if (!toggle || !sidebar || !main) return;
+    if (!toggle || !sidebar) return;
+
+    const mobileQuery = window.matchMedia('(max-width: 920px)');
+
+    function closeMobileOnResize(e) {
+      if (!e.matches) {
+        document.body.classList.remove('sidebar-open');
+      }
+    }
+
+    if (typeof mobileQuery.addEventListener === 'function') {
+      mobileQuery.addEventListener('change', closeMobileOnResize);
+    } else if (typeof mobileQuery.addListener === 'function') {
+      mobileQuery.addListener(closeMobileOnResize);
+    }
 
     toggle.addEventListener('click', () => {
-      sidebar.classList.toggle('collapsed');
-      main.classList.toggle('expanded');
+      if (mobileQuery.matches) {
+        document.body.classList.toggle('sidebar-open');
+        document.body.classList.remove('sidebar-collapsed');
+      } else {
+        document.body.classList.toggle('sidebar-collapsed');
+        document.body.classList.remove('sidebar-open');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!mobileQuery.matches) return;
+      if (!document.body.classList.contains('sidebar-open')) return;
+      if (sidebar.contains(e.target) || toggle.contains(e.target)) return;
+      document.body.classList.remove('sidebar-open');
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.body.classList.remove('sidebar-open');
+      }
     });
   }
 
@@ -765,10 +796,8 @@
     };
 
     function syncHiddenFields() {
-      if (slideshowField) slideshowField.value = slideshowUrls.join('
-');
-      if (featuredField) featuredField.value = featuredIds.join('
-');
+      if (slideshowField) slideshowField.value = slideshowUrls.join('\n');
+      if (featuredField) featuredField.value = featuredIds.join('\n');
       const slideshowCount = qs('#slideshowCount');
       const featuredCount = qs('#featuredCountInline');
       if (slideshowCount) slideshowCount.textContent = String(slideshowUrls.length);
