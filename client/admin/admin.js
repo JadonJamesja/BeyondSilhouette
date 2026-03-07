@@ -64,20 +64,13 @@
     return location.pathname.includes('/admin/');
   }
 
-  function adminPage() {
-    const path = String(location.pathname || '').toLowerCase().replace(/\/+$/, '');
-    if (path.endsWith('/admin') || path === '/admin') return 'dashboard';
-    if (path.endsWith('/admin/login') || path.endsWith('/admin/login.html')) return 'login';
-    if (path.endsWith('/admin/dashboard') || path.endsWith('/admin/dashboard.html')) return 'dashboard';
-    if (path.endsWith('/admin/orders') || path.endsWith('/admin/orders.html')) return 'orders';
-    if (path.endsWith('/admin/products') || path.endsWith('/admin/products.html')) return 'products';
-    if (path.endsWith('/admin/customers') || path.endsWith('/admin/customers.html')) return 'customers';
-    if (path.endsWith('/admin/settings') || path.endsWith('/admin/settings.html')) return 'settings';
-    return '';
+  function pathIsAdminPage(name) {
+    const path = String(location.pathname || '').replace(/\/$/, '');
+    return path.endsWith(`/admin/${name}`) || path.endsWith(`/admin/${name}.html`);
   }
 
   function isAdminLoginPage() {
-    return adminPage() === 'login';
+    return pathIsAdminPage('login');
   }
 
   async function requireAdminGate() {
@@ -147,35 +140,6 @@
       btn.addEventListener('click', () => {
         const msg = btn.getAttribute('data-toast') || 'Done.';
         alert(msg);
-      });
-    });
-  }
-
-  function bindGlobalActions() {
-    qsa('[data-action="logout"]').forEach((btn) => {
-      if (btn.dataset.boundLogout) return;
-      btn.dataset.boundLogout = '1';
-      btn.addEventListener('click', async () => {
-        await logoutEverywhere();
-        location.href = './login.html';
-      });
-    });
-
-    qsa('[data-action="open-shop"]').forEach((btn) => {
-      if (btn.dataset.boundOpenShop) return;
-      btn.dataset.boundOpenShop = '1';
-      btn.addEventListener('click', () => {
-        location.href = '/shop';
-      });
-    });
-
-    qsa('[data-action="new-product"]').forEach((btn) => {
-      if (btn.dataset.boundNewProduct) return;
-      btn.dataset.boundNewProduct = '1';
-      btn.addEventListener('click', () => {
-        const form = qs('#productForm');
-        form?.reset();
-        form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
   }
@@ -286,7 +250,7 @@
   // Dashboard (DB stats)
   // -----------------------------
   async function initDashboard() {
-    if (adminPage() !== 'dashboard') return;
+    if (!pathIsAdminPage('dashboard')) return;
 
     const [statsResp, ordersResp] = await Promise.all([
       apiJSON('/api/admin/stats'),
@@ -313,17 +277,25 @@
     if (!tbody) return;
 
     if (!ordersResp.res.ok || !ordersResp.data?.ok) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">Could not load recent orders.</td></tr>`;
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" class="muted">Could not load recent orders.</td>
+        </tr>
+      `;
       return;
     }
 
-    const rows = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 5) : [];
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">No orders yet.</td></tr>`;
+    const recent = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 6) : [];
+    if (!recent.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" class="muted">No orders yet.</td>
+        </tr>
+      `;
       return;
     }
 
-    tbody.innerHTML = rows.map((o) => `
+    tbody.innerHTML = recent.map((o) => `
       <tr>
         <td class="mono">${escapeHtml(o.id || '')}</td>
         <td>${escapeHtml(o.customerName || o.email || '')}</td>
@@ -337,7 +309,7 @@
   // Orders
   // -----------------------------
   async function initOrders() {
-    if (adminPage() !== 'orders') return;
+    if (!pathIsAdminPage('orders')) return;
 
     const tbody = qs('#ordersTbody');
     const search = qs('#orderSearch');
@@ -385,11 +357,11 @@
           return `
             <tr data-order-id="${escapeHtml(o.id)}">
               <td class="mono">${escapeHtml(o.id)}</td>
+              <td>${escapeHtml(o.email || '')}</td>
+              <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
+              <td>${fmtJMD(o.totalJMD)}</td>
               <td>${escapeHtml(date)}</td>
-              <td>${escapeHtml(o.customerName || o.email || '')}</td>
-              <td><span class="status-pill">${escapeHtml(String(o.status || '').toUpperCase())}</span></td>
-              <td class="right">${fmtJMD(o.totalJMD)}</td>
-              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">Open</button></td>
+              <td><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
             </tr>
           `;
         })
@@ -407,15 +379,7 @@
         modalMeta.innerHTML = `
           <div class="grid grid-2 gap-12">
             <div><div class="muted">Customer</div><div>${escapeHtml(o.customerName || o.email || '')}</div></div>
-            <div>
-                <div class="muted">Status</div>
-                <div class="row gap-8 wrap mt-8">
-                  <select class="select" id="orderStatusSelect">
-                    ${['placed','processing','shipped','delivered','cancelled'].map((status) => `<option value="${status}"${String(o.status || '').toLowerCase() === status ? ' selected' : ''}>${status.toUpperCase()}</option>`).join('')}
-                  </select>
-                  <button class="btn btn-primary btn-sm" type="button" id="saveOrderStatusBtn">Save</button>
-                </div>
-              </div>
+            <div><div class="muted">Status</div><div>${escapeHtml(String(o.status || '').toUpperCase())}</div></div>
             <div><div class="muted">Total</div><div>${fmtJMD(o.totalJMD)}</div></div>
             <div><div class="muted">Placed</div><div>${escapeHtml(date)}</div></div>
           </div>
@@ -468,21 +432,6 @@
           : `<div class="muted">No status history yet.</div>`;
       }
 
-      const saveStatusBtn = qs('#saveOrderStatusBtn', modalMeta || modal);
-      saveStatusBtn?.addEventListener('click', async () => {
-        const nextStatus = String(qs('#orderStatusSelect', modalMeta || modal)?.value || '').trim().toLowerCase();
-        const { res: saveRes, data: saveData } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status: nextStatus }),
-        });
-        if (!saveRes.ok || !saveData?.ok) {
-          alert(saveData?.error || 'Failed to update order status.');
-          return;
-        }
-        await load();
-        await openOrder(id);
-      }, { once: true });
-
       setModalOpen(true);
     }
 
@@ -503,7 +452,7 @@
   // Customers
   // -----------------------------
   async function initCustomers() {
-    if (adminPage() !== 'customers') return;
+    if (!pathIsAdminPage('customers')) return;
 
     const tbody = qs('#customersTbody');
     const search = qs('#customerSearch');
@@ -677,18 +626,18 @@
   // Products
   // -----------------------------
   async function initProducts() {
-    if (adminPage() !== 'products') return;
+    if (!pathIsAdminPage('products')) return;
 
     const form = qs('#productForm');
-    const listWrap = qsa('.list')[0];
+    const lists = qsa('.list');
+    const listWrap = lists[0] || null;
     const previewName = qs('#previewName');
     const previewDesc = qs('#previewDesc');
     const previewPrice = qs('#previewPrice');
     const previewStock = qs('#previewStock');
     const previewStatus = qs('#previewStatus');
-    const stockTotalBadge = qs('#stockTotalBadge');
-    const imageInput = qs('#productImages');
     const imageGrid = qs('#imageGrid');
+    const previewMedia = qs('#previewMedia');
 
     if (!form || !listWrap) return;
 
@@ -700,16 +649,17 @@
     const stockM = qs('[name="stockM"]', form);
     const stockL = qs('[name="stockL"]', form);
     const stockXL = qs('[name="stockXL"]', form);
-
-    const saveDraftBtn = qsa('button', form)[0];
-    const publishBtn = qsa('button', form)[1];
-    const deleteBtn = qsa('button', form)[2];
+    const imagesInput = qs('#productImages', form);
+    const buttons = qsa('button', form);
+    const saveDraftBtn = buttons[0] || null;
+    const publishBtn = buttons[1] || null;
+    const deleteBtn = buttons[2] || null;
 
     let products = [];
     let editingId = null;
-    let imageUrls = [];
+    let images = [];
 
-    function getInventoryPayload() {
+    function inventoryPayload() {
       return [
         { size: 'S', stock: Number(stockS?.value || 0) },
         { size: 'M', stock: Number(stockM?.value || 0) },
@@ -718,71 +668,71 @@
       ];
     }
 
-    function renderImages() {
-      if (!imageGrid) return;
-      if (!imageUrls.length) {
-        imageGrid.innerHTML = '<div class="muted">No images selected.</div>';
-        return;
+    function totalStock() {
+      return inventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
+    }
+
+    function renderImagePreview() {
+      if (previewMedia) {
+        const first = images[0]?.url || '';
+        previewMedia.innerHTML = first
+          ? `<img src="${escapeHtml(first)}" alt="Preview" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />`
+          : `<span class="muted">No image</span>`;
       }
-      imageGrid.innerHTML = imageUrls.map((url, index) => `
-        <div class="thumb-card">
-          <img src="${escapeHtml(url)}" alt="Product image ${index + 1}" class="thumb-image" />
-          <div class="thumb-meta">${index === 0 ? 'Cover image' : `Image ${index + 1}`}</div>
-        </div>
-      `).join('');
+      if (imageGrid) {
+        imageGrid.innerHTML = images.map((img, i) => `
+          <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
+            <img src="${escapeHtml(img.url)}" alt="Image ${i+1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />
+            <div class="muted">Image ${i + 1}</div>
+          </div>
+        `).join('');
+      }
     }
 
     function updatePreview() {
-      const totalStock = getInventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
       if (previewName) previewName.textContent = nameInput?.value?.trim() || '—';
       if (previewDesc) previewDesc.textContent = descInput?.value?.trim() || '—';
       if (previewPrice) previewPrice.textContent = fmtJMD(Number(priceInput?.value || 0));
-      if (previewStock) previewStock.textContent = `Stock: ${totalStock}`;
+      if (previewStock) previewStock.textContent = `Stock: ${totalStock()}`;
       if (previewStatus) previewStatus.textContent = statusInput?.value === 'published' ? 'Published' : 'Draft';
-      if (stockTotalBadge) stockTotalBadge.textContent = `Total: ${totalStock}`;
-      const media = qs('#previewMedia');
-      if (media) {
-        media.innerHTML = imageUrls[0] ? `<img src="${escapeHtml(imageUrls[0])}" alt="Preview" class="preview-img" />` : '<span class="muted">No image</span>';
-      }
-      renderImages();
-    }
-
-    function resetForm() {
-      editingId = null;
-      imageUrls = [];
-      form.reset();
-      updatePreview();
+      renderImagePreview();
     }
 
     function fillForm(product) {
       editingId = product.id;
-      imageUrls = Array.isArray(product.images) ? product.images.map((img) => String(img.url || '').trim()).filter(Boolean) : [];
-      if (nameInput) nameInput.value = product.name || '';
-      if (descInput) descInput.value = product.description || '';
-      if (priceInput) priceInput.value = String(product.priceJMD || 0);
-      if (statusInput) statusInput.value = product.isPublished ? 'published' : 'draft';
-      const inv = Array.isArray(product.inventory) ? product.inventory : [];
-      const bySize = Object.fromEntries(inv.map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
-      if (stockS) stockS.value = String(bySize.S || 0);
-      if (stockM) stockM.value = String(bySize.M || 0);
-      if (stockL) stockL.value = String(bySize.L || 0);
-      if (stockXL) stockXL.value = String(bySize.XL || 0);
+      nameInput.value = product.name || '';
+      descInput.value = product.description || '';
+      priceInput.value = String(product.priceJMD || 0);
+      statusInput.value = product.isPublished ? 'published' : 'draft';
+      const bySize = Object.fromEntries((product.inventory || []).map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
+      stockS.value = String(bySize.S || 0);
+      stockM.value = String(bySize.M || 0);
+      stockL.value = String(bySize.L || 0);
+      stockXL.value = String(bySize.XL || 0);
+      images = Array.isArray(product.images) ? product.images.map((img) => ({ url: img.url, alt: img.alt || '', sortOrder: Number(img.sortOrder || 0) })) : [];
+      updatePreview();
+    }
+
+    function resetForm() {
+      editingId = null;
+      form.reset();
+      images = [];
       updatePreview();
     }
 
     function renderList() {
       if (!products.length) {
-        listWrap.innerHTML = '<div class="muted" style="padding:16px;">No products yet.</div>';
+        listWrap.innerHTML = `<div class="muted" style="padding:16px;">No products yet.</div>`;
         return;
       }
       listWrap.innerHTML = products.map((p) => `
-        <button type="button" class="card mini saved-product-card" data-product-id="${escapeHtml(p.id)}">
-          <div class="row-between gap-12 wrap">
+        <button type="button" class="card mini" data-product-id="${escapeHtml(p.id)}" style="width:100%;text-align:left;padding:14px;margin-bottom:10px;border:none;cursor:pointer;">
+          <div class="row-between">
             <div>
               <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
               <div class="muted">${escapeHtml(p.description || '')}</div>
             </div>
-            <div class="right">
+            <div>
               <div>${fmtJMD(p.priceJMD)}</div>
               <div class="muted">${p.isPublished ? 'Published' : 'Draft'}</div>
             </div>
@@ -794,7 +744,7 @@
     async function loadProducts() {
       const { res, data } = await apiJSON('/api/admin/products');
       if (!res.ok || !data?.ok) {
-        listWrap.innerHTML = '<div class="muted" style="padding:16px;">Failed to load products.</div>';
+        listWrap.innerHTML = `<div class="muted" style="padding:16px;">Failed to load products.</div>`;
         return;
       }
       products = Array.isArray(data.products) ? data.products : [];
@@ -807,8 +757,8 @@
         description: String(descInput?.value || '').trim(),
         priceJMD: Number(priceInput?.value || 0),
         isPublished,
-        inventory: getInventoryPayload(),
-        images: imageUrls.map((url, index) => ({ url, sortOrder: index })),
+        inventory: inventoryPayload(),
+        images,
       };
       if (!payload.name) {
         alert('Product name is required.');
@@ -826,16 +776,19 @@
       alert(isPublished ? 'Product published.' : 'Draft saved.');
     }
 
+    async function deleteProduct() {
+      if (!editingId) return;
+      alert('Delete is not wired yet on the backend for products.');
+    }
+
     form.addEventListener('input', updatePreview);
-    imageInput?.addEventListener('change', async () => {
-      const files = Array.from(imageInput.files || []);
-      imageUrls = await Promise.all(files.map((file) => new Promise((resolve) => {
+    imagesInput?.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      images = await Promise.all(files.map((file, i) => new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => resolve('');
+        reader.onload = () => resolve({ url: String(reader.result || ''), alt: file.name || '', sortOrder: i });
         reader.readAsDataURL(file);
       })));
-      imageUrls = imageUrls.filter(Boolean);
       updatePreview();
     });
     listWrap.addEventListener('click', (e) => {
@@ -847,11 +800,9 @@
     });
     saveDraftBtn?.addEventListener('click', () => saveProduct(false));
     publishBtn?.addEventListener('click', () => saveProduct(true));
-    deleteBtn?.addEventListener('click', () => {
-      alert('Delete is intentionally disabled in production mode for safety.');
-    });
+    deleteBtn?.addEventListener('click', deleteProduct);
 
-    updatePreview();
+    resetForm();
     await loadProducts();
   }
 
@@ -859,26 +810,28 @@
   // Settings (Home CMS + Admin Config)
   // -----------------------------
   async function initSettings() {
-    if (adminPage() !== 'settings') return;
+    if (!pathIsAdminPage('settings')) return;
 
-    const homeForm = qs('#homeSettingsForm');
-    const cfgForm = qs('#adminConfigForm');
     const errBox = qs('[data-ui="settingsError"]');
-
     const headline = qs('#homeHeadline');
     const subheadline = qs('#homeSubheadline');
     const slideshow = qs('#homeSlideshow');
     const featured = qs('#homeFeatured');
-
     const lowStock = qs('#lowStockThreshold');
 
-    const picker = qs('#featuredPicker');
-    const featuredList = qs('#featuredList');
+    const slideshowSearch = qs('#slideshowSearch');
+    const slideshowPicker = qs('#slideshowPicker');
+    const slideshowSelected = qs('#slideshowSelected');
+    const slideshowCount = qs('#slideshowCount');
+
     const featuredSearch = qs('#featuredSearch');
+    const featuredList = qs('#featuredList');
+    const featuredSelected = qs('#featuredSelected');
     const featuredCount = qs('#featuredCount');
 
     let products = [];
-    let selected = new Set();
+    let slideshowSelectedUrls = [];
+    let featuredSelectedIds = [];
 
     const setError = (msg) => {
       if (!errBox) return;
@@ -891,22 +844,54 @@
       }
     };
 
+    function syncHiddenFields() {
+      if (slideshow) slideshow.value = slideshowSelectedUrls.join('
+');
+      if (featured) featured.value = featuredSelectedIds.join('
+');
+      if (slideshowCount) slideshowCount.textContent = String(slideshowSelectedUrls.length);
+      if (featuredCount) featuredCount.textContent = String(featuredSelectedIds.length);
+    }
+
+    function productCover(product) {
+      const img = Array.isArray(product?.images) ? product.images[0] : null;
+      return String(img?.url || '');
+    }
+
+    function productImages(product) {
+      return Array.isArray(product?.images) ? product.images.filter((img) => img?.url).map((img) => ({
+        url: String(img.url),
+        alt: String(img.alt || product?.name || 'Product image'),
+        productId: String(product?.id || ''),
+        productName: String(product?.name || 'Product'),
+      })) : [];
+    }
+
+    function getAllSlideshowOptions() {
+      return products.flatMap((product) => productImages(product));
+    }
+
     async function loadHome() {
       const { res, data } = await apiJSON('/api/admin/site/home');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
       const h = data.home || {};
       if (headline) headline.value = h.headline || '';
       if (subheadline) subheadline.value = h.subheadline || '';
-      if (slideshow) slideshow.value = (Array.isArray(h.slideshowUrls) ? h.slideshowUrls : []).join('\n');
-      if (featured) featured.value = (Array.isArray(h.featuredProductIds) ? h.featuredProductIds : []).join('\n');
+      slideshowSelectedUrls = Array.isArray(h.slideshowUrls) ? h.slideshowUrls.slice(0, 6) : [];
+      featuredSelectedIds = Array.isArray(h.featuredProductIds) ? h.featuredProductIds.slice(0, 3) : [];
+      syncHiddenFields();
+      renderSlideshowPicker();
+      renderFeaturedPicker();
+      renderSelectedSlideshow();
+      renderSelectedFeatured();
     }
 
     async function saveHome() {
       const payload = {
         headline: headline ? headline.value.trim() : '',
         subheadline: subheadline ? subheadline.value.trim() : '',
-        slideshowUrls: slideshow ? slideshow.value.split('\n').map((s) => s.trim()).filter(Boolean) : [],
-        featuredProductIds: featured ? featured.value.split('\n').map((s) => s.trim()).filter(Boolean) : [],
+        slideshowUrls: slideshowSelectedUrls.slice(0, 6),
+        featuredProductIds: featuredSelectedIds.slice(0, 3),
       };
 
       const { res, data } = await apiJSON('/api/admin/site/home', {
@@ -931,108 +916,210 @@
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
     }
 
-    async function loadProductsForPicker() {
+    async function loadProductsLibrary() {
       const { res, data } = await apiJSON('/api/admin/products');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
       products = Array.isArray(data.products) ? data.products : [];
     }
 
-    function openPicker() {
-      if (!picker) return;
-      picker.hidden = false;
+    function renderSlideshowPicker() {
+      if (!slideshowPicker) return;
+      const q = String(slideshowSearch?.value || '').trim().toLowerCase();
+      const rows = getAllSlideshowOptions().filter((img) => {
+        if (!q) return true;
+        return img.productName.toLowerCase().includes(q) || img.url.toLowerCase().includes(q);
+      }).slice(0, 100);
 
-      const currentIds = (featured?.value || '')
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      selected = new Set(currentIds);
+      if (!rows.length) {
+        slideshowPicker.innerHTML = '<div class="muted">No product images found.</div>';
+        return;
+      }
 
-      renderPicker();
+      slideshowPicker.innerHTML = rows.map((img) => {
+        const active = slideshowSelectedUrls.includes(img.url) ? ' is-selected' : '';
+        return `
+          <button type="button" class="picker-card${active}" data-action="toggle-slideshow" data-url="${escapeHtml(img.url)}">
+            <div class="picker-thumb"><img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt)}" /></div>
+            <div class="picker-meta">
+              <strong>${escapeHtml(img.productName)}</strong>
+              <span class="muted">${slideshowSelectedUrls.includes(img.url) ? 'Selected' : 'Add to slideshow'}</span>
+            </div>
+          </button>
+        `;
+      }).join('');
     }
 
-    function closePicker() {
-      if (!picker) return;
-      picker.hidden = true;
-    }
-
-    function renderPicker() {
+    function renderFeaturedPicker() {
       if (!featuredList) return;
       const q = String(featuredSearch?.value || '').trim().toLowerCase();
+      const rows = products.filter((product) => {
+        if (!q) return true;
+        return String(product?.name || '').toLowerCase().includes(q) || String(product?.id || '').toLowerCase().includes(q);
+      }).slice(0, 100);
 
-      const rows = products
-        .filter((p) => {
-          if (!q) return true;
-          return (
-            String(p.name || '').toLowerCase().includes(q) ||
-            String(p.id || '').toLowerCase().includes(q)
-          );
-        })
-        .slice(0, 200);
+      if (!rows.length) {
+        featuredList.innerHTML = '<div class="muted">No products found.</div>';
+        return;
+      }
 
-      featuredList.innerHTML = rows
-        .map((p) => {
-          const checked = selected.has(p.id) ? 'checked' : '';
-          const badge = p.isPublished ? 'Published' : 'Draft';
-          return `
-            <label class="row-between card mini" style="padding:10px;margin:8px 0;">
-              <div>
-                <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
-                <div class="muted mono">${escapeHtml(p.id)}</div>
-              </div>
-              <div class="row gap-8">
-                <span class="badge badge-soft">${escapeHtml(badge)}</span>
-                <input type="checkbox" data-pid="${escapeHtml(p.id)}" ${checked}/>
-              </div>
-            </label>
-          `;
-        })
-        .join('');
-
-      if (featuredCount) featuredCount.textContent = String(selected.size);
+      featuredList.innerHTML = rows.map((product) => {
+        const cover = productCover(product);
+        const active = featuredSelectedIds.includes(product.id) ? ' is-selected' : '';
+        return `
+          <button type="button" class="picker-card${active}" data-action="toggle-featured" data-pid="${escapeHtml(product.id)}">
+            <div class="picker-thumb">${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(product.name || 'Product')}" />` : '<span class="muted">No image</span>'}</div>
+            <div class="picker-meta">
+              <strong>${escapeHtml(product.name || 'Product')}</strong>
+              <span class="muted">${product.isPublished ? 'Published' : 'Draft'}</span>
+            </div>
+          </button>
+        `;
+      }).join('');
     }
 
-    featuredList?.addEventListener('change', (e) => {
-      const cb = e.target.closest('input[type="checkbox"][data-pid]');
-      if (!cb) return;
-      const id = cb.getAttribute('data-pid');
-      if (!id) return;
+    function renderSelectedSlideshow() {
+      if (!slideshowSelected) return;
+      if (!slideshowSelectedUrls.length) {
+        slideshowSelected.innerHTML = '<div class="muted">No slideshow images selected yet.</div>';
+        return;
+      }
+      slideshowSelected.innerHTML = slideshowSelectedUrls.map((url, index) => `
+        <div class="selected-card">
+          <div class="selected-thumb"><img src="${escapeHtml(url)}" alt="Selected slideshow image ${index + 1}" /></div>
+          <div class="selected-body">
+            <strong>Slide ${index + 1}</strong>
+            <div class="selected-actions">
+              <button class="btn btn-ghost btn-sm" type="button" data-action="move-slide-left" data-index="${index}" ${index === 0 ? 'disabled' : ''}>Up</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="move-slide-right" data-index="${index}" ${index === slideshowSelectedUrls.length - 1 ? 'disabled' : ''}>Down</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="remove-slide" data-url="${escapeHtml(url)}">Remove</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
 
-      if (cb.checked) {
-        if (selected.size >= 12) {
-          cb.checked = false;
-          alert('Limit: 12 featured products.');
+    function renderSelectedFeatured() {
+      if (!featuredSelected) return;
+      if (!featuredSelectedIds.length) {
+        featuredSelected.innerHTML = '<div class="muted">No featured products selected yet.</div>';
+        return;
+      }
+      const cards = featuredSelectedIds.map((id, index) => {
+        const product = products.find((p) => String(p.id) === String(id));
+        const cover = productCover(product);
+        return `
+          <div class="selected-card">
+            <div class="selected-thumb">${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(product?.name || 'Product')}" />` : '<span class="muted">No image</span>'}</div>
+            <div class="selected-body">
+              <strong>${escapeHtml(product?.name || 'Product')}</strong>
+              <span class="muted">Featured slot ${index + 1}</span>
+              <div class="selected-actions">
+                <button class="btn btn-ghost btn-sm" type="button" data-action="move-featured-left" data-index="${index}" ${index === 0 ? 'disabled' : ''}>Left</button>
+                <button class="btn btn-ghost btn-sm" type="button" data-action="move-featured-right" data-index="${index}" ${index === featuredSelectedIds.length - 1 ? 'disabled' : ''}>Right</button>
+                <button class="btn btn-ghost btn-sm" type="button" data-action="remove-featured" data-pid="${escapeHtml(id)}">Remove</button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      featuredSelected.innerHTML = cards.join('');
+    }
+
+    function moveItem(arr, from, to) {
+      if (from < 0 || to < 0 || from >= arr.length || to >= arr.length) return arr;
+      const copy = arr.slice();
+      const [item] = copy.splice(from, 1);
+      copy.splice(to, 0, item);
+      return copy;
+    }
+
+    slideshowPicker?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="toggle-slideshow"]');
+      if (!btn) return;
+      const url = String(btn.getAttribute('data-url') || '').trim();
+      if (!url) return;
+      if (slideshowSelectedUrls.includes(url)) {
+        slideshowSelectedUrls = slideshowSelectedUrls.filter((item) => item !== url);
+      } else {
+        if (slideshowSelectedUrls.length >= 6) {
+          alert('You can select up to 6 slideshow images.');
           return;
         }
-        selected.add(id);
+        slideshowSelectedUrls = [...slideshowSelectedUrls, url];
+      }
+      syncHiddenFields();
+      renderSlideshowPicker();
+      renderSelectedSlideshow();
+    });
+
+    featuredList?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="toggle-featured"]');
+      if (!btn) return;
+      const id = String(btn.getAttribute('data-pid') || '').trim();
+      if (!id) return;
+      if (featuredSelectedIds.includes(id)) {
+        featuredSelectedIds = featuredSelectedIds.filter((item) => item !== id);
       } else {
-        selected.delete(id);
+        if (featuredSelectedIds.length >= 3) {
+          alert('You can select up to 3 featured products.');
+          return;
+        }
+        featuredSelectedIds = [...featuredSelectedIds, id];
       }
-
-      if (featuredCount) featuredCount.textContent = String(selected.size);
+      syncHiddenFields();
+      renderFeaturedPicker();
+      renderSelectedFeatured();
     });
 
-    featuredSearch?.addEventListener('input', renderPicker);
-
-    qs('[data-action="pick-featured"]')?.addEventListener('click', async () => {
-      setError('');
-      try {
-        if (!products.length) await loadProductsForPicker();
-        openPicker();
-      } catch (e) {
-        setError(String(e?.message || 'Failed to open picker'));
+    slideshowSelected?.addEventListener('click', (e) => {
+      const remove = e.target.closest('[data-action="remove-slide"]');
+      const moveLeft = e.target.closest('[data-action="move-slide-left"]');
+      const moveRight = e.target.closest('[data-action="move-slide-right"]');
+      if (remove) {
+        const url = String(remove.getAttribute('data-url') || '').trim();
+        slideshowSelectedUrls = slideshowSelectedUrls.filter((item) => item !== url);
+      } else if (moveLeft) {
+        const index = Number(moveLeft.getAttribute('data-index') || -1);
+        slideshowSelectedUrls = moveItem(slideshowSelectedUrls, index, index - 1);
+      } else if (moveRight) {
+        const index = Number(moveRight.getAttribute('data-index') || -1);
+        slideshowSelectedUrls = moveItem(slideshowSelectedUrls, index, index + 1);
+      } else {
+        return;
       }
+      syncHiddenFields();
+      renderSlideshowPicker();
+      renderSelectedSlideshow();
     });
 
-    qs('[data-action="close-featured"]')?.addEventListener('click', closePicker);
-    qs('[data-action="apply-featured"]')?.addEventListener('click', () => {
-      if (featured) featured.value = Array.from(selected.values()).join('\n');
-      closePicker();
+    featuredSelected?.addEventListener('click', (e) => {
+      const remove = e.target.closest('[data-action="remove-featured"]');
+      const moveLeft = e.target.closest('[data-action="move-featured-left"]');
+      const moveRight = e.target.closest('[data-action="move-featured-right"]');
+      if (remove) {
+        const id = String(remove.getAttribute('data-pid') || '').trim();
+        featuredSelectedIds = featuredSelectedIds.filter((item) => item !== id);
+      } else if (moveLeft) {
+        const index = Number(moveLeft.getAttribute('data-index') || -1);
+        featuredSelectedIds = moveItem(featuredSelectedIds, index, index - 1);
+      } else if (moveRight) {
+        const index = Number(moveRight.getAttribute('data-index') || -1);
+        featuredSelectedIds = moveItem(featuredSelectedIds, index, index + 1);
+      } else {
+        return;
+      }
+      syncHiddenFields();
+      renderFeaturedPicker();
+      renderSelectedFeatured();
     });
+
+    slideshowSearch?.addEventListener('input', renderSlideshowPicker);
+    featuredSearch?.addEventListener('input', renderFeaturedPicker);
 
     qs('[data-action="home-refresh"]')?.addEventListener('click', async () => {
       setError('');
       try {
-        await loadHome();
+        await Promise.all([loadProductsLibrary(), loadHome()]);
         alert('Refreshed.');
       } catch (e) {
         setError(String(e?.message || 'Failed to refresh'));
@@ -1059,37 +1146,17 @@
       }
     });
 
-
-    async function saveUserRoleByEmail() {
-      const email = String(qs('#promoteUserEmail')?.value || '').trim().toLowerCase();
-      const role = String(qs('#promoteUserRole')?.value || 'admin').trim().toLowerCase();
-      if (!email) throw new Error('Enter a user email first.');
-      const { res, data } = await apiJSON('/api/admin/users/promote', {
-        method: 'POST',
-        body: JSON.stringify({ email, role }),
-      });
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update user role');
-      return data.user;
-    }
-
-    qs('[data-action="promote-save"]')?.addEventListener('click', async () => {
-      setError('');
-      try {
-        const user = await saveUserRoleByEmail();
-        alert(`${user.email} is now ${String(user.role || '').toUpperCase()}.`);
-      } catch (e) {
-        setError(String(e?.message || 'Failed to update user role'));
-      }
-    });
-
-    // initial load
     try {
-      await Promise.all([loadHome(), loadConfig()]);
+      await Promise.all([loadProductsLibrary(), loadHome(), loadConfig()]);
+      syncHiddenFields();
+      renderSlideshowPicker();
+      renderFeaturedPicker();
+      renderSelectedSlideshow();
+      renderSelectedFeatured();
     } catch (e) {
       setError(String(e?.message || 'Failed to load settings'));
     }
   }
-
   // -----------------------------
   // Boot
   // -----------------------------
@@ -1100,7 +1167,6 @@
     bindThemeToggle();
     bindSidebarToggle();
     bindToasts();
-    bindGlobalActions();
 
     await requireAdminGate();
     await fetchMe();

@@ -52,7 +52,7 @@
     <header class="topbar">
       <div>
         <h1 class="h1">Settings</h1>
-        <p class="muted">Manage homepage content, dashboard thresholds, and admin role access from one place.</p>
+        <p class="muted">Production settings will be enabled here once DB-backed configuration is finalized.</p>
       </div>
 
           </header>
@@ -84,40 +84,31 @@
             </div>
 
             <div class="field col-span-2">
-              <label class="label" for="homeSlideshow">Slideshow image URLs (one per line)</label>
-              <textarea class="textarea" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
-              <div class="hint">Tip: Keep to 3–6 images. Use full https URLs.</div>
+              <label class="label" for="homeSlideshow">Homepage slideshow</label>
+              <input class="input" id="slideshowSearch" type="search" placeholder="Search products for slideshow images..." />
+              <div class="hint">Select 3–6 images from your product library. The order below is the order shown on the homepage.</div>
+              <div id="slideshowPicker" class="picker-grid mt-12"></div>
+              <div class="selection-head mt-12 row-between">
+                <strong>Selected slideshow images</strong>
+                <span class="muted"><span id="slideshowCount">0</span> selected</span>
+              </div>
+              <div id="slideshowSelected" class="selected-grid mt-12"></div>
+              <textarea class="textarea hidden-input" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
             </div>
 
             <div class="field col-span-2">
-              <label class="label" for="homeFeatured">Featured product IDs (one per line)</label>
-              <textarea class="textarea" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
-              <div class="hint">These must be valid Product IDs. Published products only show publicly.</div>
-              <div class="mt-8">
-                <button class="btn btn-ghost btn-sm" type="button" data-action="pick-featured">Pick from products</button>
+              <label class="label" for="homeFeatured">Featured products</label>
+              <input class="input" id="featuredSearch" type="search" placeholder="Search products for featured picks..." />
+              <div class="hint">Choose up to 3 featured pieces for the homepage.</div>
+              <div id="featuredList" class="picker-grid mt-12"></div>
+              <div class="selection-head mt-12 row-between">
+                <strong>Selected featured products</strong>
+                <span class="muted"><span id="featuredCount">0</span> selected</span>
               </div>
+              <div id="featuredSelected" class="selected-grid mt-12"></div>
+              <textarea class="textarea hidden-input" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
             </div>
           </form>
-
-          <div id="featuredPicker" class="modal" hidden>
-            <div class="modal-card">
-              <div class="modal-head row-between">
-                <div>
-                  <div class="modal-title">Pick Featured Products</div>
-                  <div class="muted">Select up to 12 products.</div>
-                </div>
-                <button class="btn btn-ghost btn-sm" type="button" data-action="close-featured">Close</button>
-              </div>
-              <div class="modal-body">
-                <input class="input" id="featuredSearch" type="search" placeholder="Search products..." />
-                <div id="featuredList" class="mt-12"></div>
-              </div>
-              <div class="modal-foot row-between">
-                <div class="muted"><span id="featuredCount">0</span> selected</div>
-                <button class="btn btn-primary btn-sm" type="button" data-action="apply-featured">Apply</button>
-              </div>
-            </div>
-          </div>
 
         </div>
       </article>
@@ -145,36 +136,6 @@
         </div>
       </article>
     </section>
-
-    <section class="section">
-      <article class="card">
-        <div class="card-head row-between">
-          <div>
-            <h2 class="card-title">Promote User</h2>
-            <p class="muted">Grant or revoke admin access by email.</p>
-          </div>
-          <button class="btn btn-primary btn-sm" type="button" data-action="promote-save">Apply</button>
-        </div>
-
-        <div class="card-body">
-          <form class="grid grid-2 gap-16" autocomplete="off" onsubmit="return false;">
-            <div class="field">
-              <label class="label" for="promoteUserEmail">User email</label>
-              <input class="input" id="promoteUserEmail" type="email" placeholder="customer@example.com" />
-            </div>
-            <div class="field">
-              <label class="label" for="promoteUserRole">Role</label>
-              <select class="select" id="promoteUserRole">
-                <option value="admin">Admin</option>
-                <option value="customer">Customer</option>
-              </select>
-              <div class="hint">Use this when you need to promote a customer without opening the customers table.</div>
-            </div>
-          </form>
-        </div>
-      </article>
-    </section>
-
 <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
   </div>
 
