@@ -64,13 +64,19 @@
     return location.pathname.includes('/admin/');
   }
 
-  function pathIsAdminPage(name) {
-    const path = String(location.pathname || '').replace(/\/$/, '');
-    return path.endsWith(`/admin/${name}`) || path.endsWith(`/admin/${name}.html`);
+  function adminPageKey() {
+    const p = String(location.pathname || '').toLowerCase().replace(/\/+$/, '');
+    if (p.endsWith('/admin/login') || p.endsWith('/admin/login.html')) return 'login';
+    if (p.endsWith('/admin/dashboard') || p.endsWith('/admin/dashboard.html')) return 'dashboard';
+    if (p.endsWith('/admin/orders') || p.endsWith('/admin/orders.html')) return 'orders';
+    if (p.endsWith('/admin/products') || p.endsWith('/admin/products.html')) return 'products';
+    if (p.endsWith('/admin/customers') || p.endsWith('/admin/customers.html')) return 'customers';
+    if (p.endsWith('/admin/settings') || p.endsWith('/admin/settings.html')) return 'settings';
+    return '';
   }
 
   function isAdminLoginPage() {
-    return pathIsAdminPage('login');
+    return adminPageKey() === 'login';
   }
 
   async function requireAdminGate() {
@@ -250,66 +256,31 @@
   // Dashboard (DB stats)
   // -----------------------------
   async function initDashboard() {
-    if (!pathIsAdminPage('dashboard')) return;
+    if (adminPageKey() !== 'dashboard') return;
 
-    const [statsResp, ordersResp] = await Promise.all([
-      apiJSON('/api/admin/stats'),
-      apiJSON('/api/admin/orders'),
-    ]);
+    const { res, data } = await apiJSON('/api/admin/stats');
+    if (!res.ok || !data?.ok) return;
 
-    if (statsResp.res.ok && statsResp.data?.ok) {
-      const s = statsResp.data.stats || {};
-      const revenue = qs('#statRevenueValue');
-      const orders = qs('#statOrdersValue');
-      const customers = qs('#statCustomersValue');
-      const lowStock = qs('#statLowStockValue');
+    const s = data.stats || {};
+    const revenue = qs('#statRevenueValue');
+    const orders = qs('#statOrdersValue');
+    const customers = qs('#statCustomersValue');
+    const lowStock = qs('#statLowStockValue');
 
-      if (revenue) revenue.textContent = fmtJMD(s.revenueJMD);
-      if (orders) orders.textContent = String(s.ordersCount ?? 0);
-      if (customers) customers.textContent = String(s.usersCount ?? 0);
-      if (lowStock) lowStock.textContent = String(s.lowStockCount ?? 0);
+    if (revenue) revenue.textContent = fmtJMD(s.revenueJMD);
+    if (orders) orders.textContent = String(s.ordersCount ?? 0);
+    if (customers) customers.textContent = String(s.usersCount ?? 0);
+    if (lowStock) lowStock.textContent = String(s.lowStockCount ?? 0);
 
-      const lowSub = qs('#statLowStockSub');
-      if (lowSub) lowSub.textContent = `≤ ${Number(s.lowStockThreshold ?? 3)} in stock`;
-    }
-
-    const tbody = qs('#recentOrdersTbody');
-    if (!tbody) return;
-
-    if (!ordersResp.res.ok || !ordersResp.data?.ok) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="4" class="muted">Could not load recent orders.</td>
-        </tr>
-      `;
-      return;
-    }
-
-    const recent = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 6) : [];
-    if (!recent.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="4" class="muted">No orders yet.</td>
-        </tr>
-      `;
-      return;
-    }
-
-    tbody.innerHTML = recent.map((o) => `
-      <tr>
-        <td class="mono">${escapeHtml(o.id || '')}</td>
-        <td>${escapeHtml(o.customerName || o.email || '')}</td>
-        <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
-        <td class="right">${fmtJMD(o.totalJMD)}</td>
-      </tr>
-    `).join('');
+    const lowSub = qs('#statLowStockSub');
+    if (lowSub) lowSub.textContent = `≤ ${Number(s.lowStockThreshold ?? 3)} in stock`;
   }
 
   // -----------------------------
   // Orders
   // -----------------------------
   async function initOrders() {
-    if (!pathIsAdminPage('orders')) return;
+    if (adminPageKey() !== 'orders') return;
 
     const tbody = qs('#ordersTbody');
     const search = qs('#orderSearch');
@@ -452,7 +423,7 @@
   // Customers
   // -----------------------------
   async function initCustomers() {
-    if (!pathIsAdminPage('customers')) return;
+    if (adminPageKey() !== 'customers') return;
 
     const tbody = qs('#customersTbody');
     const search = qs('#customerSearch');
@@ -626,18 +597,16 @@
   // Products
   // -----------------------------
   async function initProducts() {
-    if (!pathIsAdminPage('products')) return;
+    if (adminPageKey() !== 'products') return;
 
     const form = qs('#productForm');
-    const lists = qsa('.list');
-    const listWrap = lists[0] || null;
+    const listWrap = qs('#savedProductsList');
     const previewName = qs('#previewName');
     const previewDesc = qs('#previewDesc');
     const previewPrice = qs('#previewPrice');
     const previewStock = qs('#previewStock');
     const previewStatus = qs('#previewStatus');
-    const imageGrid = qs('#imageGrid');
-    const previewMedia = qs('#previewMedia');
+    const stockTotalBadge = qs('#stockTotalBadge');
 
     if (!form || !listWrap) return;
 
@@ -649,17 +618,14 @@
     const stockM = qs('[name="stockM"]', form);
     const stockL = qs('[name="stockL"]', form);
     const stockXL = qs('[name="stockXL"]', form);
-    const imagesInput = qs('#productImages', form);
-    const buttons = qsa('button', form);
-    const saveDraftBtn = buttons[0] || null;
-    const publishBtn = buttons[1] || null;
-    const deleteBtn = buttons[2] || null;
+
+    const saveDraftBtn = qsa('button', form)[0];
+    const publishBtn = qsa('button', form)[1];
 
     let products = [];
     let editingId = null;
-    let images = [];
 
-    function inventoryPayload() {
+    function getInventoryPayload() {
       return [
         { size: 'S', stock: Number(stockS?.value || 0) },
         { size: 'M', stock: Number(stockM?.value || 0) },
@@ -668,55 +634,28 @@
       ];
     }
 
-    function totalStock() {
-      return inventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
-    }
-
-    function renderImagePreview() {
-      if (previewMedia) {
-        const first = images[0]?.url || '';
-        previewMedia.innerHTML = first
-          ? `<img src="${escapeHtml(first)}" alt="Preview" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />`
-          : `<span class="muted">No image</span>`;
-      }
-      if (imageGrid) {
-        imageGrid.innerHTML = images.map((img, i) => `
-          <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
-            <img src="${escapeHtml(img.url)}" alt="Image ${i+1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />
-            <div class="muted">Image ${i + 1}</div>
-          </div>
-        `).join('');
-      }
-    }
-
     function updatePreview() {
+      const totalStock = getInventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
       if (previewName) previewName.textContent = nameInput?.value?.trim() || '—';
       if (previewDesc) previewDesc.textContent = descInput?.value?.trim() || '—';
       if (previewPrice) previewPrice.textContent = fmtJMD(Number(priceInput?.value || 0));
-      if (previewStock) previewStock.textContent = `Stock: ${totalStock()}`;
+      if (previewStock) previewStock.textContent = `Stock: ${totalStock}`;
       if (previewStatus) previewStatus.textContent = statusInput?.value === 'published' ? 'Published' : 'Draft';
-      renderImagePreview();
+      if (stockTotalBadge) stockTotalBadge.textContent = `Total: ${totalStock}`;
     }
 
     function fillForm(product) {
       editingId = product.id;
-      nameInput.value = product.name || '';
-      descInput.value = product.description || '';
-      priceInput.value = String(product.priceJMD || 0);
-      statusInput.value = product.isPublished ? 'published' : 'draft';
-      const bySize = Object.fromEntries((product.inventory || []).map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
-      stockS.value = String(bySize.S || 0);
-      stockM.value = String(bySize.M || 0);
-      stockL.value = String(bySize.L || 0);
-      stockXL.value = String(bySize.XL || 0);
-      images = Array.isArray(product.images) ? product.images.map((img) => ({ url: img.url, alt: img.alt || '', sortOrder: Number(img.sortOrder || 0) })) : [];
-      updatePreview();
-    }
-
-    function resetForm() {
-      editingId = null;
-      form.reset();
-      images = [];
+      if (nameInput) nameInput.value = product.name || '';
+      if (descInput) descInput.value = product.description || '';
+      if (priceInput) priceInput.value = String(product.priceJMD || 0);
+      if (statusInput) statusInput.value = product.isPublished ? 'published' : 'draft';
+      const inv = Array.isArray(product.inventory) ? product.inventory : [];
+      const bySize = Object.fromEntries(inv.map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
+      if (stockS) stockS.value = String(bySize.S || 0);
+      if (stockM) stockM.value = String(bySize.M || 0);
+      if (stockL) stockL.value = String(bySize.L || 0);
+      if (stockXL) stockXL.value = String(bySize.XL || 0);
       updatePreview();
     }
 
@@ -726,13 +665,13 @@
         return;
       }
       listWrap.innerHTML = products.map((p) => `
-        <button type="button" class="card mini" data-product-id="${escapeHtml(p.id)}" style="width:100%;text-align:left;padding:14px;margin-bottom:10px;border:none;cursor:pointer;">
+        <button type="button" class="card mini saved-product-card" data-product-id="${escapeHtml(p.id)}">
           <div class="row-between">
             <div>
               <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
               <div class="muted">${escapeHtml(p.description || '')}</div>
             </div>
-            <div>
+            <div class="right">
               <div>${fmtJMD(p.priceJMD)}</div>
               <div class="muted">${p.isPublished ? 'Published' : 'Draft'}</div>
             </div>
@@ -757,8 +696,8 @@
         description: String(descInput?.value || '').trim(),
         priceJMD: Number(priceInput?.value || 0),
         isPublished,
-        inventory: inventoryPayload(),
-        images,
+        inventory: getInventoryPayload(),
+        images: [],
       };
       if (!payload.name) {
         alert('Product name is required.');
@@ -776,21 +715,7 @@
       alert(isPublished ? 'Product published.' : 'Draft saved.');
     }
 
-    async function deleteProduct() {
-      if (!editingId) return;
-      alert('Delete is not wired yet on the backend for products.');
-    }
-
     form.addEventListener('input', updatePreview);
-    imagesInput?.addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files || []);
-      images = await Promise.all(files.map((file, i) => new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({ url: String(reader.result || ''), alt: file.name || '', sortOrder: i });
-        reader.readAsDataURL(file);
-      })));
-      updatePreview();
-    });
     listWrap.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-product-id]');
       if (!btn) return;
@@ -800,9 +725,8 @@
     });
     saveDraftBtn?.addEventListener('click', () => saveProduct(false));
     publishBtn?.addEventListener('click', () => saveProduct(true));
-    deleteBtn?.addEventListener('click', deleteProduct);
 
-    resetForm();
+    updatePreview();
     await loadProducts();
   }
 
@@ -810,28 +734,24 @@
   // Settings (Home CMS + Admin Config)
   // -----------------------------
   async function initSettings() {
-    if (!pathIsAdminPage('settings')) return;
+    if (adminPageKey() !== 'settings') return;
 
     const errBox = qs('[data-ui="settingsError"]');
     const headline = qs('#homeHeadline');
     const subheadline = qs('#homeSubheadline');
-    const slideshow = qs('#homeSlideshow');
-    const featured = qs('#homeFeatured');
+    const slideshowField = qs('#homeSlideshow');
+    const featuredField = qs('#homeFeatured');
     const lowStock = qs('#lowStockThreshold');
 
-    const slideshowSearch = qs('#slideshowSearch');
-    const slideshowPicker = qs('#slideshowPicker');
+    const slideshowPool = qs('#slideshowPool');
     const slideshowSelected = qs('#slideshowSelected');
-    const slideshowCount = qs('#slideshowCount');
-
-    const featuredSearch = qs('#featuredSearch');
-    const featuredList = qs('#featuredList');
+    const featuredPool = qs('#featuredPool');
     const featuredSelected = qs('#featuredSelected');
-    const featuredCount = qs('#featuredCount');
+    const pickerSearch = qs('#settingsProductSearch');
 
     let products = [];
-    let slideshowSelectedUrls = [];
-    let featuredSelectedIds = [];
+    let slideshowUrls = [];
+    let featuredIds = [];
 
     const setError = (msg) => {
       if (!errBox) return;
@@ -845,30 +765,98 @@
     };
 
     function syncHiddenFields() {
-      if (slideshow) slideshow.value = slideshowSelectedUrls.join('
+      if (slideshowField) slideshowField.value = slideshowUrls.join('
 ');
-      if (featured) featured.value = featuredSelectedIds.join('
+      if (featuredField) featuredField.value = featuredIds.join('
 ');
-      if (slideshowCount) slideshowCount.textContent = String(slideshowSelectedUrls.length);
-      if (featuredCount) featuredCount.textContent = String(featuredSelectedIds.length);
+      const slideshowCount = qs('#slideshowCount');
+      const featuredCount = qs('#featuredCountInline');
+      if (slideshowCount) slideshowCount.textContent = String(slideshowUrls.length);
+      if (featuredCount) featuredCount.textContent = String(featuredIds.length);
     }
 
-    function productCover(product) {
-      const img = Array.isArray(product?.images) ? product.images[0] : null;
-      return String(img?.url || '');
+    function productCover(p) {
+      return p?.images?.[0]?.url || '';
     }
 
-    function productImages(product) {
-      return Array.isArray(product?.images) ? product.images.filter((img) => img?.url).map((img) => ({
-        url: String(img.url),
-        alt: String(img.alt || product?.name || 'Product image'),
-        productId: String(product?.id || ''),
-        productName: String(product?.name || 'Product'),
-      })) : [];
+    function renderSelected() {
+      if (slideshowSelected) {
+        slideshowSelected.innerHTML = slideshowUrls.length ? slideshowUrls.map((url, idx) => `
+          <div class="pick-chip">
+            <div class="pick-chip-media">${url ? `<img src="${escapeHtml(url)}" alt="Selected slideshow image" />` : '<span>Image</span>'}</div>
+            <div class="pick-chip-body">
+              <div class="pick-chip-title">Slide ${idx + 1}</div>
+              <div class="pick-chip-meta">${escapeHtml(url)}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" data-remove-slide="${escapeHtml(url)}">Remove</button>
+          </div>
+        `).join('') : `<div class="muted">No slideshow images selected yet.</div>`;
+      }
+
+      if (featuredSelected) {
+        featuredSelected.innerHTML = featuredIds.length ? featuredIds.map((id) => {
+          const p = products.find((row) => String(row.id) === String(id));
+          return `
+            <div class="pick-chip">
+              <div class="pick-chip-media">${productCover(p) ? `<img src="${escapeHtml(productCover(p))}" alt="${escapeHtml(p?.name || 'Featured product')}" />` : '<span>Item</span>'}</div>
+              <div class="pick-chip-body">
+                <div class="pick-chip-title">${escapeHtml(p?.name || 'Product')}</div>
+                <div class="pick-chip-meta mono">${escapeHtml(id)}</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" type="button" data-remove-featured="${escapeHtml(id)}">Remove</button>
+            </div>
+          `;
+        }).join('') : `<div class="muted">No featured products selected yet.</div>`;
+      }
+
+      syncHiddenFields();
     }
 
-    function getAllSlideshowOptions() {
-      return products.flatMap((product) => productImages(product));
+    function renderPools() {
+      const q = String(pickerSearch?.value || '').trim().toLowerCase();
+      const filtered = products.filter((p) => !q || String(p.name || '').toLowerCase().includes(q) || String(p.id || '').toLowerCase().includes(q));
+
+      if (slideshowPool) {
+        const imageCards = [];
+        filtered.forEach((p) => {
+          (Array.isArray(p.images) ? p.images : []).forEach((img) => {
+            const url = String(img?.url || '').trim();
+            if (!url) return;
+            const active = slideshowUrls.includes(url);
+            imageCards.push(`
+              <button type="button" class="picker-card ${active ? 'is-selected' : ''}" data-pick-slide="${escapeHtml(url)}">
+                <div class="picker-card-media"><img src="${escapeHtml(url)}" alt="${escapeHtml(p.name || 'Product image')}" /></div>
+                <div class="picker-card-body">
+                  <div class="picker-card-title">${escapeHtml(p.name || 'Product')}</div>
+                  <div class="picker-card-meta">${active ? 'Selected' : 'Add to slideshow'}</div>
+                </div>
+              </button>
+            `);
+          });
+        });
+        slideshowPool.innerHTML = imageCards.length ? imageCards.join('') : `<div class="muted">No product images available.</div>`;
+      }
+
+      if (featuredPool) {
+        featuredPool.innerHTML = filtered.length ? filtered.map((p) => {
+          const active = featuredIds.includes(String(p.id));
+          return `
+            <button type="button" class="picker-card ${active ? 'is-selected' : ''}" data-pick-featured="${escapeHtml(p.id)}">
+              <div class="picker-card-media">${productCover(p) ? `<img src="${escapeHtml(productCover(p))}" alt="${escapeHtml(p.name || 'Product')}" />` : '<span>Item</span>'}</div>
+              <div class="picker-card-body">
+                <div class="picker-card-title">${escapeHtml(p.name || 'Product')}</div>
+                <div class="picker-card-meta">${active ? 'Featured' : 'Add as featured'}</div>
+              </div>
+            </button>
+          `;
+        }).join('') : `<div class="muted">No products available.</div>`;
+      }
+    }
+
+    async function loadProducts() {
+      const { res, data } = await apiJSON('/api/admin/products');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
+      products = Array.isArray(data.products) ? data.products : [];
     }
 
     async function loadHome() {
@@ -877,28 +865,20 @@
       const h = data.home || {};
       if (headline) headline.value = h.headline || '';
       if (subheadline) subheadline.value = h.subheadline || '';
-      slideshowSelectedUrls = Array.isArray(h.slideshowUrls) ? h.slideshowUrls.slice(0, 6) : [];
-      featuredSelectedIds = Array.isArray(h.featuredProductIds) ? h.featuredProductIds.slice(0, 3) : [];
-      syncHiddenFields();
-      renderSlideshowPicker();
-      renderFeaturedPicker();
-      renderSelectedSlideshow();
-      renderSelectedFeatured();
+      slideshowUrls = Array.isArray(h.slideshowUrls) ? h.slideshowUrls.slice(0, 6) : [];
+      featuredIds = Array.isArray(h.featuredProductIds) ? h.featuredProductIds.slice(0, 3) : [];
+      renderSelected();
+      renderPools();
     }
 
     async function saveHome() {
       const payload = {
         headline: headline ? headline.value.trim() : '',
         subheadline: subheadline ? subheadline.value.trim() : '',
-        slideshowUrls: slideshowSelectedUrls.slice(0, 6),
-        featuredProductIds: featuredSelectedIds.slice(0, 3),
+        slideshowUrls: slideshowUrls.slice(0, 6),
+        featuredProductIds: featuredIds.slice(0, 3),
       };
-
-      const { res, data } = await apiJSON('/api/admin/site/home', {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-
+      const { res, data } = await apiJSON('/api/admin/site/home', { method: 'PUT', body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
     }
 
@@ -916,210 +896,66 @@
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
     }
 
-    async function loadProductsLibrary() {
-      const { res, data } = await apiJSON('/api/admin/products');
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
-      products = Array.isArray(data.products) ? data.products : [];
-    }
+    pickerSearch?.addEventListener('input', renderPools);
 
-    function renderSlideshowPicker() {
-      if (!slideshowPicker) return;
-      const q = String(slideshowSearch?.value || '').trim().toLowerCase();
-      const rows = getAllSlideshowOptions().filter((img) => {
-        if (!q) return true;
-        return img.productName.toLowerCase().includes(q) || img.url.toLowerCase().includes(q);
-      }).slice(0, 100);
-
-      if (!rows.length) {
-        slideshowPicker.innerHTML = '<div class="muted">No product images found.</div>';
-        return;
-      }
-
-      slideshowPicker.innerHTML = rows.map((img) => {
-        const active = slideshowSelectedUrls.includes(img.url) ? ' is-selected' : '';
-        return `
-          <button type="button" class="picker-card${active}" data-action="toggle-slideshow" data-url="${escapeHtml(img.url)}">
-            <div class="picker-thumb"><img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt)}" /></div>
-            <div class="picker-meta">
-              <strong>${escapeHtml(img.productName)}</strong>
-              <span class="muted">${slideshowSelectedUrls.includes(img.url) ? 'Selected' : 'Add to slideshow'}</span>
-            </div>
-          </button>
-        `;
-      }).join('');
-    }
-
-    function renderFeaturedPicker() {
-      if (!featuredList) return;
-      const q = String(featuredSearch?.value || '').trim().toLowerCase();
-      const rows = products.filter((product) => {
-        if (!q) return true;
-        return String(product?.name || '').toLowerCase().includes(q) || String(product?.id || '').toLowerCase().includes(q);
-      }).slice(0, 100);
-
-      if (!rows.length) {
-        featuredList.innerHTML = '<div class="muted">No products found.</div>';
-        return;
-      }
-
-      featuredList.innerHTML = rows.map((product) => {
-        const cover = productCover(product);
-        const active = featuredSelectedIds.includes(product.id) ? ' is-selected' : '';
-        return `
-          <button type="button" class="picker-card${active}" data-action="toggle-featured" data-pid="${escapeHtml(product.id)}">
-            <div class="picker-thumb">${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(product.name || 'Product')}" />` : '<span class="muted">No image</span>'}</div>
-            <div class="picker-meta">
-              <strong>${escapeHtml(product.name || 'Product')}</strong>
-              <span class="muted">${product.isPublished ? 'Published' : 'Draft'}</span>
-            </div>
-          </button>
-        `;
-      }).join('');
-    }
-
-    function renderSelectedSlideshow() {
-      if (!slideshowSelected) return;
-      if (!slideshowSelectedUrls.length) {
-        slideshowSelected.innerHTML = '<div class="muted">No slideshow images selected yet.</div>';
-        return;
-      }
-      slideshowSelected.innerHTML = slideshowSelectedUrls.map((url, index) => `
-        <div class="selected-card">
-          <div class="selected-thumb"><img src="${escapeHtml(url)}" alt="Selected slideshow image ${index + 1}" /></div>
-          <div class="selected-body">
-            <strong>Slide ${index + 1}</strong>
-            <div class="selected-actions">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="move-slide-left" data-index="${index}" ${index === 0 ? 'disabled' : ''}>Up</button>
-              <button class="btn btn-ghost btn-sm" type="button" data-action="move-slide-right" data-index="${index}" ${index === slideshowSelectedUrls.length - 1 ? 'disabled' : ''}>Down</button>
-              <button class="btn btn-ghost btn-sm" type="button" data-action="remove-slide" data-url="${escapeHtml(url)}">Remove</button>
-            </div>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    function renderSelectedFeatured() {
-      if (!featuredSelected) return;
-      if (!featuredSelectedIds.length) {
-        featuredSelected.innerHTML = '<div class="muted">No featured products selected yet.</div>';
-        return;
-      }
-      const cards = featuredSelectedIds.map((id, index) => {
-        const product = products.find((p) => String(p.id) === String(id));
-        const cover = productCover(product);
-        return `
-          <div class="selected-card">
-            <div class="selected-thumb">${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(product?.name || 'Product')}" />` : '<span class="muted">No image</span>'}</div>
-            <div class="selected-body">
-              <strong>${escapeHtml(product?.name || 'Product')}</strong>
-              <span class="muted">Featured slot ${index + 1}</span>
-              <div class="selected-actions">
-                <button class="btn btn-ghost btn-sm" type="button" data-action="move-featured-left" data-index="${index}" ${index === 0 ? 'disabled' : ''}>Left</button>
-                <button class="btn btn-ghost btn-sm" type="button" data-action="move-featured-right" data-index="${index}" ${index === featuredSelectedIds.length - 1 ? 'disabled' : ''}>Right</button>
-                <button class="btn btn-ghost btn-sm" type="button" data-action="remove-featured" data-pid="${escapeHtml(id)}">Remove</button>
-              </div>
-            </div>
-          </div>
-        `;
-      });
-      featuredSelected.innerHTML = cards.join('');
-    }
-
-    function moveItem(arr, from, to) {
-      if (from < 0 || to < 0 || from >= arr.length || to >= arr.length) return arr;
-      const copy = arr.slice();
-      const [item] = copy.splice(from, 1);
-      copy.splice(to, 0, item);
-      return copy;
-    }
-
-    slideshowPicker?.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action="toggle-slideshow"]');
+    slideshowPool?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick-slide]');
       if (!btn) return;
-      const url = String(btn.getAttribute('data-url') || '').trim();
+      const url = String(btn.getAttribute('data-pick-slide') || '').trim();
       if (!url) return;
-      if (slideshowSelectedUrls.includes(url)) {
-        slideshowSelectedUrls = slideshowSelectedUrls.filter((item) => item !== url);
+      if (slideshowUrls.includes(url)) {
+        slideshowUrls = slideshowUrls.filter((row) => row !== url);
       } else {
-        if (slideshowSelectedUrls.length >= 6) {
-          alert('You can select up to 6 slideshow images.');
+        if (slideshowUrls.length >= 6) {
+          alert('Limit: 6 slideshow images.');
           return;
         }
-        slideshowSelectedUrls = [...slideshowSelectedUrls, url];
+        slideshowUrls.push(url);
       }
-      syncHiddenFields();
-      renderSlideshowPicker();
-      renderSelectedSlideshow();
+      renderSelected();
+      renderPools();
     });
 
-    featuredList?.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action="toggle-featured"]');
+    featuredPool?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick-featured]');
       if (!btn) return;
-      const id = String(btn.getAttribute('data-pid') || '').trim();
+      const id = String(btn.getAttribute('data-pick-featured') || '').trim();
       if (!id) return;
-      if (featuredSelectedIds.includes(id)) {
-        featuredSelectedIds = featuredSelectedIds.filter((item) => item !== id);
+      if (featuredIds.includes(id)) {
+        featuredIds = featuredIds.filter((row) => row !== id);
       } else {
-        if (featuredSelectedIds.length >= 3) {
-          alert('You can select up to 3 featured products.');
+        if (featuredIds.length >= 3) {
+          alert('Limit: 3 featured products.');
           return;
         }
-        featuredSelectedIds = [...featuredSelectedIds, id];
+        featuredIds.push(id);
       }
-      syncHiddenFields();
-      renderFeaturedPicker();
-      renderSelectedFeatured();
+      renderSelected();
+      renderPools();
     });
 
     slideshowSelected?.addEventListener('click', (e) => {
-      const remove = e.target.closest('[data-action="remove-slide"]');
-      const moveLeft = e.target.closest('[data-action="move-slide-left"]');
-      const moveRight = e.target.closest('[data-action="move-slide-right"]');
-      if (remove) {
-        const url = String(remove.getAttribute('data-url') || '').trim();
-        slideshowSelectedUrls = slideshowSelectedUrls.filter((item) => item !== url);
-      } else if (moveLeft) {
-        const index = Number(moveLeft.getAttribute('data-index') || -1);
-        slideshowSelectedUrls = moveItem(slideshowSelectedUrls, index, index - 1);
-      } else if (moveRight) {
-        const index = Number(moveRight.getAttribute('data-index') || -1);
-        slideshowSelectedUrls = moveItem(slideshowSelectedUrls, index, index + 1);
-      } else {
-        return;
-      }
-      syncHiddenFields();
-      renderSlideshowPicker();
-      renderSelectedSlideshow();
+      const btn = e.target.closest('[data-remove-slide]');
+      if (!btn) return;
+      const url = String(btn.getAttribute('data-remove-slide') || '').trim();
+      slideshowUrls = slideshowUrls.filter((row) => row !== url);
+      renderSelected();
+      renderPools();
     });
 
     featuredSelected?.addEventListener('click', (e) => {
-      const remove = e.target.closest('[data-action="remove-featured"]');
-      const moveLeft = e.target.closest('[data-action="move-featured-left"]');
-      const moveRight = e.target.closest('[data-action="move-featured-right"]');
-      if (remove) {
-        const id = String(remove.getAttribute('data-pid') || '').trim();
-        featuredSelectedIds = featuredSelectedIds.filter((item) => item !== id);
-      } else if (moveLeft) {
-        const index = Number(moveLeft.getAttribute('data-index') || -1);
-        featuredSelectedIds = moveItem(featuredSelectedIds, index, index - 1);
-      } else if (moveRight) {
-        const index = Number(moveRight.getAttribute('data-index') || -1);
-        featuredSelectedIds = moveItem(featuredSelectedIds, index, index + 1);
-      } else {
-        return;
-      }
-      syncHiddenFields();
-      renderFeaturedPicker();
-      renderSelectedFeatured();
+      const btn = e.target.closest('[data-remove-featured]');
+      if (!btn) return;
+      const id = String(btn.getAttribute('data-remove-featured') || '').trim();
+      featuredIds = featuredIds.filter((row) => row !== id);
+      renderSelected();
+      renderPools();
     });
-
-    slideshowSearch?.addEventListener('input', renderSlideshowPicker);
-    featuredSearch?.addEventListener('input', renderFeaturedPicker);
 
     qs('[data-action="home-refresh"]')?.addEventListener('click', async () => {
       setError('');
       try {
-        await Promise.all([loadProductsLibrary(), loadHome()]);
+        await Promise.all([loadProducts(), loadHome()]);
         alert('Refreshed.');
       } catch (e) {
         setError(String(e?.message || 'Failed to refresh'));
@@ -1147,16 +983,12 @@
     });
 
     try {
-      await Promise.all([loadProductsLibrary(), loadHome(), loadConfig()]);
-      syncHiddenFields();
-      renderSlideshowPicker();
-      renderFeaturedPicker();
-      renderSelectedSlideshow();
-      renderSelectedFeatured();
+      await Promise.all([loadProducts(), loadHome(), loadConfig()]);
     } catch (e) {
       setError(String(e?.message || 'Failed to load settings'));
     }
   }
+
   // -----------------------------
   // Boot
   // -----------------------------

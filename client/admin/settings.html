@@ -84,32 +84,28 @@
             </div>
 
             <div class="field col-span-2">
-              <label class="label" for="homeSlideshow">Homepage slideshow</label>
-              <input class="input" id="slideshowSearch" type="search" placeholder="Search products for slideshow images..." />
-              <div class="hint">Select 3–6 images from your product library. The order below is the order shown on the homepage.</div>
-              <div id="slideshowPicker" class="picker-grid mt-12"></div>
-              <div class="selection-head mt-12 row-between">
-                <strong>Selected slideshow images</strong>
-                <span class="muted"><span id="slideshowCount">0</span> selected</span>
-              </div>
-              <div id="slideshowSelected" class="selected-grid mt-12"></div>
-              <textarea class="textarea hidden-input" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
+              <label class="label" for="settingsProductSearch">Search products</label>
+              <input class="input" id="settingsProductSearch" type="search" placeholder="Search products by name or ID" />
             </div>
 
             <div class="field col-span-2">
-              <label class="label" for="homeFeatured">Featured products</label>
-              <input class="input" id="featuredSearch" type="search" placeholder="Search products for featured picks..." />
-              <div class="hint">Choose up to 3 featured pieces for the homepage.</div>
-              <div id="featuredList" class="picker-grid mt-12"></div>
-              <div class="selection-head mt-12 row-between">
-                <strong>Selected featured products</strong>
-                <span class="muted"><span id="featuredCount">0</span> selected</span>
-              </div>
+              <label class="label">Homepage slideshow images</label>
+              <div class="hint">Select up to 6 product images for the homepage slideshow.</div>
+              <textarea class="textarea is-hidden" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
+              <div class="selection-summary"><span class="badge badge-soft"><span id="slideshowCount">0</span>/6 selected</span></div>
+              <div id="slideshowSelected" class="selected-grid mt-12"></div>
+              <div id="slideshowPool" class="picker-grid mt-12"></div>
+            </div>
+
+            <div class="field col-span-2">
+              <label class="label">Featured products</label>
+              <div class="hint">Select up to 3 featured pieces for the home page.</div>
+              <textarea class="textarea is-hidden" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
+              <div class="selection-summary"><span class="badge badge-soft"><span id="featuredCountInline">0</span>/3 selected</span></div>
               <div id="featuredSelected" class="selected-grid mt-12"></div>
-              <textarea class="textarea hidden-input" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
+              <div id="featuredPool" class="picker-grid mt-12"></div>
             </div>
           </form>
-
         </div>
       </article>
     </section>
