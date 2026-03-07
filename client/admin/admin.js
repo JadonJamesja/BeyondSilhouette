@@ -64,8 +64,13 @@
     return location.pathname.includes('/admin/');
   }
 
+  function pathIsAdminPage(name) {
+    const path = String(location.pathname || '').replace(/\/$/, '');
+    return path.endsWith(`/admin/${name}`) || path.endsWith(`/admin/${name}.html`);
+  }
+
   function isAdminLoginPage() {
-    return location.pathname.endsWith('/admin/login.html');
+    return pathIsAdminPage('login');
   }
 
   async function requireAdminGate() {
@@ -245,7 +250,7 @@
   // Dashboard (DB stats)
   // -----------------------------
   async function initDashboard() {
-    if (!location.pathname.endsWith('/admin/dashboard.html')) return;
+    if (!pathIsAdminPage('dashboard')) return;
 
     const [statsResp, ordersResp] = await Promise.all([
       apiJSON('/api/admin/stats'),
@@ -273,39 +278,38 @@
 
     if (!ordersResp.res.ok || !ordersResp.data?.ok) {
       tbody.innerHTML = `
-      <tr>
-        <td colspan="4" class="muted">Could not load recent orders.</td>
-      </tr>
-    `;
+        <tr>
+          <td colspan="4" class="muted">Could not load recent orders.</td>
+        </tr>
+      `;
       return;
     }
 
-    const orders = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 4) : [];
-
-    if (!orders.length) {
+    const recent = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 6) : [];
+    if (!recent.length) {
       tbody.innerHTML = `
-      <tr>
-        <td colspan="4" class="muted">No orders yet.</td>
-      </tr>
-    `;
+        <tr>
+          <td colspan="4" class="muted">No orders yet.</td>
+        </tr>
+      `;
       return;
     }
 
-    tbody.innerHTML = orders.map((o) => `
-    <tr>
-      <td class="mono">${escapeHtml(o.id || '')}</td>
-      <td>${escapeHtml(o.customerName || o.email || '')}</td>
-      <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
-      <td class="right">${fmtJMD(o.totalJMD)}</td>
-    </tr>
-  `).join('');
+    tbody.innerHTML = recent.map((o) => `
+      <tr>
+        <td class="mono">${escapeHtml(o.id || '')}</td>
+        <td>${escapeHtml(o.customerName || o.email || '')}</td>
+        <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
+        <td class="right">${fmtJMD(o.totalJMD)}</td>
+      </tr>
+    `).join('');
   }
 
   // -----------------------------
   // Orders
   // -----------------------------
   async function initOrders() {
-    if (!location.pathname.endsWith('/admin/orders.html')) return;
+    if (!pathIsAdminPage('orders')) return;
 
     const tbody = qs('#ordersTbody');
     const search = qs('#orderSearch');
@@ -390,8 +394,8 @@
               <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Price</th></tr></thead>
               <tbody>
                 ${items
-            .map(
-              (it) => `
+                  .map(
+                    (it) => `
                   <tr>
                     <td>${escapeHtml(it.name || 'Item')}</td>
                     <td>${escapeHtml(it.size || '')}</td>
@@ -399,8 +403,8 @@
                     <td>${fmtJMD(it.priceJMD)}</td>
                   </tr>
                 `
-            )
-            .join('')}
+                  )
+                  .join('')}
               </tbody>
             </table>
           </div>
@@ -412,18 +416,18 @@
         modalHistory.innerHTML = hist.length
           ? `<ul class="timeline">
               ${hist
-            .map(
-              (h) => `
+                .map(
+                  (h) => `
                 <li>
                   <div class="muted">${escapeHtml(new Date(h.at).toLocaleString())}</div>
                   <div><strong>${escapeHtml(String(h.from || '').toUpperCase())}</strong> → <strong>${escapeHtml(
-                String(h.to || '').toUpperCase()
-              )}</strong></div>
+                    String(h.to || '').toUpperCase()
+                  )}</strong></div>
                   <div class="muted">By: ${escapeHtml(h.by || 'admin')}</div>
                 </li>
               `
-            )
-            .join('')}
+                )
+                .join('')}
             </ul>`
           : `<div class="muted">No status history yet.</div>`;
       }
@@ -448,7 +452,7 @@
   // Customers
   // -----------------------------
   async function initCustomers() {
-    if (!location.pathname.endsWith('/admin/customers.html')) return;
+    if (!pathIsAdminPage('customers')) return;
 
     const tbody = qs('#customersTbody');
     const search = qs('#customerSearch');
@@ -558,9 +562,9 @@
                 <thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
                 <tbody>
                   ${stats.orders
-            .map((o) => {
-              const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
-              return `
+                    .map((o) => {
+                      const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+                      return `
                         <tr>
                           <td class="mono">${escapeHtml(o.id)}</td>
                           <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
@@ -568,8 +572,8 @@
                           <td>${escapeHtml(date)}</td>
                         </tr>
                       `;
-            })
-            .join('')}
+                    })
+                    .join('')}
                 </tbody>
               </table>
             </div>`
@@ -617,171 +621,196 @@
     await load();
   }
 
+
+  // -----------------------------
+  // Products
+  // -----------------------------
   async function initProducts() {
-  if (!location.pathname.endsWith('/admin/products.html')) return;
+    if (!pathIsAdminPage('products')) return;
 
-  const form = qs('#productForm');
-  const listWrap = qsa('.list')[0];
-  const previewName = qs('#previewName');
-  const previewDesc = qs('#previewDesc');
-  const previewPrice = qs('#previewPrice');
-  const previewStock = qs('#previewStock');
-  const previewStatus = qs('#previewStatus');
-  const stockTotalBadge = qs('#stockTotalBadge');
+    const form = qs('#productForm');
+    const lists = qsa('.list');
+    const listWrap = lists[0] || null;
+    const previewName = qs('#previewName');
+    const previewDesc = qs('#previewDesc');
+    const previewPrice = qs('#previewPrice');
+    const previewStock = qs('#previewStock');
+    const previewStatus = qs('#previewStatus');
+    const imageGrid = qs('#imageGrid');
+    const previewMedia = qs('#previewMedia');
 
-  if (!form || !listWrap) return;
+    if (!form || !listWrap) return;
 
-  const nameInput = qs('[name="name"]', form);
-  const descInput = qs('[name="description"]', form);
-  const priceInput = qs('[name="price"]', form);
-  const statusInput = qs('[name="status"]', form);
-  const stockS = qs('[name="stockS"]', form);
-  const stockM = qs('[name="stockM"]', form);
-  const stockL = qs('[name="stockL"]', form);
-  const stockXL = qs('[name="stockXL"]', form);
+    const nameInput = qs('[name="name"]', form);
+    const descInput = qs('[name="description"]', form);
+    const priceInput = qs('[name="price"]', form);
+    const statusInput = qs('[name="status"]', form);
+    const stockS = qs('[name="stockS"]', form);
+    const stockM = qs('[name="stockM"]', form);
+    const stockL = qs('[name="stockL"]', form);
+    const stockXL = qs('[name="stockXL"]', form);
+    const imagesInput = qs('#productImages', form);
+    const buttons = qsa('button', form);
+    const saveDraftBtn = buttons[0] || null;
+    const publishBtn = buttons[1] || null;
+    const deleteBtn = buttons[2] || null;
 
-  const saveDraftBtn = qsa('button', form)[0];
-  const publishBtn = qsa('button', form)[1];
+    let products = [];
+    let editingId = null;
+    let images = [];
 
-  let products = [];
-  let editingId = null;
-
-  function getInventoryPayload() {
-    return [
-      { size: 'S', stock: Number(stockS?.value || 0) },
-      { size: 'M', stock: Number(stockM?.value || 0) },
-      { size: 'L', stock: Number(stockL?.value || 0) },
-      { size: 'XL', stock: Number(stockXL?.value || 0) },
-    ];
-  }
-
-  function updatePreview() {
-    const totalStock = getInventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
-
-    if (previewName) previewName.textContent = nameInput?.value?.trim() || '—';
-    if (previewDesc) previewDesc.textContent = descInput?.value?.trim() || '—';
-    if (previewPrice) previewPrice.textContent = fmtJMD(Number(priceInput?.value || 0));
-    if (previewStock) previewStock.textContent = `Stock: ${totalStock}`;
-    if (previewStatus) previewStatus.textContent = statusInput?.value === 'published' ? 'Published' : 'Draft';
-    if (stockTotalBadge) stockTotalBadge.textContent = `Total: ${totalStock}`;
-  }
-
-  function resetForm() {
-    editingId = null;
-    form.reset();
-    updatePreview();
-  }
-
-  function fillForm(product) {
-    editingId = product.id;
-    if (nameInput) nameInput.value = product.name || '';
-    if (descInput) descInput.value = product.description || '';
-    if (priceInput) priceInput.value = String(product.priceJMD || 0);
-    if (statusInput) statusInput.value = product.isPublished ? 'published' : 'draft';
-
-    const inv = Array.isArray(product.inventory) ? product.inventory : [];
-    const bySize = Object.fromEntries(inv.map(r => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
-
-    if (stockS) stockS.value = String(bySize.S || 0);
-    if (stockM) stockM.value = String(bySize.M || 0);
-    if (stockL) stockL.value = String(bySize.L || 0);
-    if (stockXL) stockXL.value = String(bySize.XL || 0);
-
-    updatePreview();
-  }
-
-  function renderList() {
-    if (!products.length) {
-      listWrap.innerHTML = `<div class="muted" style="padding:16px;">No products yet.</div>`;
-      return;
+    function inventoryPayload() {
+      return [
+        { size: 'S', stock: Number(stockS?.value || 0) },
+        { size: 'M', stock: Number(stockM?.value || 0) },
+        { size: 'L', stock: Number(stockL?.value || 0) },
+        { size: 'XL', stock: Number(stockXL?.value || 0) },
+      ];
     }
 
-    listWrap.innerHTML = products.map((p) => `
-      <button
-        type="button"
-        class="card mini"
-        data-product-id="${escapeHtml(p.id)}"
-        style="width:100%;text-align:left;padding:14px;margin-bottom:10px;border:none;cursor:pointer;"
-      >
-        <div class="row-between">
-          <div>
-            <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
-            <div class="muted">${escapeHtml(p.description || '')}</div>
+    function totalStock() {
+      return inventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
+    }
+
+    function renderImagePreview() {
+      if (previewMedia) {
+        const first = images[0]?.url || '';
+        previewMedia.innerHTML = first
+          ? `<img src="${escapeHtml(first)}" alt="Preview" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />`
+          : `<span class="muted">No image</span>`;
+      }
+      if (imageGrid) {
+        imageGrid.innerHTML = images.map((img, i) => `
+          <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
+            <img src="${escapeHtml(img.url)}" alt="Image ${i+1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />
+            <div class="muted">Image ${i + 1}</div>
           </div>
-          <div>
-            <div>${fmtJMD(p.priceJMD)}</div>
-            <div class="muted">${p.isPublished ? 'Published' : 'Draft'}</div>
+        `).join('');
+      }
+    }
+
+    function updatePreview() {
+      if (previewName) previewName.textContent = nameInput?.value?.trim() || '—';
+      if (previewDesc) previewDesc.textContent = descInput?.value?.trim() || '—';
+      if (previewPrice) previewPrice.textContent = fmtJMD(Number(priceInput?.value || 0));
+      if (previewStock) previewStock.textContent = `Stock: ${totalStock()}`;
+      if (previewStatus) previewStatus.textContent = statusInput?.value === 'published' ? 'Published' : 'Draft';
+      renderImagePreview();
+    }
+
+    function fillForm(product) {
+      editingId = product.id;
+      nameInput.value = product.name || '';
+      descInput.value = product.description || '';
+      priceInput.value = String(product.priceJMD || 0);
+      statusInput.value = product.isPublished ? 'published' : 'draft';
+      const bySize = Object.fromEntries((product.inventory || []).map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
+      stockS.value = String(bySize.S || 0);
+      stockM.value = String(bySize.M || 0);
+      stockL.value = String(bySize.L || 0);
+      stockXL.value = String(bySize.XL || 0);
+      images = Array.isArray(product.images) ? product.images.map((img) => ({ url: img.url, alt: img.alt || '', sortOrder: Number(img.sortOrder || 0) })) : [];
+      updatePreview();
+    }
+
+    function resetForm() {
+      editingId = null;
+      form.reset();
+      images = [];
+      updatePreview();
+    }
+
+    function renderList() {
+      if (!products.length) {
+        listWrap.innerHTML = `<div class="muted" style="padding:16px;">No products yet.</div>`;
+        return;
+      }
+      listWrap.innerHTML = products.map((p) => `
+        <button type="button" class="card mini" data-product-id="${escapeHtml(p.id)}" style="width:100%;text-align:left;padding:14px;margin-bottom:10px;border:none;cursor:pointer;">
+          <div class="row-between">
+            <div>
+              <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
+              <div class="muted">${escapeHtml(p.description || '')}</div>
+            </div>
+            <div>
+              <div>${fmtJMD(p.priceJMD)}</div>
+              <div class="muted">${p.isPublished ? 'Published' : 'Draft'}</div>
+            </div>
           </div>
-        </div>
-      </button>
-    `).join('');
-  }
-
-  async function loadProducts() {
-    const { res, data } = await apiJSON('/api/admin/products');
-    if (!res.ok || !data?.ok) {
-      listWrap.innerHTML = `<div class="muted" style="padding:16px;">Failed to load products.</div>`;
-      return;
-    }
-    products = Array.isArray(data.products) ? data.products : [];
-    renderList();
-  }
-
-  async function saveProduct(isPublished) {
-    const payload = {
-      name: String(nameInput?.value || '').trim(),
-      description: String(descInput?.value || '').trim(),
-      priceJMD: Number(priceInput?.value || 0),
-      isPublished,
-      inventory: getInventoryPayload(),
-      images: [],
-    };
-
-    if (!payload.name) {
-      alert('Product name is required.');
-      return;
+        </button>
+      `).join('');
     }
 
-    const endpoint = editingId ? `/api/admin/products/${encodeURIComponent(editingId)}` : '/api/admin/products';
-    const method = editingId ? 'PATCH' : 'POST';
+    async function loadProducts() {
+      const { res, data } = await apiJSON('/api/admin/products');
+      if (!res.ok || !data?.ok) {
+        listWrap.innerHTML = `<div class="muted" style="padding:16px;">Failed to load products.</div>`;
+        return;
+      }
+      products = Array.isArray(data.products) ? data.products : [];
+      renderList();
+    }
 
-    const { res, data } = await apiJSON(endpoint, {
-      method,
-      body: JSON.stringify(payload),
+    async function saveProduct(isPublished) {
+      const payload = {
+        name: String(nameInput?.value || '').trim(),
+        description: String(descInput?.value || '').trim(),
+        priceJMD: Number(priceInput?.value || 0),
+        isPublished,
+        inventory: inventoryPayload(),
+        images,
+      };
+      if (!payload.name) {
+        alert('Product name is required.');
+        return;
+      }
+      const endpoint = editingId ? `/api/admin/products/${encodeURIComponent(editingId)}` : '/api/admin/products';
+      const method = editingId ? 'PATCH' : 'POST';
+      const { res, data } = await apiJSON(endpoint, { method, body: JSON.stringify(payload) });
+      if (!res.ok || !data?.ok) {
+        alert(data?.error || 'Failed to save product.');
+        return;
+      }
+      await loadProducts();
+      if (data.product) fillForm(data.product);
+      alert(isPublished ? 'Product published.' : 'Draft saved.');
+    }
+
+    async function deleteProduct() {
+      if (!editingId) return;
+      alert('Delete is not wired yet on the backend for products.');
+    }
+
+    form.addEventListener('input', updatePreview);
+    imagesInput?.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      images = await Promise.all(files.map((file, i) => new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ url: String(reader.result || ''), alt: file.name || '', sortOrder: i });
+        reader.readAsDataURL(file);
+      })));
+      updatePreview();
     });
+    listWrap.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-product-id]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-product-id');
+      const product = products.find((p) => String(p.id) === String(id));
+      if (product) fillForm(product);
+    });
+    saveDraftBtn?.addEventListener('click', () => saveProduct(false));
+    publishBtn?.addEventListener('click', () => saveProduct(true));
+    deleteBtn?.addEventListener('click', deleteProduct);
 
-    if (!res.ok || !data?.ok) {
-      alert(data?.error || 'Failed to save product.');
-      return;
-    }
-
-    alert(isPublished ? 'Product published.' : 'Draft saved.');
+    resetForm();
     await loadProducts();
-    if (data.product) fillForm(data.product);
   }
-
-  form.addEventListener('input', updatePreview);
-
-  listWrap.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-product-id]');
-    if (!btn) return;
-    const id = btn.getAttribute('data-product-id');
-    const product = products.find((p) => String(p.id) === String(id));
-    if (product) fillForm(product);
-  });
-
-  saveDraftBtn?.addEventListener('click', () => saveProduct(false));
-  publishBtn?.addEventListener('click', () => saveProduct(true));
-
-  updatePreview();
-  await loadProducts();
-}
 
   // -----------------------------
   // Settings (Home CMS + Admin Config)
   // -----------------------------
   async function initSettings() {
-    if (!location.pathname.endsWith('/admin/settings.html')) return;
+    if (!pathIsAdminPage('settings')) return;
 
     const homeForm = qs('#homeSettingsForm');
     const cfgForm = qs('#adminConfigForm');
@@ -1004,6 +1033,7 @@
     await fetchMe();
     hydrateAdminName();
 
+    await initAdminLogin();
     await initDashboard();
     await initOrders();
     await initCustomers();
