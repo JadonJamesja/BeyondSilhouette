@@ -514,56 +514,6 @@ app.post("/api/dev/make-admin", async (req, res) => {
 // CART API
 // -----------------------------
 
-async function getCartPayload(userId) {
-  const items = await prisma.cartItem.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    include: {
-      product: {
-        select: {
-          id: true,
-          name: true,
-          priceJMD: true,
-          images: {
-            orderBy: { sortOrder: "asc" },
-            take: 1,
-            select: { url: true },
-          },
-        },
-      },
-    },
-  });
-
-  const mapped = items.map((item) => ({
-    id: item.id,
-    productId: item.productId,
-    size: item.size,
-    qty: Number(item.qty || 0),
-    product: item.product
-      ? {
-          id: item.product.id,
-          name: item.product.name,
-          priceJMD: item.product.priceJMD,
-          image: item.product.images?.[0]?.url || "",
-        }
-      : null,
-    name: item.product?.name || "Item",
-    image: item.product?.images?.[0]?.url || "",
-    price: Number(item.product?.priceJMD || 0),
-    priceJMD: Number(item.product?.priceJMD || 0),
-  }));
-
-  const totalQty = mapped.reduce((sum, item) => sum + Number(item.qty || 0), 0);
-  const totalPrice = mapped.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.priceJMD || 0)), 0);
-
-  return {
-    ok: true,
-    items: mapped,
-    totalQty,
-    totalPrice,
-  };
-}
-
 // GET current user's cart
 app.get("/api/cart", async (req, res) => {
   const sess = readSession(req);
@@ -573,48 +523,71 @@ app.get("/api/cart", async (req, res) => {
       ok: true,
       items: [],
       totalQty: 0,
-      totalPrice: 0,
+      totalPrice: 0
     });
   }
 
   try {
-    const payload = await getCartPayload(sess.userId);
-    return res.json(payload);
+    const items = await prisma.cartItem.findMany({
+      where: { userId: sess.userId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            priceJMD: true,
+            images: { take: 1, select: { url: true } }
+          }
+        }
+      }
+    });
+
+    const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+
+    const totalPrice = items.reduce((sum, i) => {
+      return sum + (i.quantity * Number(i.product?.priceJMD || 0));
+    }, 0);
+
+    return res.json({
+      ok: true,
+      items,
+      totalQty,
+      totalPrice
+    });
+
   } catch (err) {
     console.error("GET /api/cart failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load cart" });
   }
 });
 
+
 // ADD item to cart
 app.post("/api/cart/add", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const productId = String(req.body?.productId || "").trim();
-  const size = String(req.body?.size || "").trim().toUpperCase();
-  const qty = parseQty(req.body?.qty || 1);
+  const productId = String(req.body?.productId || "");
+  const size = String(req.body?.size || "").toUpperCase();
+  const qty = Math.max(1, Number(req.body?.qty || 1));
 
-  if (!productId || !size || qty <= 0) {
-    return res.status(400).json({ ok: false, error: "Missing or invalid product, size, or quantity" });
+  if (!productId || !size) {
+    return res.status(400).json({ ok: false, error: "Missing product or size" });
   }
 
   try {
-    const existing = await prisma.cartItem.findUnique({
+    const existing = await prisma.cartItem.findFirst({
       where: {
-        userId_productId_size: {
-          userId: sess.userId,
-          productId,
-          size,
-        },
-      },
-      select: { id: true, qty: true },
+        userId: sess.userId,
+        productId,
+        size
+      }
     });
 
     if (existing) {
       await prisma.cartItem.update({
         where: { id: existing.id },
-        data: { qty: existing.qty + qty },
+        data: { quantity: existing.quantity + qty }
       });
     } else {
       await prisma.cartItem.create({
@@ -622,146 +595,39 @@ app.post("/api/cart/add", async (req, res) => {
           userId: sess.userId,
           productId,
           size,
-          qty,
-        },
+          quantity: qty
+        }
       });
     }
 
-    const payload = await getCartPayload(sess.userId);
-    return res.json(payload);
+    return res.json({ ok: true });
+
   } catch (err) {
     console.error("POST /api/cart/add failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to add to cart" });
   }
 });
 
-// UPDATE cart item quantity
-app.patch("/api/cart/item", async (req, res) => {
+
+// REMOVE item
+app.delete("/api/cart/:id", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const productId = String(req.body?.productId || "").trim();
-  const size = String(req.body?.size || "").trim().toUpperCase();
-  const qty = parseQty(req.body?.qty);
-
-  if (!productId || !size || !Number.isFinite(qty)) {
-    return res.status(400).json({ ok: false, error: "Missing or invalid product, size, or quantity" });
-  }
+  const id = String(req.params.id || "");
 
   try {
-    const existing = await prisma.cartItem.findUnique({
-      where: {
-        userId_productId_size: {
-          userId: sess.userId,
-          productId,
-          size,
-        },
-      },
-      select: { id: true },
+    await prisma.cartItem.delete({
+      where: { id }
     });
 
-    if (!existing) {
-      const payload = await getCartPayload(sess.userId);
-      return res.json(payload);
-    }
+    return res.json({ ok: true });
 
-    if (qty <= 0) {
-      await prisma.cartItem.delete({
-        where: { id: existing.id },
-      });
-    } else {
-      await prisma.cartItem.update({
-        where: { id: existing.id },
-        data: { qty },
-      });
-    }
-
-    const payload = await getCartPayload(sess.userId);
-    return res.json(payload);
   } catch (err) {
-    console.error("PATCH /api/cart/item failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to update cart" });
-  }
-});
-
-// REMOVE cart item
-app.delete("/api/cart/item", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  const productId = String(req.body?.productId || "").trim();
-  const size = String(req.body?.size || "").trim().toUpperCase();
-
-  if (!productId || !size) {
-    return res.status(400).json({ ok: false, error: "Missing product or size" });
-  }
-
-  try {
-    await prisma.cartItem.deleteMany({
-      where: {
-        userId: sess.userId,
-        productId,
-        size,
-      },
-    });
-
-    const payload = await getCartPayload(sess.userId);
-    return res.json(payload);
-  } catch (err) {
-    console.error("DELETE /api/cart/item failed:", err);
+    console.error("DELETE /api/cart failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to remove item" });
   }
 });
-
-// CLEAR cart
-app.post("/api/cart/clear", async (req, res) => {
-  const sess = requireUser(req, res);
-  if (!sess) return;
-
-  try {
-    await prisma.cartItem.deleteMany({
-      where: { userId: sess.userId },
-    });
-
-    await prisma.inventoryReservation.deleteMany({
-      where: { userId: sess.userId },
-    });
-
-    return res.json({
-      ok: true,
-      items: [],
-      totalQty: 0,
-      totalPrice: 0,
-    });
-  } catch (err) {
-    console.error("POST /api/cart/clear failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to clear cart" });
-  }
-});
-
-// -----------------------------
-// HELPERS (shared)
-// -----------------------------
-function parseQty(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.floor(n));
-}
-
-async function reservedQtyByOthers(tx, { productId, size, userId }) {
-  const now = new Date();
-  const rows = await tx.inventoryReservation.findMany({
-    where: {
-      productId,
-      size,
-      expiresAt: { gt: now },
-      NOT: userId ? { userId } : undefined,
-    },
-    select: { qty: true },
-  });
-
-  return rows.reduce((sum, row) => sum + Number(row.qty || 0), 0);
-}
 
 // -----------------------------
 // HELPERS (auth gates used below)
@@ -832,6 +698,40 @@ app.patch("/api/admin/users/:id/role", async (req, res) => {
     return res.json({ ok: true, user });
   } catch (err) {
     console.error("PATCH /api/admin/users/:id/role failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to update user role" });
+  }
+});
+
+// ADMIN: promote/demote a user by email
+app.post("/api/admin/users/promote", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const role = String(req.body?.role || "admin").trim().toLowerCase();
+
+  if (!email) return res.status(400).json({ ok: false, error: "Email is required" });
+  if (!["customer", "admin"].includes(role)) {
+    return res.status(400).json({ ok: false, error: "Invalid role" });
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { email },
+      data: { role },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+
+    if (user.id === sess.userId && user.role !== "admin") {
+      return res.status(400).json({ ok: false, error: "You cannot remove your own admin role." });
+    }
+
+    return res.json({ ok: true, user });
+  } catch (err) {
+    if (err?.code === "P2025" || String(err?.message || "").includes("Record to update not found")) {
+      return res.status(404).json({ ok: false, error: "User not found." });
+    }
+    console.error("POST /api/admin/users/promote failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to update user role" });
   }
 });
@@ -1698,6 +1598,10 @@ app.use((req, res, next) => {
   });
 
 });
+// Friendly route aliases
+app.get('/home', (req, res) => res.sendFile(path.join(clientDir, 'index.html')));
+app.get('/shop', (req, res) => res.sendFile(path.join(clientDir, 'shop-page.html')));
+
 // Serve homepage
 app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));
 

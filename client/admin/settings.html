@@ -52,7 +52,7 @@
     <header class="topbar">
       <div>
         <h1 class="h1">Settings</h1>
-        <p class="muted">Production settings will be enabled here once DB-backed configuration is finalized.</p>
+        <p class="muted">Manage homepage content, dashboard thresholds, and admin role access from one place.</p>
       </div>
 
           </header>
@@ -145,6 +145,36 @@
         </div>
       </article>
     </section>
+
+    <section class="section">
+      <article class="card">
+        <div class="card-head row-between">
+          <div>
+            <h2 class="card-title">Promote User</h2>
+            <p class="muted">Grant or revoke admin access by email.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" type="button" data-action="promote-save">Apply</button>
+        </div>
+
+        <div class="card-body">
+          <form class="grid grid-2 gap-16" autocomplete="off" onsubmit="return false;">
+            <div class="field">
+              <label class="label" for="promoteUserEmail">User email</label>
+              <input class="input" id="promoteUserEmail" type="email" placeholder="customer@example.com" />
+            </div>
+            <div class="field">
+              <label class="label" for="promoteUserRole">Role</label>
+              <select class="select" id="promoteUserRole">
+                <option value="admin">Admin</option>
+                <option value="customer">Customer</option>
+              </select>
+              <div class="hint">Use this when you need to promote a customer without opening the customers table.</div>
+            </div>
+          </form>
+        </div>
+      </article>
+    </section>
+
 <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
   </div>
 

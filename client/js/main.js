@@ -41,7 +41,23 @@
   };
   const uid = (p = '') => p + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
-  const page = () => (location.pathname.split('/').pop() || '').toLowerCase();
+  const page = () => {
+    const p = (location.pathname || '/').toLowerCase().replace(/\/+$/, '');
+    if (p === '' || p === '/' || p === '/home' || p.endsWith('/index.html')) return 'home';
+    if (p === '/shop' || p.endsWith('/shop-page.html')) return 'shop';
+    if (p.endsWith('/cart.html') || p === '/cart') return 'cart';
+    if (p.endsWith('/checkout.html') || p === '/checkout') return 'checkout';
+    if (p.endsWith('/account.html') || p === '/account') return 'account';
+    if (p.endsWith('/orders.html') || p === '/orders') return 'orders';
+    if (p.endsWith('/login.html') || p === '/login') return 'login';
+    if (p.endsWith('/register.html') || p === '/register') return 'register';
+    if (p.endsWith('/about.html') || p === '/about') return 'about';
+    if (p.endsWith('/edit-profile.html') || p === '/edit-profile') return 'edit-profile';
+    if (p.endsWith('/forgot-password.html') || p === '/forgot-password') return 'forgot-password';
+    if (p.endsWith('/reset-password.html') || p === '/reset-password') return 'reset-password';
+    if (p.endsWith('/receipt.html') || p === '/receipt') return 'receipt';
+    return p.split('/').pop() || 'home';
+  };
 
   function escapeHtml(s) {
     return String(s || '')
@@ -783,16 +799,26 @@
       },
 
       bindNavActive() {
-        const current = page() || 'index.html';
-        $$('#main-nav .nav-link').forEach(link => {
-          const href = (link.getAttribute('href') || '').split('/').pop().toLowerCase();
-          if (href === current) link.classList.add('active');
-        });
-      }
-    };
+      const current = page();
+      $$('#main-nav .nav-link').forEach(link => {
+        const href = String(link.getAttribute('href') || '').toLowerCase().trim();
+        const isHome = current === 'home' && (href === '/' || href === '/home' || href === 'index.html' || href === '/index.html');
+        const isShop = current === 'shop' && (href === '/shop' || href === 'shop-page.html' || href === '/shop-page.html');
+        const directMatch =
+          (current === 'cart' && (href === '/cart' || href.endsWith('cart.html'))) ||
+          (current === 'checkout' && (href === '/checkout' || href.endsWith('checkout.html'))) ||
+          (current === 'account' && (href === '/account' || href.endsWith('account.html'))) ||
+          (current === 'orders' && (href === '/orders' || href.endsWith('orders.html'))) ||
+          (current === 'login' && (href === '/login' || href.endsWith('login.html'))) ||
+          (current === 'register' && (href === '/register' || href.endsWith('register.html'))) ||
+          (current === 'about' && (href === '/about' || href.endsWith('about.html')));
+        if (isHome || isShop || directMatch) link.classList.add('active');
+      });
+    }
+  };
 
-    // -----------------------------
-    // GOOGLE SIGN-IN (client-side hook)
+  // -----------------------------
+  // GOOGLE SIGN-IN (client-side hook)
     // -----------------------------
     async function handleGoogleCredential(credential) {
       if (!credential) return;

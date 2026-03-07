@@ -64,13 +64,20 @@
     return location.pathname.includes('/admin/');
   }
 
-  function pathIsAdminPage(name) {
-    const path = String(location.pathname || '').replace(/\/$/, '');
-    return path.endsWith(`/admin/${name}`) || path.endsWith(`/admin/${name}.html`);
+  function adminPage() {
+    const path = String(location.pathname || '').toLowerCase().replace(/\/+$/, '');
+    if (path.endsWith('/admin') || path === '/admin') return 'dashboard';
+    if (path.endsWith('/admin/login') || path.endsWith('/admin/login.html')) return 'login';
+    if (path.endsWith('/admin/dashboard') || path.endsWith('/admin/dashboard.html')) return 'dashboard';
+    if (path.endsWith('/admin/orders') || path.endsWith('/admin/orders.html')) return 'orders';
+    if (path.endsWith('/admin/products') || path.endsWith('/admin/products.html')) return 'products';
+    if (path.endsWith('/admin/customers') || path.endsWith('/admin/customers.html')) return 'customers';
+    if (path.endsWith('/admin/settings') || path.endsWith('/admin/settings.html')) return 'settings';
+    return '';
   }
 
   function isAdminLoginPage() {
-    return pathIsAdminPage('login');
+    return adminPage() === 'login';
   }
 
   async function requireAdminGate() {
@@ -140,6 +147,35 @@
       btn.addEventListener('click', () => {
         const msg = btn.getAttribute('data-toast') || 'Done.';
         alert(msg);
+      });
+    });
+  }
+
+  function bindGlobalActions() {
+    qsa('[data-action="logout"]').forEach((btn) => {
+      if (btn.dataset.boundLogout) return;
+      btn.dataset.boundLogout = '1';
+      btn.addEventListener('click', async () => {
+        await logoutEverywhere();
+        location.href = './login.html';
+      });
+    });
+
+    qsa('[data-action="open-shop"]').forEach((btn) => {
+      if (btn.dataset.boundOpenShop) return;
+      btn.dataset.boundOpenShop = '1';
+      btn.addEventListener('click', () => {
+        location.href = '/shop';
+      });
+    });
+
+    qsa('[data-action="new-product"]').forEach((btn) => {
+      if (btn.dataset.boundNewProduct) return;
+      btn.dataset.boundNewProduct = '1';
+      btn.addEventListener('click', () => {
+        const form = qs('#productForm');
+        form?.reset();
+        form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
   }
@@ -250,7 +286,7 @@
   // Dashboard (DB stats)
   // -----------------------------
   async function initDashboard() {
-    if (!pathIsAdminPage('dashboard')) return;
+    if (adminPage() !== 'dashboard') return;
 
     const [statsResp, ordersResp] = await Promise.all([
       apiJSON('/api/admin/stats'),
@@ -277,25 +313,17 @@
     if (!tbody) return;
 
     if (!ordersResp.res.ok || !ordersResp.data?.ok) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="4" class="muted">Could not load recent orders.</td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">Could not load recent orders.</td></tr>`;
       return;
     }
 
-    const recent = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 6) : [];
-    if (!recent.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="4" class="muted">No orders yet.</td>
-        </tr>
-      `;
+    const rows = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 5) : [];
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">No orders yet.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = recent.map((o) => `
+    tbody.innerHTML = rows.map((o) => `
       <tr>
         <td class="mono">${escapeHtml(o.id || '')}</td>
         <td>${escapeHtml(o.customerName || o.email || '')}</td>
@@ -309,7 +337,7 @@
   // Orders
   // -----------------------------
   async function initOrders() {
-    if (!pathIsAdminPage('orders')) return;
+    if (adminPage() !== 'orders') return;
 
     const tbody = qs('#ordersTbody');
     const search = qs('#orderSearch');
@@ -357,11 +385,11 @@
           return `
             <tr data-order-id="${escapeHtml(o.id)}">
               <td class="mono">${escapeHtml(o.id)}</td>
-              <td>${escapeHtml(o.email || '')}</td>
-              <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
-              <td>${fmtJMD(o.totalJMD)}</td>
               <td>${escapeHtml(date)}</td>
-              <td><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
+              <td>${escapeHtml(o.customerName || o.email || '')}</td>
+              <td><span class="status-pill">${escapeHtml(String(o.status || '').toUpperCase())}</span></td>
+              <td class="right">${fmtJMD(o.totalJMD)}</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">Open</button></td>
             </tr>
           `;
         })
@@ -379,7 +407,15 @@
         modalMeta.innerHTML = `
           <div class="grid grid-2 gap-12">
             <div><div class="muted">Customer</div><div>${escapeHtml(o.customerName || o.email || '')}</div></div>
-            <div><div class="muted">Status</div><div>${escapeHtml(String(o.status || '').toUpperCase())}</div></div>
+            <div>
+                <div class="muted">Status</div>
+                <div class="row gap-8 wrap mt-8">
+                  <select class="select" id="orderStatusSelect">
+                    ${['placed','processing','shipped','delivered','cancelled'].map((status) => `<option value="${status}"${String(o.status || '').toLowerCase() === status ? ' selected' : ''}>${status.toUpperCase()}</option>`).join('')}
+                  </select>
+                  <button class="btn btn-primary btn-sm" type="button" id="saveOrderStatusBtn">Save</button>
+                </div>
+              </div>
             <div><div class="muted">Total</div><div>${fmtJMD(o.totalJMD)}</div></div>
             <div><div class="muted">Placed</div><div>${escapeHtml(date)}</div></div>
           </div>
@@ -432,6 +468,21 @@
           : `<div class="muted">No status history yet.</div>`;
       }
 
+      const saveStatusBtn = qs('#saveOrderStatusBtn', modalMeta || modal);
+      saveStatusBtn?.addEventListener('click', async () => {
+        const nextStatus = String(qs('#orderStatusSelect', modalMeta || modal)?.value || '').trim().toLowerCase();
+        const { res: saveRes, data: saveData } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: nextStatus }),
+        });
+        if (!saveRes.ok || !saveData?.ok) {
+          alert(saveData?.error || 'Failed to update order status.');
+          return;
+        }
+        await load();
+        await openOrder(id);
+      }, { once: true });
+
       setModalOpen(true);
     }
 
@@ -452,7 +503,7 @@
   // Customers
   // -----------------------------
   async function initCustomers() {
-    if (!pathIsAdminPage('customers')) return;
+    if (adminPage() !== 'customers') return;
 
     const tbody = qs('#customersTbody');
     const search = qs('#customerSearch');
@@ -626,18 +677,18 @@
   // Products
   // -----------------------------
   async function initProducts() {
-    if (!pathIsAdminPage('products')) return;
+    if (adminPage() !== 'products') return;
 
     const form = qs('#productForm');
-    const lists = qsa('.list');
-    const listWrap = lists[0] || null;
+    const listWrap = qsa('.list')[0];
     const previewName = qs('#previewName');
     const previewDesc = qs('#previewDesc');
     const previewPrice = qs('#previewPrice');
     const previewStock = qs('#previewStock');
     const previewStatus = qs('#previewStatus');
+    const stockTotalBadge = qs('#stockTotalBadge');
+    const imageInput = qs('#productImages');
     const imageGrid = qs('#imageGrid');
-    const previewMedia = qs('#previewMedia');
 
     if (!form || !listWrap) return;
 
@@ -649,17 +700,16 @@
     const stockM = qs('[name="stockM"]', form);
     const stockL = qs('[name="stockL"]', form);
     const stockXL = qs('[name="stockXL"]', form);
-    const imagesInput = qs('#productImages', form);
-    const buttons = qsa('button', form);
-    const saveDraftBtn = buttons[0] || null;
-    const publishBtn = buttons[1] || null;
-    const deleteBtn = buttons[2] || null;
+
+    const saveDraftBtn = qsa('button', form)[0];
+    const publishBtn = qsa('button', form)[1];
+    const deleteBtn = qsa('button', form)[2];
 
     let products = [];
     let editingId = null;
-    let images = [];
+    let imageUrls = [];
 
-    function inventoryPayload() {
+    function getInventoryPayload() {
       return [
         { size: 'S', stock: Number(stockS?.value || 0) },
         { size: 'M', stock: Number(stockM?.value || 0) },
@@ -668,71 +718,71 @@
       ];
     }
 
-    function totalStock() {
-      return inventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
-    }
-
-    function renderImagePreview() {
-      if (previewMedia) {
-        const first = images[0]?.url || '';
-        previewMedia.innerHTML = first
-          ? `<img src="${escapeHtml(first)}" alt="Preview" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />`
-          : `<span class="muted">No image</span>`;
+    function renderImages() {
+      if (!imageGrid) return;
+      if (!imageUrls.length) {
+        imageGrid.innerHTML = '<div class="muted">No images selected.</div>';
+        return;
       }
-      if (imageGrid) {
-        imageGrid.innerHTML = images.map((img, i) => `
-          <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
-            <img src="${escapeHtml(img.url)}" alt="Image ${i+1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />
-            <div class="muted">Image ${i + 1}</div>
-          </div>
-        `).join('');
-      }
+      imageGrid.innerHTML = imageUrls.map((url, index) => `
+        <div class="thumb-card">
+          <img src="${escapeHtml(url)}" alt="Product image ${index + 1}" class="thumb-image" />
+          <div class="thumb-meta">${index === 0 ? 'Cover image' : `Image ${index + 1}`}</div>
+        </div>
+      `).join('');
     }
 
     function updatePreview() {
+      const totalStock = getInventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
       if (previewName) previewName.textContent = nameInput?.value?.trim() || '—';
       if (previewDesc) previewDesc.textContent = descInput?.value?.trim() || '—';
       if (previewPrice) previewPrice.textContent = fmtJMD(Number(priceInput?.value || 0));
-      if (previewStock) previewStock.textContent = `Stock: ${totalStock()}`;
+      if (previewStock) previewStock.textContent = `Stock: ${totalStock}`;
       if (previewStatus) previewStatus.textContent = statusInput?.value === 'published' ? 'Published' : 'Draft';
-      renderImagePreview();
-    }
-
-    function fillForm(product) {
-      editingId = product.id;
-      nameInput.value = product.name || '';
-      descInput.value = product.description || '';
-      priceInput.value = String(product.priceJMD || 0);
-      statusInput.value = product.isPublished ? 'published' : 'draft';
-      const bySize = Object.fromEntries((product.inventory || []).map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
-      stockS.value = String(bySize.S || 0);
-      stockM.value = String(bySize.M || 0);
-      stockL.value = String(bySize.L || 0);
-      stockXL.value = String(bySize.XL || 0);
-      images = Array.isArray(product.images) ? product.images.map((img) => ({ url: img.url, alt: img.alt || '', sortOrder: Number(img.sortOrder || 0) })) : [];
-      updatePreview();
+      if (stockTotalBadge) stockTotalBadge.textContent = `Total: ${totalStock}`;
+      const media = qs('#previewMedia');
+      if (media) {
+        media.innerHTML = imageUrls[0] ? `<img src="${escapeHtml(imageUrls[0])}" alt="Preview" class="preview-img" />` : '<span class="muted">No image</span>';
+      }
+      renderImages();
     }
 
     function resetForm() {
       editingId = null;
+      imageUrls = [];
       form.reset();
-      images = [];
+      updatePreview();
+    }
+
+    function fillForm(product) {
+      editingId = product.id;
+      imageUrls = Array.isArray(product.images) ? product.images.map((img) => String(img.url || '').trim()).filter(Boolean) : [];
+      if (nameInput) nameInput.value = product.name || '';
+      if (descInput) descInput.value = product.description || '';
+      if (priceInput) priceInput.value = String(product.priceJMD || 0);
+      if (statusInput) statusInput.value = product.isPublished ? 'published' : 'draft';
+      const inv = Array.isArray(product.inventory) ? product.inventory : [];
+      const bySize = Object.fromEntries(inv.map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
+      if (stockS) stockS.value = String(bySize.S || 0);
+      if (stockM) stockM.value = String(bySize.M || 0);
+      if (stockL) stockL.value = String(bySize.L || 0);
+      if (stockXL) stockXL.value = String(bySize.XL || 0);
       updatePreview();
     }
 
     function renderList() {
       if (!products.length) {
-        listWrap.innerHTML = `<div class="muted" style="padding:16px;">No products yet.</div>`;
+        listWrap.innerHTML = '<div class="muted" style="padding:16px;">No products yet.</div>';
         return;
       }
       listWrap.innerHTML = products.map((p) => `
-        <button type="button" class="card mini" data-product-id="${escapeHtml(p.id)}" style="width:100%;text-align:left;padding:14px;margin-bottom:10px;border:none;cursor:pointer;">
-          <div class="row-between">
+        <button type="button" class="card mini saved-product-card" data-product-id="${escapeHtml(p.id)}">
+          <div class="row-between gap-12 wrap">
             <div>
               <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
               <div class="muted">${escapeHtml(p.description || '')}</div>
             </div>
-            <div>
+            <div class="right">
               <div>${fmtJMD(p.priceJMD)}</div>
               <div class="muted">${p.isPublished ? 'Published' : 'Draft'}</div>
             </div>
@@ -744,7 +794,7 @@
     async function loadProducts() {
       const { res, data } = await apiJSON('/api/admin/products');
       if (!res.ok || !data?.ok) {
-        listWrap.innerHTML = `<div class="muted" style="padding:16px;">Failed to load products.</div>`;
+        listWrap.innerHTML = '<div class="muted" style="padding:16px;">Failed to load products.</div>';
         return;
       }
       products = Array.isArray(data.products) ? data.products : [];
@@ -757,8 +807,8 @@
         description: String(descInput?.value || '').trim(),
         priceJMD: Number(priceInput?.value || 0),
         isPublished,
-        inventory: inventoryPayload(),
-        images,
+        inventory: getInventoryPayload(),
+        images: imageUrls.map((url, index) => ({ url, sortOrder: index })),
       };
       if (!payload.name) {
         alert('Product name is required.');
@@ -776,19 +826,16 @@
       alert(isPublished ? 'Product published.' : 'Draft saved.');
     }
 
-    async function deleteProduct() {
-      if (!editingId) return;
-      alert('Delete is not wired yet on the backend for products.');
-    }
-
     form.addEventListener('input', updatePreview);
-    imagesInput?.addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files || []);
-      images = await Promise.all(files.map((file, i) => new Promise((resolve) => {
+    imageInput?.addEventListener('change', async () => {
+      const files = Array.from(imageInput.files || []);
+      imageUrls = await Promise.all(files.map((file) => new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve({ url: String(reader.result || ''), alt: file.name || '', sortOrder: i });
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => resolve('');
         reader.readAsDataURL(file);
       })));
+      imageUrls = imageUrls.filter(Boolean);
       updatePreview();
     });
     listWrap.addEventListener('click', (e) => {
@@ -800,9 +847,11 @@
     });
     saveDraftBtn?.addEventListener('click', () => saveProduct(false));
     publishBtn?.addEventListener('click', () => saveProduct(true));
-    deleteBtn?.addEventListener('click', deleteProduct);
+    deleteBtn?.addEventListener('click', () => {
+      alert('Delete is intentionally disabled in production mode for safety.');
+    });
 
-    resetForm();
+    updatePreview();
     await loadProducts();
   }
 
@@ -810,7 +859,7 @@
   // Settings (Home CMS + Admin Config)
   // -----------------------------
   async function initSettings() {
-    if (!pathIsAdminPage('settings')) return;
+    if (adminPage() !== 'settings') return;
 
     const homeForm = qs('#homeSettingsForm');
     const cfgForm = qs('#adminConfigForm');
@@ -1010,6 +1059,29 @@
       }
     });
 
+
+    async function saveUserRoleByEmail() {
+      const email = String(qs('#promoteUserEmail')?.value || '').trim().toLowerCase();
+      const role = String(qs('#promoteUserRole')?.value || 'admin').trim().toLowerCase();
+      if (!email) throw new Error('Enter a user email first.');
+      const { res, data } = await apiJSON('/api/admin/users/promote', {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      });
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update user role');
+      return data.user;
+    }
+
+    qs('[data-action="promote-save"]')?.addEventListener('click', async () => {
+      setError('');
+      try {
+        const user = await saveUserRoleByEmail();
+        alert(`${user.email} is now ${String(user.role || '').toUpperCase()}.`);
+      } catch (e) {
+        setError(String(e?.message || 'Failed to update user role'));
+      }
+    });
+
     // initial load
     try {
       await Promise.all([loadHome(), loadConfig()]);
@@ -1028,6 +1100,7 @@
     bindThemeToggle();
     bindSidebarToggle();
     bindToasts();
+    bindGlobalActions();
 
     await requireAdminGate();
     await fetchMe();
