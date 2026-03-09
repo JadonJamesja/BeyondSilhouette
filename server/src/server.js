@@ -39,8 +39,27 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 
 // -----------------------------
-// API
+// API HELPER FUNCTIONS
 // -----------------------------
+function requireUser(req, res) {
+  const sess = readSession(req);
+  if (!sess?.userId) {
+    res.status(401).json({ ok: false, error: "Not authenticated" });
+    return null;
+  }
+  return sess;
+}
+
+function requireAdmin(req, res) {
+  const sess = requireUser(req, res);
+  if (!sess) return null;
+  if (sess.role !== "admin") {
+    res.status(403).json({ ok: false, error: "Admin only" });
+    return null;
+  }
+  return sess;
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString() });
 });
