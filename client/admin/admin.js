@@ -26,6 +26,18 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
 
+
+  const prettyStatus = (status) => {
+    const raw = String(status || '').trim().toLowerCase();
+    if (!raw) return '—';
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  };
+
+  const statusChip = (status) => {
+    const raw = String(status || '').trim().toLowerCase() || 'placed';
+    return `<span class="chip chip-status chip-${escapeHtml(raw)}">${escapeHtml(prettyStatus(raw))}</span>`;
+  };
+
   // -----------------------------
   // API helper
   // -----------------------------
@@ -107,6 +119,16 @@
     qsa('[data-ui="adminName"]').forEach((n) => (n.textContent = display));
   }
 
+
+  function setActiveNav() {
+    const path = String(location.pathname || '').replace(/\/$/, '');
+    qsa('.nav-item').forEach((link) => {
+      const href = String(link.getAttribute('href') || '');
+      const active = href && (path.endsWith(href.replace(/^\.\//, '/admin/')) || path.endsWith(href.replace(/^\.\//, '')));
+      link.classList.toggle('active', !!active);
+    });
+  }
+
   // -----------------------------
   // Theme toggle (non-persistent)
   // -----------------------------
@@ -133,12 +155,8 @@
     };
 
     toggle.addEventListener('click', () => {
-      if (isMobile()) {
-        document.body.classList.toggle('sidebar-open');
-        return;
-      }
-
-      document.body.classList.toggle('sidebar-collapsed');
+      if (!isMobile()) return;
+      document.body.classList.toggle('sidebar-open');
     });
 
     document.addEventListener('click', (e) => {
@@ -154,9 +172,7 @@
     });
 
     window.addEventListener('resize', () => {
-      if (!isMobile()) {
-        closeMobileSidebar();
-      }
+      if (!isMobile()) closeMobileSidebar();
     });
   }
 
@@ -358,6 +374,7 @@
     const setModalOpen = (open) => {
       if (!modal) return;
       modal.hidden = !open;
+      document.body.classList.toggle('modal-open', !!open);
     };
     modalClose?.addEventListener('click', () => setModalOpen(false));
     modal?.addEventListener('click', (e) => {
@@ -368,7 +385,10 @@
 
     async function load() {
       const { res, data } = await apiJSON('/api/admin/orders');
-      if (!res.ok || !data?.ok) return;
+      if (!res.ok || !data?.ok) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="muted">Could not load orders.</td></tr>';
+        return;
+      }
       orders = Array.isArray(data.orders) ? data.orders : [];
       render();
     }
@@ -382,39 +402,67 @@
         return (
           String(o.id || '').toLowerCase().includes(q) ||
           String(o.email || '').toLowerCase().includes(q) ||
+          String(o.customerName || '').toLowerCase().includes(q) ||
           String(o.status || '').toLowerCase().includes(q)
         );
       });
 
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">No orders found.</td></tr>';
+        return;
+      }
+
       tbody.innerHTML = rows
         .map((o) => {
-          const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+          const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '—';
+          const status = String(o.status || '').toLowerCase() || 'placed';
           return `
-            <tr data-order-id="${escapeHtml(o.id)}">
+            <tr data-order-id="${escapeHtml(o.id)}" data-status="${escapeHtml(status)}">
               <td class="mono">${escapeHtml(o.id)}</td>
-              <td>${escapeHtml(o.email || '')}</td>
-              <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
-              <td>${fmtJMD(o.totalJMD)}</td>
               <td>${escapeHtml(date)}</td>
-              <td><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
+              <td>${escapeHtml(o.customerName || o.email || '')}</td>
+              <td>${statusChip(status)}</td>
+              <td class="right">${fmtJMD(o.totalJMD)}</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
             </tr>
           `;
         })
         .join('');
     }
 
+    async function updateOrderStatus(id, status) {
+      const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update order status.');
+    }
+
     async function openOrder(id) {
       const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}`);
-      if (!res.ok || !data?.ok) return;
+      if (!res.ok || !data?.ok) {
+        alert(data?.error || 'Could not load order.');
+        return;
+      }
 
       const o = data.order;
       if (modalTitle) modalTitle.textContent = `Order ${o.id}`;
       if (modalMeta) {
-        const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+        const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '—';
+        const currentStatus = String(o.status || 'placed').toLowerCase();
         modalMeta.innerHTML = `
           <div class="grid grid-2 gap-12">
             <div><div class="muted">Customer</div><div>${escapeHtml(o.customerName || o.email || '')}</div></div>
-            <div><div class="muted">Status</div><div>${escapeHtml(String(o.status || '').toUpperCase())}</div></div>
+            <div>
+              <div class="muted">Status</div>
+              <div class="row gap-8 order-status-row">
+                ${statusChip(currentStatus)}
+                <select class="input input-sm" id="orderStatusSelect">
+                  ${['placed','processing','shipped','delivered','cancelled'].map((status) => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${escapeHtml(prettyStatus(status))}</option>`).join('')}
+                </select>
+                <button class="btn btn-primary btn-sm" type="button" id="orderStatusSave">Update</button>
+              </div>
+            </div>
             <div><div class="muted">Total</div><div>${fmtJMD(o.totalJMD)}</div></div>
             <div><div class="muted">Placed</div><div>${escapeHtml(date)}</div></div>
           </div>
@@ -426,20 +474,16 @@
         modalItems.innerHTML = `
           <div class="table-wrap">
             <table class="table">
-              <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Price</th></tr></thead>
+              <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th class="right">Price</th></tr></thead>
               <tbody>
-                ${items
-                  .map(
-                    (it) => `
+                ${items.map((it) => `
                   <tr>
                     <td>${escapeHtml(it.name || 'Item')}</td>
                     <td>${escapeHtml(it.size || '')}</td>
                     <td>${escapeHtml(String(it.qty ?? ''))}</td>
-                    <td>${fmtJMD(it.priceJMD)}</td>
+                    <td class="right">${fmtJMD(it.priceJMD)}</td>
                   </tr>
-                `
-                  )
-                  .join('')}
+                `).join('')}
               </tbody>
             </table>
           </div>
@@ -449,23 +493,27 @@
       if (modalHistory) {
         const hist = Array.isArray(o.history) ? o.history : [];
         modalHistory.innerHTML = hist.length
-          ? `<ul class="timeline">
-              ${hist
-                .map(
-                  (h) => `
-                <li>
-                  <div class="muted">${escapeHtml(new Date(h.at).toLocaleString())}</div>
-                  <div><strong>${escapeHtml(String(h.from || '').toUpperCase())}</strong> → <strong>${escapeHtml(
-                    String(h.to || '').toUpperCase()
-                  )}</strong></div>
-                  <div class="muted">By: ${escapeHtml(h.by || 'admin')}</div>
-                </li>
-              `
-                )
-                .join('')}
-            </ul>`
+          ? `<ul class="timeline">${hist.map((h) => `
+              <li>
+                <div class="muted">${escapeHtml(new Date(h.at).toLocaleString())}</div>
+                <div><strong>${escapeHtml(prettyStatus(h.from))}</strong> → <strong>${escapeHtml(prettyStatus(h.to))}</strong></div>
+                <div class="muted">By: ${escapeHtml(h.by || 'admin')}</div>
+                ${h.note ? `<div class="muted">${escapeHtml(h.note)}</div>` : ''}
+              </li>`).join('')}</ul>`
           : `<div class="muted">No status history yet.</div>`;
       }
+
+      qs('#orderStatusSave', modalMeta)?.addEventListener('click', async () => {
+        const next = String(qs('#orderStatusSelect', modalMeta)?.value || '').trim().toLowerCase();
+        if (!next) return;
+        try {
+          await updateOrderStatus(o.id, next);
+          await load();
+          await openOrder(o.id);
+        } catch (err) {
+          alert(err?.message || 'Failed to update status.');
+        }
+      });
 
       setModalOpen(true);
     }
@@ -813,7 +861,16 @@
 
     async function deleteProduct() {
       if (!editingId) return;
-      alert('Delete is not wired yet on the backend for products.');
+      const ok = window.confirm('Delete this product? This cannot be undone.');
+      if (!ok) return;
+      const { res, data } = await apiJSON(`/api/admin/products/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+      if (!res.ok || !data?.ok) {
+        alert(data?.error || 'Failed to delete product.');
+        return;
+      }
+      await loadProducts();
+      resetForm();
+      alert('Product deleted.');
     }
 
     form.addEventListener('input', updatePreview);
@@ -847,179 +904,188 @@
   async function initSettings() {
     if (!pathIsAdminPage('settings')) return;
 
-    const homeForm = qs('#homeSettingsForm');
-    const cfgForm = qs('#adminConfigForm');
     const errBox = qs('[data-ui="settingsError"]');
-
     const headline = qs('#homeHeadline');
     const subheadline = qs('#homeSubheadline');
-    const slideshow = qs('#homeSlideshow');
-    const featured = qs('#homeFeatured');
-
+    const slideshowInput = qs('#homeSlideshow');
+    const featuredInput = qs('#homeFeatured');
+    const searchInput = qs('#settingsProductSearch');
+    const slideshowPool = qs('#slideshowPool');
+    const slideshowSelected = qs('#slideshowSelected');
+    const featuredPool = qs('#featuredPool');
+    const featuredSelected = qs('#featuredSelected');
+    const slideshowCount = qs('#slideshowCount');
+    const featuredCount = qs('#featuredCountInline');
     const lowStock = qs('#lowStockThreshold');
 
-    const picker = qs('#featuredPicker');
-    const featuredList = qs('#featuredList');
-    const featuredSearch = qs('#featuredSearch');
-    const featuredCount = qs('#featuredCount');
-
     let products = [];
-    let selected = new Set();
+    let slideshowUrls = [];
+    let featuredIds = [];
 
     const setError = (msg) => {
       if (!errBox) return;
-      if (!msg) {
-        errBox.hidden = true;
-        errBox.textContent = '';
-      } else {
-        errBox.hidden = false;
-        errBox.textContent = msg;
-      }
+      errBox.hidden = !msg;
+      errBox.textContent = msg || '';
     };
+
+    const normalizeImages = (product) => {
+      const imgs = Array.isArray(product?.images) ? product.images : [];
+      return imgs.map((img, idx) => ({
+        url: String(img?.url || '').trim(),
+        alt: String(img?.alt || product?.name || `Image ${idx + 1}`),
+        productId: String(product?.id || ''),
+        productName: String(product?.name || 'Product'),
+      })).filter((img) => img.url);
+    };
+
+    const syncInputs = () => {
+      if (slideshowInput) slideshowInput.value = slideshowUrls.join('\n');
+      if (featuredInput) featuredInput.value = featuredIds.join('\n');
+      if (slideshowCount) slideshowCount.textContent = String(slideshowUrls.length);
+      if (featuredCount) featuredCount.textContent = String(featuredIds.length);
+    };
+
+    const matchesSearch = (product) => {
+      const q = String(searchInput?.value || '').trim().toLowerCase();
+      if (!q) return true;
+      return String(product?.name || '').toLowerCase().includes(q) || String(product?.id || '').toLowerCase().includes(q);
+    };
+
+    const thumb = (url, alt) => url ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" />` : '<div class="picker-thumb picker-thumb-empty">No image</div>';
+
+    function renderSlideshow() {
+      const allImages = products.flatMap((product) => normalizeImages(product));
+      if (slideshowSelected) {
+        slideshowSelected.innerHTML = slideshowUrls.length ? slideshowUrls.map((url) => {
+          const hit = allImages.find((img) => img.url === url);
+          return `<button type="button" class="selection-card is-selected" data-remove-slideshow="${escapeHtml(url)}">${thumb(url, hit?.alt)}<div class="selection-card-body"><strong>${escapeHtml(hit?.productName || 'Selected image')}</strong><span class="muted">Remove</span></div></button>`;
+        }).join('') : '<div class="muted">No slideshow images selected yet.</div>';
+      }
+      if (slideshowPool) {
+        const pool = allImages.filter((img) => matchesSearch({ name: img.productName, id: img.productId }));
+        slideshowPool.innerHTML = pool.length ? pool.map((img) => {
+          const active = slideshowUrls.includes(img.url);
+          return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-slideshow="${escapeHtml(img.url)}">${thumb(img.url, img.alt)}<div class="selection-card-body"><strong>${escapeHtml(img.productName)}</strong><span class="muted mono">${escapeHtml(img.productId)}</span></div></button>`;
+        }).join('') : '<div class="muted">No product images available.</div>';
+      }
+    }
+
+    function renderFeatured() {
+      if (featuredSelected) {
+        featuredSelected.innerHTML = featuredIds.length ? featuredIds.map((id) => {
+          const p = products.find((row) => row.id === id);
+          const cover = p?.images?.[0]?.url || '';
+          return `<button type="button" class="selection-card is-selected" data-remove-featured="${escapeHtml(id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p?.name || id)}</strong><span class="muted">Remove</span></div></button>`;
+        }).join('') : '<div class="muted">No featured products selected yet.</div>';
+      }
+      if (featuredPool) {
+        const pool = products.filter(matchesSearch);
+        featuredPool.innerHTML = pool.length ? pool.map((p) => {
+          const active = featuredIds.includes(p.id);
+          const cover = p?.images?.[0]?.url || '';
+          return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-featured="${escapeHtml(p.id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p.name || 'Product')}</strong><span class="muted">${escapeHtml(p.isPublished ? 'Published' : 'Draft')}</span></div></button>`;
+        }).join('') : '<div class="muted">No products available.</div>';
+      }
+    }
+
+    function renderAll() {
+      syncInputs();
+      renderSlideshow();
+      renderFeatured();
+    }
+
+    async function loadProducts() {
+      const { res, data } = await apiJSON('/api/admin/products');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
+      products = Array.isArray(data.products) ? data.products : [];
+    }
 
     async function loadHome() {
       const { res, data } = await apiJSON('/api/admin/site/home');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
-      const h = data.home || {};
-      if (headline) headline.value = h.headline || '';
-      if (subheadline) subheadline.value = h.subheadline || '';
-      if (slideshow) slideshow.value = (Array.isArray(h.slideshowUrls) ? h.slideshowUrls : []).join('\n');
-      if (featured) featured.value = (Array.isArray(h.featuredProductIds) ? h.featuredProductIds : []).join('\n');
+      const home = data.home || {};
+      if (headline) headline.value = home.headline || '';
+      if (subheadline) subheadline.value = home.subheadline || '';
+      slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.slice(0, 6) : [];
+      featuredIds = Array.isArray(home.featuredProductIds) ? home.featuredProductIds.slice(0, 3) : [];
     }
 
     async function saveHome() {
       const payload = {
-        headline: headline ? headline.value.trim() : '',
-        subheadline: subheadline ? subheadline.value.trim() : '',
-        slideshowUrls: slideshow ? slideshow.value.split('\n').map((s) => s.trim()).filter(Boolean) : [],
-        featuredProductIds: featured ? featured.value.split('\n').map((s) => s.trim()).filter(Boolean) : [],
+        headline: headline?.value?.trim() || '',
+        subheadline: subheadline?.value?.trim() || '',
+        slideshowUrls: slideshowUrls.slice(0, 6),
+        featuredProductIds: featuredIds.slice(0, 3),
       };
-
-      const { res, data } = await apiJSON('/api/admin/site/home', {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-
+      const { res, data } = await apiJSON('/api/admin/site/home', { method: 'PUT', body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
     }
 
     async function loadConfig() {
       const { res, data } = await apiJSON('/api/admin/config');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load config');
-      const c = data.config || {};
-      if (lowStock) lowStock.value = String(c.lowStockThreshold ?? 3);
+      if (lowStock) lowStock.value = String(data?.config?.lowStockThreshold ?? 3);
     }
 
     async function saveConfig() {
-      const n = Number(lowStock?.value);
-      const payload = { lowStockThreshold: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 3 };
+      const payload = { lowStockThreshold: Math.max(0, Math.floor(Number(lowStock?.value || 0))) };
       const { res, data } = await apiJSON('/api/admin/config', { method: 'PUT', body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
     }
 
-    async function loadProductsForPicker() {
-      const { res, data } = await apiJSON('/api/admin/products');
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
-      products = Array.isArray(data.products) ? data.products : [];
-    }
-
-    function openPicker() {
-      if (!picker) return;
-      picker.hidden = false;
-
-      const currentIds = (featured?.value || '')
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      selected = new Set(currentIds);
-
-      renderPicker();
-    }
-
-    function closePicker() {
-      if (!picker) return;
-      picker.hidden = true;
-    }
-
-    function renderPicker() {
-      if (!featuredList) return;
-      const q = String(featuredSearch?.value || '').trim().toLowerCase();
-
-      const rows = products
-        .filter((p) => {
-          if (!q) return true;
-          return (
-            String(p.name || '').toLowerCase().includes(q) ||
-            String(p.id || '').toLowerCase().includes(q)
-          );
-        })
-        .slice(0, 200);
-
-      featuredList.innerHTML = rows
-        .map((p) => {
-          const checked = selected.has(p.id) ? 'checked' : '';
-          const badge = p.isPublished ? 'Published' : 'Draft';
-          return `
-            <label class="row-between card mini" style="padding:10px;margin:8px 0;">
-              <div>
-                <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
-                <div class="muted mono">${escapeHtml(p.id)}</div>
-              </div>
-              <div class="row gap-8">
-                <span class="badge badge-soft">${escapeHtml(badge)}</span>
-                <input type="checkbox" data-pid="${escapeHtml(p.id)}" ${checked}/>
-              </div>
-            </label>
-          `;
-        })
-        .join('');
-
-      if (featuredCount) featuredCount.textContent = String(selected.size);
-    }
-
-    featuredList?.addEventListener('change', (e) => {
-      const cb = e.target.closest('input[type="checkbox"][data-pid]');
-      if (!cb) return;
-      const id = cb.getAttribute('data-pid');
-      if (!id) return;
-
-      if (cb.checked) {
-        if (selected.size >= 12) {
-          cb.checked = false;
-          alert('Limit: 12 featured products.');
+    searchInput?.addEventListener('input', renderAll);
+    slideshowPool?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick-slideshow]');
+      if (!btn) return;
+      const url = btn.getAttribute('data-pick-slideshow');
+      if (!url) return;
+      if (slideshowUrls.includes(url)) {
+        slideshowUrls = slideshowUrls.filter((item) => item !== url);
+      } else {
+        if (slideshowUrls.length >= 6) {
+          alert('Limit: 6 slideshow images.');
           return;
         }
-        selected.add(id);
+        slideshowUrls = [...slideshowUrls, url];
+      }
+      renderAll();
+    });
+    slideshowSelected?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-slideshow]');
+      if (!btn) return;
+      const url = btn.getAttribute('data-remove-slideshow');
+      slideshowUrls = slideshowUrls.filter((item) => item !== url);
+      renderAll();
+    });
+    featuredPool?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick-featured]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-pick-featured');
+      if (!id) return;
+      if (featuredIds.includes(id)) {
+        featuredIds = featuredIds.filter((item) => item !== id);
       } else {
-        selected.delete(id);
+        if (featuredIds.length >= 3) {
+          alert('Limit: 3 featured products.');
+          return;
+        }
+        featuredIds = [...featuredIds, id];
       }
-
-      if (featuredCount) featuredCount.textContent = String(selected.size);
+      renderAll();
     });
-
-    featuredSearch?.addEventListener('input', renderPicker);
-
-    qs('[data-action="pick-featured"]')?.addEventListener('click', async () => {
-      setError('');
-      try {
-        if (!products.length) await loadProductsForPicker();
-        openPicker();
-      } catch (e) {
-        setError(String(e?.message || 'Failed to open picker'));
-      }
-    });
-
-    qs('[data-action="close-featured"]')?.addEventListener('click', closePicker);
-    qs('[data-action="apply-featured"]')?.addEventListener('click', () => {
-      if (featured) featured.value = Array.from(selected.values()).join('\n');
-      closePicker();
+    featuredSelected?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-featured]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-remove-featured');
+      featuredIds = featuredIds.filter((item) => item !== id);
+      renderAll();
     });
 
     qs('[data-action="home-refresh"]')?.addEventListener('click', async () => {
       setError('');
       try {
-        await loadHome();
-        alert('Refreshed.');
+        await Promise.all([loadProducts(), loadHome()]);
+        renderAll();
       } catch (e) {
         setError(String(e?.message || 'Failed to refresh'));
       }
@@ -1045,9 +1111,9 @@
       }
     });
 
-    // initial load
     try {
-      await Promise.all([loadHome(), loadConfig()]);
+      await Promise.all([loadProducts(), loadHome(), loadConfig()]);
+      renderAll();
     } catch (e) {
       setError(String(e?.message || 'Failed to load settings'));
     }
@@ -1068,6 +1134,7 @@
     await requireAdminGate();
     await fetchMe();
     hydrateAdminName();
+    setActiveNav();
 
     await initAdminLogin();
     await initDashboard();

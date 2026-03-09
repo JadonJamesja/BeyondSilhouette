@@ -412,12 +412,10 @@
       return data.user;
     },
 
-    updateProfile({ name, currentPassword, newPassword }) {
-      // NOTE: still demo-only in this file (we can add server endpoint later if you want)
+    async updateProfile({ name, currentPassword, newPassword }) {
       const user = this.currentUser();
       if (!user || !user.email) throw new Error('Please log in to continue.');
 
-      const em = String(user.email).trim().toLowerCase();
       const nm = String(name || '').trim();
       const curr = String(currentPassword || '').trim();
       const next = (newPassword == null) ? '' : String(newPassword).trim();
@@ -425,37 +423,18 @@
       if (!nm) throw new Error('Please enter your display name.');
       if (!curr) throw new Error('Please enter your current password.');
 
-      const users = readUsers();
-      const u = users[em];
-      if (!u) throw new Error('Account not found.');
+      const { ok, data, status } = await apiJson('/api/me/profile', {
+        method: 'PATCH',
+        body: { name: nm, currentPassword: curr, newPassword: next || undefined },
+      });
 
-      if (!u.passwordHash) {
-        throw new Error('Password is not set for this account.');
+      if (!ok || !data?.ok || !data?.user?.email) {
+        const msg = data?.error || `Could not update profile (${status})`;
+        throw new Error(msg);
       }
 
-      if (u.passwordHash !== demoHash(curr)) {
-        throw new Error('Current password is incorrect.');
-      }
-
-      u.name = nm;
-
-      if (next) {
-        u.passwordHash = demoHash(next);
-      }
-
-      u.email = u.email || em;
-      u.createdAt = u.createdAt || user.createdAt || nowISO();
-      u.role = u.role || user.role || 'customer';
-
-      users[em] = u;
-      writeUsers(users);
-
-      const sess = readSession();
-      if (sess && String(sess.email || '').toLowerCase() === em) {
-        writeSession(sess);
-      }
-
-      return u;
+      this._serverUser = data.user;
+      return data.user;
     },
 
     requestPasswordReset(email) {
@@ -596,7 +575,7 @@
       const { ok, data } = await apiJson('/api/cart/item', { method: 'PATCH', body: payload });
       if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to update cart');
       _items = Array.isArray(data.items) ? data.items : _items;
-      return _items;
+      return Number.isFinite(Number(data?.appliedQty)) ? Number(data.appliedQty) : q;
     }
 
     async function clear() {
@@ -1427,7 +1406,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const email = String(emailInput?.value || '').trim();
@@ -1473,7 +1452,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         try {
@@ -1531,7 +1510,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         try {
@@ -1549,7 +1528,7 @@
             if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
           }
 
-          Auth.updateProfile({
+          await Auth.updateProfile({
             name,
             currentPassword,
             newPassword: wantsPwChange ? newPassword : null
@@ -1828,7 +1807,8 @@
               msg.toLowerCase().includes('failed to fetch') ||
               msg.toLowerCase().includes('networkerror') ||
               msg.toLowerCase().includes('not found') ||
-              msg.toLowerCase().includes('unexpected token');
+              msg.toLowerCase().includes('unexpected token') ||
+              msg.toLowerCase().includes('load failed');
 
             if (!canFallback) {
               toast(msg || 'Could not place order.', { important: true });
