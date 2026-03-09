@@ -11,7 +11,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "postinstall": "prisma generate",
-    "railway:start": "npm run prisma:migrate:deploy && npm run start",
+    "railway:start": "npm run prisma:generate && npm run prisma:migrate:deploy && npm run start",
     "prisma:studio": "prisma studio"
   },
   "dependencies": {

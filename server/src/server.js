@@ -132,12 +132,12 @@ async function buildCartResponse(db, userId) {
     media: { coverUrl: row.product?.images?.[0]?.url || "" },
     product: row.product
       ? {
-        id: row.product.id,
-        name: row.product.name,
-        priceJMD: Number(row.product.priceJMD || 0),
-        isPublished: !!row.product.isPublished,
-        images: row.product.images || [],
-      }
+          id: row.product.id,
+          name: row.product.name,
+          priceJMD: Number(row.product.priceJMD || 0),
+          isPublished: !!row.product.isPublished,
+          images: row.product.images || [],
+        }
       : null,
   }));
 
@@ -947,9 +947,9 @@ app.get("/api/admin/stats", async (req, res) => {
   try {
     const cfg = hasPrismaModel("adminConfig")
       ? await prisma.adminConfig.findUnique({
-        where: { id: "singleton" },
-        select: { lowStockThreshold: true },
-      })
+          where: { id: "singleton" },
+          select: { lowStockThreshold: true },
+        })
       : null;
     const threshold = Number(cfg?.lowStockThreshold ?? 3);
 
@@ -1095,26 +1095,40 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
   if (!nextStatus) return res.status(400).json({ ok: false, error: "Missing status" });
 
   const allowed = new Set(["placed", "processing", "shipped", "delivered", "cancelled"]);
-  if (!allowed.has(nextStatus)) return res.status(400).json({ ok: false, error: "Invalid status" });
+  if (!allowed.has(nextStatus)) {
+    return res.status(400).json({ ok: false, error: "Invalid status" });
+  }
 
   try {
-    const order = await prisma.order.findUnique({ where: { id }, select: { id: true, status: true } });
+    const order = await prisma.order.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+
     if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
 
     const prev = String(order.status || "placed").toLowerCase();
     if (prev === nextStatus) return res.json({ ok: true, order });
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.order.update({ where: { id }, data: { status: nextStatus } });
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { status: nextStatus },
+    });
 
-      if (tx.orderStatusHistory) {
-        await tx.orderStatusHistory.create({
-          data: { orderId: id, actorId: sess.userId, fromStatus: prev, toStatus: nextStatus },
+    try {
+      if (prisma.orderStatusHistory?.create) {
+        await prisma.orderStatusHistory.create({
+          data: {
+            orderId: id,
+            actorId: sess.userId,
+            fromStatus: prev,
+            toStatus: nextStatus,
+          },
         });
       }
-
-      return u;
-    });
+    } catch (historyErr) {
+      console.warn("Order status history write skipped:", historyErr?.message || historyErr);
+    }
 
     return res.json({ ok: true, order: updated });
   } catch (err) {
