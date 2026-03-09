@@ -39,8 +39,114 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
 
 // -----------------------------
-// API
+// API HELPER FUNCTIONS
 // -----------------------------
+function requireUser(req, res) {
+  const sess = readSession(req);
+  if (!sess?.userId) {
+    res.status(401).json({ ok: false, error: "Not authenticated" });
+    return null;
+  }
+  return sess;
+}
+
+function requireAdmin(req, res) {
+  const sess = requireUser(req, res);
+  if (!sess) return null;
+  if (sess.role !== "admin") {
+    res.status(403).json({ ok: false, error: "Admin only" });
+    return null;
+  }
+  return sess;
+}
+
+
+function parseQty(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
+function hasPrismaModel(name) {
+  return !!(prisma && Object.prototype.hasOwnProperty.call(prisma, name) && prisma[name]);
+}
+
+async function cleanupExpiredReservations(db) {
+  if (!db?.inventoryReservation) return;
+  await db.inventoryReservation.deleteMany({
+    where: { expiresAt: { lte: new Date() } },
+  });
+}
+
+async function reservedQtyByOthers(db, { productId, size, userId }) {
+  if (!db?.inventoryReservation) return 0;
+  const rows = await db.inventoryReservation.findMany({
+    where: {
+      productId,
+      size,
+      ...(userId ? { NOT: { userId } } : {}),
+      expiresAt: { gt: new Date() },
+    },
+    select: { qty: true },
+  });
+  return rows.reduce((sum, row) => sum + Number(row?.qty || 0), 0);
+}
+
+async function getAvailableStock(db, { productId, size, userId }) {
+  const inv = await db.inventory.findUnique({
+    where: { productId_size: { productId, size } },
+    select: { stock: true },
+  });
+  const stock = Number(inv?.stock || 0);
+  const reservedByOthers = await reservedQtyByOthers(db, { productId, size, userId });
+  return Math.max(0, stock - reservedByOthers);
+}
+
+async function buildCartResponse(db, userId) {
+  const rows = await db.cartItem.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "desc" }],
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          priceJMD: true,
+          isPublished: true,
+          images: {
+            orderBy: { sortOrder: "asc" },
+            take: 1,
+            select: { url: true, alt: true },
+          },
+        },
+      },
+    },
+  });
+
+  const items = rows.map((row) => ({
+    productId: row.productId,
+    size: row.size,
+    qty: Number(row.qty || 0),
+    title: row.product?.name || "Product",
+    priceJMD: Number(row.product?.priceJMD || 0),
+    media: { coverUrl: row.product?.images?.[0]?.url || "" },
+    product: row.product
+      ? {
+        id: row.product.id,
+        name: row.product.name,
+        priceJMD: Number(row.product.priceJMD || 0),
+        isPublished: !!row.product.isPublished,
+        images: row.product.images || [],
+      }
+      : null,
+  }));
+
+  const totalQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  const totalPrice = items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.priceJMD || 0), 0);
+
+  return { ok: true, items, totalQty, totalPrice };
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "beyond-silhouette", time: new Date().toISOString() });
 });
@@ -155,7 +261,7 @@ app.get("/api/products", async (req, res) => {
 // Returns the singleton home settings + featured products (published only).
 app.get("/api/site/home", async (req, res) => {
   try {
-    const settings = await prisma.siteHomeSettings.findUnique({
+    const settings = hasPrismaModel("siteHomeSettings") ? await prisma.siteHomeSettings.findUnique({
       where: { id: "singleton" },
       select: {
         id: true,
@@ -165,7 +271,7 @@ app.get("/api/site/home", async (req, res) => {
         featuredProductIds: true,
         updatedAt: true,
       },
-    });
+    }) : null;
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
     const featuredProducts = featuredIds.length
@@ -227,7 +333,7 @@ app.get("/api/admin/site/home", async (req, res) => {
   if (!sess) return;
 
   try {
-    const settings = await prisma.siteHomeSettings.findUnique({
+    const settings = hasPrismaModel("siteHomeSettings") ? await prisma.siteHomeSettings.findUnique({
       where: { id: "singleton" },
       select: {
         id: true,
@@ -238,7 +344,7 @@ app.get("/api/admin/site/home", async (req, res) => {
         createdAt: true,
         updatedAt: true,
       },
-    });
+    }) : null;
 
     return res.json({
       ok: true,
@@ -273,6 +379,10 @@ app.put("/api/admin/site/home", async (req, res) => {
   const featuredProductIds = featuredIn.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20);
 
   try {
+    if (!hasPrismaModel("siteHomeSettings")) {
+      return res.json({ ok: true, home: { id: "singleton", headline, subheadline, slideshowUrls, featuredProductIds, updatedAt: new Date().toISOString() } });
+    }
+
     const saved = await prisma.siteHomeSettings.upsert({
       where: { id: "singleton" },
       update: { headline, subheadline, slideshowUrls, featuredProductIds },
@@ -304,10 +414,10 @@ app.get("/api/admin/config", async (req, res) => {
   if (!sess) return;
 
   try {
-    const cfg = await prisma.adminConfig.findUnique({
+    const cfg = hasPrismaModel("adminConfig") ? await prisma.adminConfig.findUnique({
       where: { id: "singleton" },
       select: { id: true, lowStockThreshold: true, updatedAt: true },
-    });
+    }) : null;
     return res.json({ ok: true, config: cfg || { id: "singleton", lowStockThreshold: 3, updatedAt: null } });
   } catch (err) {
     console.error("GET /api/admin/config failed:", err);
@@ -323,6 +433,9 @@ app.put("/api/admin/config", async (req, res) => {
   const lowStockThreshold = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 3;
 
   try {
+    if (!hasPrismaModel("adminConfig")) {
+      return res.json({ ok: true, config: { id: "singleton", lowStockThreshold, updatedAt: new Date().toISOString() } });
+    }
     const cfg = await prisma.adminConfig.upsert({
       where: { id: "singleton" },
       update: { lowStockThreshold },
@@ -352,6 +465,41 @@ app.get("/api/me", async (req, res) => {
     return res.json({ ok: true, user });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err?.message || "Failed to load user" });
+  }
+});
+
+
+app.patch("/api/me/profile", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  try {
+    const name = String(req.body?.name || "").trim();
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "").trim();
+
+    if (!name) return res.status(400).json({ ok: false, error: "Display name is required" });
+    if (!currentPassword) return res.status(400).json({ ok: false, error: "Current password is required" });
+
+    const user = await prisma.user.findUnique({ where: { id: sess.userId } });
+    if (!user) return res.status(404).json({ ok: false, error: "User not found" });
+
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) return res.status(400).json({ ok: false, error: "Current password is incorrect" });
+
+    const data = { name };
+    if (newPassword) data.passwordHash = await hashPassword(newPassword);
+
+    const updated = await prisma.user.update({
+      where: { id: sess.userId },
+      data,
+      select: { id: true, email: true, name: true, role: true, createdAt: true, updatedAt: true },
+    });
+
+    setSession(res, { userId: updated.id, email: updated.email, role: updated.role });
+    return res.json({ ok: true, user: updated });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err?.message || "Failed to update profile" });
   }
 });
 
@@ -514,142 +662,197 @@ app.post("/api/dev/make-admin", async (req, res) => {
 // CART API
 // -----------------------------
 
-// GET current user's cart
 app.get("/api/cart", async (req, res) => {
   const sess = readSession(req);
 
   if (!sess?.userId) {
-    return res.json({
-      ok: true,
-      items: [],
-      totalQty: 0,
-      totalPrice: 0
-    });
+    return res.json({ ok: true, items: [], totalQty: 0, totalPrice: 0 });
   }
 
   try {
-    const items = await prisma.cartItem.findMany({
-      where: { userId: sess.userId },
-      include: {
-        product: {
-          select: {
-            id: true,
-            name: true,
-            priceJMD: true,
-            images: { take: 1, select: { url: true } }
-          }
-        }
-      }
-    });
-
-    const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
-
-    const totalPrice = items.reduce((sum, i) => {
-      return sum + (i.quantity * Number(i.product?.priceJMD || 0));
-    }, 0);
-
-    return res.json({
-      ok: true,
-      items,
-      totalQty,
-      totalPrice
-    });
-
+    const payload = await buildCartResponse(prisma, sess.userId);
+    return res.json(payload);
   } catch (err) {
     console.error("GET /api/cart failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load cart" });
   }
 });
 
-
-// ADD item to cart
 app.post("/api/cart/add", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const productId = String(req.body?.productId || "");
-  const size = String(req.body?.size || "").toUpperCase();
-  const qty = Math.max(1, Number(req.body?.qty || 1));
+  const productId = String(req.body?.productId || "").trim();
+  const size = String(req.body?.size || "").trim().toUpperCase();
+  const qty = Math.max(1, parseQty(req.body?.qty || 1));
 
   if (!productId || !size) {
     return res.status(400).json({ ok: false, error: "Missing product or size" });
   }
 
   try {
-    const existing = await prisma.cartItem.findFirst({
-      where: {
-        userId: sess.userId,
-        productId,
-        size
+    const payload = await prisma.$transaction(async (tx) => {
+      await cleanupExpiredReservations(tx);
+
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: { id: true, isPublished: true },
+      });
+      if (!product || !product.isPublished) {
+        const err = new Error('PRODUCT_NOT_FOUND');
+        err.code = 'PRODUCT_NOT_FOUND';
+        throw err;
       }
+
+      const existing = await tx.cartItem.findUnique({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        select: { qty: true },
+      });
+      const nextQty = Number(existing?.qty || 0) + qty;
+      const available = await getAvailableStock(tx, { productId, size, userId: sess.userId });
+      if (nextQty > available) {
+        const err = new Error('OUT_OF_STOCK');
+        err.code = 'OUT_OF_STOCK';
+        err.available = available;
+        throw err;
+      }
+
+      await tx.cartItem.upsert({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        update: { qty: nextQty },
+        create: { userId: sess.userId, productId, size, qty },
+      });
+
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      await tx.inventoryReservation.upsert({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        update: { qty: nextQty, expiresAt },
+        create: { userId: sess.userId, productId, size, qty: nextQty, expiresAt },
+      });
+
+      return buildCartResponse(tx, sess.userId);
     });
 
-    if (existing) {
-      await prisma.cartItem.update({
-        where: { id: existing.id },
-        data: { quantity: existing.quantity + qty }
-      });
-    } else {
-      await prisma.cartItem.create({
-        data: {
-          userId: sess.userId,
-          productId,
-          size,
-          quantity: qty
-        }
-      });
-    }
-
-    return res.json({ ok: true });
-
+    return res.json(payload);
   } catch (err) {
+    if (err?.code === 'PRODUCT_NOT_FOUND') {
+      return res.status(404).json({ ok: false, error: 'Product not found' });
+    }
+    if (err?.code === 'OUT_OF_STOCK') {
+      return res.status(409).json({ ok: false, error: 'Not enough stock available', available: Number(err.available || 0) });
+    }
     console.error("POST /api/cart/add failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to add to cart" });
   }
 });
 
-
-// REMOVE item
-app.delete("/api/cart/:id", async (req, res) => {
+app.patch("/api/cart/item", async (req, res) => {
   const sess = requireUser(req, res);
   if (!sess) return;
 
-  const id = String(req.params.id || "");
+  const productId = String(req.body?.productId || '').trim();
+  const size = String(req.body?.size || '').trim().toUpperCase();
+  const requestedQty = parseQty(req.body?.qty);
+
+  if (!productId || !size) {
+    return res.status(400).json({ ok: false, error: 'Missing product or size' });
+  }
 
   try {
-    await prisma.cartItem.delete({
-      where: { id }
+    const result = await prisma.$transaction(async (tx) => {
+      await cleanupExpiredReservations(tx);
+
+      const current = await tx.cartItem.findUnique({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        select: { id: true },
+      });
+
+      if (!current) {
+        const payload = await buildCartResponse(tx, sess.userId);
+        return { ...payload, appliedQty: 0 };
+      }
+
+      if (requestedQty <= 0) {
+        await tx.cartItem.delete({ where: { userId_productId_size: { userId: sess.userId, productId, size } } });
+        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
+        const payload = await buildCartResponse(tx, sess.userId);
+        return { ...payload, appliedQty: 0 };
+      }
+
+      const available = await getAvailableStock(tx, { productId, size, userId: sess.userId });
+      const appliedQty = Math.min(requestedQty, available);
+
+      if (appliedQty <= 0) {
+        await tx.cartItem.delete({ where: { userId_productId_size: { userId: sess.userId, productId, size } } });
+        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
+        const payload = await buildCartResponse(tx, sess.userId);
+        return { ...payload, appliedQty: 0 };
+      }
+
+      await tx.cartItem.update({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        data: { qty: appliedQty },
+      });
+
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      await tx.inventoryReservation.upsert({
+        where: { userId_productId_size: { userId: sess.userId, productId, size } },
+        update: { qty: appliedQty, expiresAt },
+        create: { userId: sess.userId, productId, size, qty: appliedQty, expiresAt },
+      });
+
+      const payload = await buildCartResponse(tx, sess.userId);
+      return { ...payload, appliedQty };
     });
 
-    return res.json({ ok: true });
-
+    return res.json(result);
   } catch (err) {
-    console.error("DELETE /api/cart failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to remove item" });
+    console.error('PATCH /api/cart/item failed:', err);
+    return res.status(500).json({ ok: false, error: 'Failed to update cart' });
   }
 });
 
-// -----------------------------
-// HELPERS (auth gates used below)
-// -----------------------------
-function requireUser(req, res) {
-  const sess = readSession(req);
-  if (!sess?.userId) {
-    res.status(401).json({ ok: false, error: "Not authenticated" });
-    return null;
-  }
-  return sess;
-}
-
-function requireAdmin(req, res) {
+app.delete("/api/cart/item", async (req, res) => {
   const sess = requireUser(req, res);
-  if (!sess) return null;
-  if (sess.role !== "admin") {
-    res.status(403).json({ ok: false, error: "Admin only" });
-    return null;
+  if (!sess) return;
+
+  const productId = String(req.body?.productId || '').trim();
+  const size = String(req.body?.size || '').trim().toUpperCase();
+
+  if (!productId || !size) {
+    return res.status(400).json({ ok: false, error: 'Missing product or size' });
   }
-  return sess;
-}
+
+  try {
+    const payload = await prisma.$transaction(async (tx) => {
+      await tx.cartItem.deleteMany({ where: { userId: sess.userId, productId, size } });
+      await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId, size } });
+      return buildCartResponse(tx, sess.userId);
+    });
+
+    return res.json(payload);
+  } catch (err) {
+    console.error('DELETE /api/cart/item failed:', err);
+    return res.status(500).json({ ok: false, error: 'Failed to remove item' });
+  }
+});
+
+app.post("/api/cart/clear", async (req, res) => {
+  const sess = requireUser(req, res);
+  if (!sess) return;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.cartItem.deleteMany({ where: { userId: sess.userId } });
+      await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId } });
+    });
+
+    return res.json({ ok: true, items: [], totalQty: 0, totalPrice: 0 });
+  } catch (err) {
+    console.error('POST /api/cart/clear failed:', err);
+    return res.status(500).json({ ok: false, error: 'Failed to clear cart' });
+  }
+});
 
 // ===== ADMIN (requires admin role) =====
 
@@ -742,10 +945,12 @@ app.get("/api/admin/stats", async (req, res) => {
   if (!sess) return;
 
   try {
-    const cfg = await prisma.adminConfig.findUnique({
-      where: { id: "singleton" },
-      select: { lowStockThreshold: true },
-    });
+    const cfg = hasPrismaModel("adminConfig")
+      ? await prisma.adminConfig.findUnique({
+        where: { id: "singleton" },
+        select: { lowStockThreshold: true },
+      })
+      : null;
     const threshold = Number(cfg?.lowStockThreshold ?? 3);
 
     const [usersCount, ordersCount, lowInvRows, revenueAgg] = await Promise.all([
@@ -818,17 +1023,32 @@ app.get("/api/admin/orders/:id", async (req, res) => {
   if (!id) return res.status(400).json({ ok: false, error: "Missing order id" });
 
   try {
-    const order = await prisma.order.findUnique({
-      where: { id },
-      include: {
-        user: { select: { email: true, name: true } },
-        items: { include: { product: { select: { name: true } } } },
-        history: {
-          orderBy: { createdAt: "desc" },
-          include: { actor: { select: { email: true, name: true } } },
+    let order;
+    try {
+      order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          user: { select: { email: true, name: true } },
+          items: { include: { product: { select: { name: true } } } },
+          ...(hasPrismaModel("orderStatusHistory") ? {
+            history: {
+              orderBy: { createdAt: "desc" },
+              include: { actor: { select: { email: true, name: true } } },
+            },
+          } : {}),
         },
-      },
-    });
+      });
+    } catch (detailErr) {
+      console.warn("GET /api/admin/orders/:id history fallback:", detailErr?.message || detailErr);
+      order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          user: { select: { email: true, name: true } },
+          items: { include: { product: { select: { name: true } } } },
+        },
+      });
+      if (order) order.history = [];
+    }
 
     if (!order) return res.status(404).json({ ok: false, error: "Order not found" });
 
@@ -847,7 +1067,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
           qty: it.quantity,
           priceJMD: it.unitPrice,
         })),
-        history: order.history.map((h) => ({
+        history: (Array.isArray(order.history) ? order.history : []).map((h) => ({
           id: h.id,
           at: h.createdAt,
           from: h.fromStatus,
@@ -887,9 +1107,11 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.order.update({ where: { id }, data: { status: nextStatus } });
 
-      await tx.orderStatusHistory.create({
-        data: { orderId: id, actorId: sess.userId, fromStatus: prev, toStatus: nextStatus },
-      });
+      if (tx.orderStatusHistory) {
+        await tx.orderStatusHistory.create({
+          data: { orderId: id, actorId: sess.userId, fromStatus: prev, toStatus: nextStatus },
+        });
+      }
 
       return u;
     });
@@ -910,21 +1132,32 @@ app.post("/api/orders", async (req, res) => {
   if (!sess) return;
 
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
-  const items = rawItems
-    .map((it) => ({
-      productId: String(it?.productId || "").trim(),
-      size: String(it?.size || "").trim(),
-      quantity: parseQty(it?.quantity ?? it?.qty),
-    }))
-    .filter((it) => it.productId && it.size && it.quantity > 0);
-
-  if (!items.length) {
-    return res.status(400).json({ ok: false, error: "Cart is empty" });
-  }
 
   try {
     const order = await prisma.$transaction(async (tx) => {
-      // Load products in one go (server is source of truth for price)
+      await cleanupExpiredReservations(tx);
+
+      let items = rawItems
+        .map((it) => ({
+          productId: String(it?.productId || "").trim(),
+          size: String(it?.size || "").trim().toUpperCase(),
+          quantity: parseQty(it?.quantity ?? it?.qty),
+        }))
+        .filter((it) => it.productId && it.size && it.quantity > 0);
+
+      if (!items.length) {
+        const cartRows = await tx.cartItem.findMany({ where: { userId: sess.userId } });
+        items = cartRows
+          .map((it) => ({ productId: it.productId, size: String(it.size || '').toUpperCase(), quantity: parseQty(it.qty) }))
+          .filter((it) => it.productId && it.size && it.quantity > 0);
+      }
+
+      if (!items.length) {
+        const err = new Error('CART_EMPTY');
+        err.code = 'CART_EMPTY';
+        throw err;
+      }
+
       const productIds = Array.from(new Set(items.map((i) => i.productId)));
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
@@ -933,55 +1166,39 @@ app.post("/api/orders", async (req, res) => {
       const productById = new Map(products.map((p) => [p.id, p]));
 
       const outOfStock = [];
-
       for (const it of items) {
         const p = productById.get(it.productId);
-        if (!p) {
-          outOfStock.push({ productId: it.productId, size: it.size, available: 0, reason: "NOT_FOUND" });
+        if (!p || !p.isPublished) {
+          outOfStock.push({ productId: it.productId, size: it.size, available: 0, reason: 'NOT_FOUND' });
           continue;
         }
 
-        // Check inventory (compound unique: productId+size)
-        const inv = await tx.inventory.findUnique({
-          where: { productId_size: { productId: it.productId, size: it.size } },
-          select: { stock: true },
-        });
-
-        const stock = Number(inv?.stock ?? 0);
-        const otherReserved = await reservedQtyByOthers(tx, { productId: it.productId, size: it.size, userId: sess.userId });
-        const available = Math.max(0, stock - otherReserved);
+        const available = await getAvailableStock(tx, { productId: it.productId, size: it.size, userId: sess.userId });
         if (available < it.quantity) {
           outOfStock.push({ productId: it.productId, size: it.size, available });
-          continue;
-        }
-
-        // Atomic decrement: only decrement if stock is still >= qty
-        const updated = await tx.inventory.updateMany({
-          where: {
-            productId: it.productId,
-            size: it.size,
-            stock: { gte: it.quantity },
-          },
-          data: { stock: { decrement: it.quantity } },
-        });
-
-        // Reservation fulfilled by purchase: remove this user's reservation for the item
-        await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId, productId: it.productId, size: it.size } });
-
-        if (updated.count !== 1) {
-          const inv2 = await tx.inventory.findUnique({
-            where: { productId_size: { productId: it.productId, size: it.size } },
-            select: { stock: true },
-          });
-          outOfStock.push({ productId: it.productId, size: it.size, available: Number(inv2?.stock ?? 0) });
         }
       }
 
       if (outOfStock.length) {
-        const err = new Error("OUT_OF_STOCK");
-        err.code = "OUT_OF_STOCK";
+        const err = new Error('OUT_OF_STOCK');
+        err.code = 'OUT_OF_STOCK';
         err.details = outOfStock;
         throw err;
+      }
+
+      for (const it of items) {
+        const updated = await tx.inventory.updateMany({
+          where: { productId: it.productId, size: it.size, stock: { gte: it.quantity } },
+          data: { stock: { decrement: it.quantity } },
+        });
+
+        if (updated.count !== 1) {
+          const inv2 = await tx.inventory.findUnique({ where: { productId_size: { productId: it.productId, size: it.size } }, select: { stock: true } });
+          const err = new Error('OUT_OF_STOCK');
+          err.code = 'OUT_OF_STOCK';
+          err.details = [{ productId: it.productId, size: it.size, available: Number(inv2?.stock || 0) }];
+          throw err;
+        }
       }
 
       const orderItems = items.map((it) => {
@@ -990,32 +1207,46 @@ app.post("/api/orders", async (req, res) => {
           productId: it.productId,
           size: it.size,
           quantity: it.quantity,
-          unitPrice: Number(p?.priceJMD ?? 0),
+          unitPrice: Number(p?.priceJMD || 0),
         };
       });
 
       const subtotal = orderItems.reduce((sum, li) => sum + li.unitPrice * li.quantity, 0);
       const total = subtotal;
 
-      return tx.order.create({
+      const created = await tx.order.create({
         data: {
           userId: sess.userId,
           subtotal,
           total,
-          currency: "JMD",
-          status: "processing",
+          currency: 'JMD',
+          status: 'placed',
           items: { create: orderItems },
         },
         select: { id: true, subtotal: true, total: true, currency: true, status: true, createdAt: true },
       });
+
+      if (tx.orderStatusHistory) {
+        await tx.orderStatusHistory.create({
+          data: { orderId: created.id, actorId: sess.userId, fromStatus: 'cart', toStatus: 'placed', note: 'Order placed from checkout' },
+        });
+      }
+
+      await tx.cartItem.deleteMany({ where: { userId: sess.userId } });
+      await tx.inventoryReservation.deleteMany({ where: { userId: sess.userId } });
+
+      return created;
     });
 
-    return res.status(201).json({ ok: true, order });
+    return res.status(201).json({ ok: true, order, orderId: order.id });
   } catch (err) {
-    if (err?.code === "OUT_OF_STOCK") {
-      return res.status(409).json({ ok: false, code: "OUT_OF_STOCK", items: err.details || [] });
+    if (err?.code === 'CART_EMPTY') {
+      return res.status(400).json({ ok: false, error: 'Cart is empty' });
     }
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to create order" });
+    if (err?.code === 'OUT_OF_STOCK') {
+      return res.status(409).json({ ok: false, code: 'OUT_OF_STOCK', items: err.details || [] });
+    }
+    return res.status(500).json({ ok: false, error: err?.message || 'Failed to create order' });
   }
 });
 
@@ -1416,34 +1647,19 @@ app.patch("/api/admin/products/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/admin/products/:id
 app.delete("/api/admin/products/:id", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
 
-  const id = String(req.params?.id || "").trim();
-  if (!id) return res.status(400).json({ ok: false, error: "Missing product id" });
+  const id = String(req.params?.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'Missing product id' });
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const exists = await tx.product.findUnique({ where: { id }, select: { id: true } });
-      if (!exists) {
-        const err = new Error("NOT_FOUND");
-        err.code = "NOT_FOUND";
-        throw err;
-      }
-      await tx.inventoryReservation.deleteMany({ where: { productId: id } });
-      await tx.cartItem.deleteMany({ where: { productId: id } });
-      await tx.product.delete({ where: { id } });
-    });
-
+    await prisma.product.delete({ where: { id } });
     return res.json({ ok: true });
   } catch (err) {
-    if (err?.code === "NOT_FOUND") {
-      return res.status(404).json({ ok: false, error: "Product not found" });
-    }
-    console.error("DELETE /api/admin/products/:id failed:", err);
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to delete product" });
+    if (err?.code === 'P2025') return res.status(404).json({ ok: false, error: 'Product not found' });
+    return res.status(500).json({ ok: false, error: err?.message || 'Failed to delete product' });
   }
 });
 
@@ -1632,6 +1848,17 @@ app.use((req, res, next) => {
 // Friendly route aliases
 app.get('/home', (req, res) => res.sendFile(path.join(clientDir, 'index.html')));
 app.get('/shop', (req, res) => res.sendFile(path.join(clientDir, 'shop-page.html')));
+app.get('/cart', (req, res) => res.sendFile(path.join(clientDir, 'cart.html')));
+app.get('/checkout', (req, res) => res.sendFile(path.join(clientDir, 'checkout.html')));
+app.get('/account', (req, res) => res.sendFile(path.join(clientDir, 'account.html')));
+app.get('/orders', (req, res) => res.sendFile(path.join(clientDir, 'orders.html')));
+app.get('/receipt', (req, res) => res.sendFile(path.join(clientDir, 'receipt.html')));
+app.get('/login', (req, res) => res.sendFile(path.join(clientDir, 'login.html')));
+app.get('/register', (req, res) => res.sendFile(path.join(clientDir, 'register.html')));
+app.get('/about', (req, res) => res.sendFile(path.join(clientDir, 'About.html')));
+app.get('/edit-profile', (req, res) => res.sendFile(path.join(clientDir, 'edit-profile.html')));
+app.get('/forgot-password', (req, res) => res.sendFile(path.join(clientDir, 'forgot-password.html')));
+app.get('/reset-password', (req, res) => res.sendFile(path.join(clientDir, 'reset-password.html')));
 
 // Serve homepage
 app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));

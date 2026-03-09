@@ -1,24 +1,31 @@
-/* Beyond Silhouette — Admin (DB-backed) */
+/* Beyond Silhouette — Admin (DB-backed, no localStorage)
+   - Uses same-domain /api/* endpoints (Railway)
+   - Customers + Orders + Dashboard + Settings now pull from DB
+   - Admin Settings = Home Page CMS + Admin Config
+*/
 (() => {
   'use strict';
 
-  const THEME_KEY = 'bs_admin_theme';
-  const PAGE_SIZE = 12;
+  // -----------------------------
+  // DOM utils
+  // -----------------------------
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   const fmtJMD = (n) => {
-    const value = Number(n);
-    const safe = Number.isFinite(value) ? value : 0;
+    const v = Number(n);
+    const safe = Number.isFinite(v) ? v : 0;
     return `J$ ${safe.toLocaleString('en-JM')}`;
   };
 
-  const escapeHtml = (value) => String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+  const escapeHtml = (s) =>
+    String(s ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+
 
   const prettyStatus = (status) => {
     const raw = String(status || '').trim().toLowerCase();
@@ -31,20 +38,9 @@
     return `<span class="chip chip-status chip-${escapeHtml(raw)}">${escapeHtml(prettyStatus(raw))}</span>`;
   };
 
-  function toast(message, kind = 'info') {
-    let el = qs('.toast');
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'toast';
-      document.body.appendChild(el);
-    }
-    el.textContent = String(message || 'Done.');
-    el.dataset.kind = kind;
-    el.classList.add('show');
-    clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => el.classList.remove('show'), 2200);
-  }
-
+  // -----------------------------
+  // API helper
+  // -----------------------------
   async function apiJSON(path, opts = {}) {
     const res = await fetch(path, {
       credentials: 'include',
@@ -54,40 +50,35 @@
         ...(opts.headers || {}),
       },
     });
+
     const data = await res.json().catch(() => null);
     return { res, data };
   }
 
-  let meCache = null;
-  let sharedOrders = [];
+  // -----------------------------
+  // Auth / gate
+  // -----------------------------
+  let __ME_CACHE = null;
 
-  async function fetchMe(force = false) {
-    if (meCache && !force) return meCache;
+  async function fetchMe() {
+    if (__ME_CACHE) return __ME_CACHE;
     const { res, data } = await apiJSON('/api/me');
-    if (!res.ok || !data?.ok) {
-      meCache = null;
-      return null;
-    }
-    meCache = data.user || null;
-    return meCache;
+    if (!res.ok || !data?.ok) return null;
+    __ME_CACHE = data.user || null;
+    return __ME_CACHE;
   }
 
-  function isAdminUser(user) {
-    return !!user && String(user.role || '').toLowerCase() === 'admin';
+  function isAdminUser(u) {
+    return !!u && String(u.role || '').toLowerCase() === 'admin';
   }
 
   function inAdminFolder() {
     return location.pathname.includes('/admin/');
   }
 
-  function currentPageName() {
-    const path = String(location.pathname || '').replace(/\/$/, '');
-    const last = path.split('/').pop() || '';
-    return last.toLowerCase();
-  }
-
   function pathIsAdminPage(name) {
-    return currentPageName() === `${name}.html` || currentPageName() === name;
+    const path = String(location.pathname || '').replace(/\/$/, '');
+    return path.endsWith(`/admin/${name}`) || path.endsWith(`/admin/${name}.html`);
   }
 
   function isAdminLoginPage() {
@@ -96,16 +87,22 @@
 
   async function requireAdminGate() {
     if (!inAdminFolder()) return;
+
     const me = await fetchMe();
+
+    // Allow unauthenticated users to remain on admin login page
     if (!me && isAdminLoginPage()) return;
+
     if (!me) {
       location.href = './login.html';
       return;
     }
+
     if (!isAdminUser(me)) {
       location.href = '../index.html';
       return;
     }
+
     if (isAdminLoginPage()) {
       location.href = './dashboard.html';
     }
@@ -113,53 +110,62 @@
 
   async function logoutEverywhere() {
     await apiJSON('/api/auth/logout', { method: 'POST' }).catch(() => null);
-    meCache = null;
+    __ME_CACHE = null;
   }
 
   function hydrateAdminName() {
-    const me = meCache;
+    const me = __ME_CACHE;
     const display = me && (me.name || me.email) ? String(me.name || me.email) : 'Admin';
-    const initial = display.trim().charAt(0).toUpperCase() || 'A';
-    qsa('[data-ui="adminName"]').forEach((n) => n.textContent = display);
-    qsa('.avatar').forEach((n) => n.textContent = initial);
+    qsa('[data-ui="adminName"]').forEach((n) => (n.textContent = display));
   }
 
+
   function setActiveNav() {
-    const page = currentPageName();
+    const path = String(location.pathname || '').replace(/\/$/, '');
     qsa('.nav-item').forEach((link) => {
-      const href = String(link.getAttribute('href') || '').split('/').pop()?.toLowerCase() || '';
-      link.classList.toggle('active', href === page);
+      const href = String(link.getAttribute('href') || '');
+      const active = href && (path.endsWith(href.replace(/^\.\//, '/admin/')) || path.endsWith(href.replace(/^\.\//, '')));
+      link.classList.toggle('active', !!active);
     });
   }
 
-  function applyTheme(theme) {
-    const next = theme === 'dark' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    try { localStorage.setItem(THEME_KEY, next); } catch {}
-  }
+  // -----------------------------
+  // Theme toggle (persistent across admin pages)
+  // -----------------------------
+  const THEME_KEY = 'bs_admin_theme';
 
-  function loadSavedTheme() {
-    let saved = 'light';
-    try { saved = localStorage.getItem(THEME_KEY) || 'light'; } catch {}
-    applyTheme(saved);
+  function applyAdminTheme(theme) {
+    const safe = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', safe);
+    try { localStorage.setItem(THEME_KEY, safe); } catch (_) {}
   }
 
   function bindThemeToggle() {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved) applyAdminTheme(saved);
+    } catch (_) {}
+
     qsa('[data-action="toggle-theme"]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const current = document.documentElement.getAttribute('data-theme') || 'light';
-        const next = current === 'dark' ? 'light' : 'dark';
-        applyTheme(next);
-        toast(`Theme: ${next === 'dark' ? 'Dark' : 'Light'}`);
+        const html = document.documentElement;
+        const cur = html.getAttribute('data-theme') || 'light';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        applyAdminTheme(next);
       });
     });
   }
 
+  // Sidebar toggle (non-persistent)
   function bindSidebarToggle() {
     const toggle = qs('[data-action="toggle-sidebar"]');
     if (!toggle) return;
+
     const isMobile = () => window.matchMedia('(max-width: 920px)').matches;
-    const closeMobileSidebar = () => document.body.classList.remove('sidebar-open');
+
+    const closeMobileSidebar = () => {
+      document.body.classList.remove('sidebar-open');
+    };
 
     toggle.addEventListener('click', () => {
       if (!isMobile()) return;
@@ -168,7 +174,9 @@
 
     document.addEventListener('click', (e) => {
       if (!isMobile()) return;
-      if (e.target.closest('.sidebar') || e.target.closest('[data-action="toggle-sidebar"]')) return;
+      const clickedToggle = e.target.closest('[data-action="toggle-sidebar"]');
+      const clickedSidebar = e.target.closest('.sidebar');
+      if (clickedToggle || clickedSidebar) return;
       closeMobileSidebar();
     });
 
@@ -190,83 +198,109 @@
     });
   }
 
+  // Toast helper (uses existing data-action="toast" buttons)
   function bindToasts() {
     qsa('[data-action="toast"]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        toast(btn.getAttribute('data-toast') || 'Done.');
+        const msg = btn.getAttribute('data-toast') || 'Done.';
+        alert(msg);
       });
     });
   }
 
+  // -----------------------------
+  // Admin Login (email/password + Google)
+  // -----------------------------
   async function initAdminLogin() {
     if (!isAdminLoginPage()) return;
+
     const form = qs('#loginForm');
     const errorBox = qs('[data-ui="error"]');
     const setError = (msg) => {
       if (!errorBox) return;
-      errorBox.hidden = !msg;
-      errorBox.textContent = msg || '';
+      if (!msg) {
+        errorBox.hidden = true;
+        errorBox.textContent = '';
+      } else {
+        errorBox.hidden = false;
+        errorBox.textContent = msg;
+      }
     };
 
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      setError('');
-      const email = String(qs('#email')?.value || '').trim().toLowerCase();
-      const password = String(qs('#password')?.value || '');
-      const { res, data } = await apiJSON('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-      if (!res.ok || !data?.ok) {
-        setError(data?.error || 'Login failed.');
-        return;
-      }
-      meCache = data.user || null;
-      const me = await fetchMe(true);
-      if (!isAdminUser(me)) {
-        await logoutEverywhere();
-        setError('This account is not an admin.');
-        return;
-      }
-      location.href = './dashboard.html';
-    });
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        setError('');
 
+        const email = String(qs('#email')?.value || '').trim().toLowerCase();
+        const password = String(qs('#password')?.value || '');
+
+        const { res, data } = await apiJSON('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!res.ok || !data?.ok) {
+          setError(data?.error || 'Login failed.');
+          return;
+        }
+
+        __ME_CACHE = data.user || null;
+        const me = await fetchMe();
+
+        if (!isAdminUser(me)) {
+          await logoutEverywhere();
+          setError('This account is not an admin.');
+          return;
+        }
+
+        location.href = './dashboard.html';
+      });
+    }
+
+    // Google Sign-In
     const googleBtn = qs('#adminGoogleBtn');
     if (!googleBtn) return;
 
     const { res: cfgRes, data: cfg } = await apiJSON('/api/public/config');
     const clientId = cfg?.googleClientId;
     if (!cfgRes.ok || !clientId || !window.google?.accounts?.id) {
+      // Hide if not configured
       googleBtn.hidden = true;
       return;
     }
 
     function onCredential(resp) {
+      setError('');
       const credential = String(resp?.credential || '').trim();
       if (!credential) return;
-      setError('');
+
       apiJSON('/api/auth/google', {
         method: 'POST',
         body: JSON.stringify({ credential }),
-      }).then(async ({ res, data }) => {
-        if (!res.ok || !data?.ok) throw new Error(data?.error || 'Google login failed.');
-        meCache = data.user || null;
-        const me = await fetchMe(true);
-        if (!isAdminUser(me)) {
-          await logoutEverywhere();
-          setError('This account is not an admin.');
-          return;
-        }
-        location.href = './dashboard.html';
-      }).catch((err) => setError(String(err?.message || 'Google login failed.')));
+      })
+        .then(async ({ res, data }) => {
+          if (!res.ok || !data?.ok) throw new Error(data?.error || 'Google login failed');
+          __ME_CACHE = data.user || null;
+          const me = await fetchMe();
+          if (!isAdminUser(me)) {
+            await logoutEverywhere();
+            setError('This account is not an admin.');
+            return;
+          }
+          location.href = './dashboard.html';
+        })
+        .catch((e) => setError(String(e?.message || 'Google login failed.')));
     }
 
+    // Render the button into the container
     window.google.accounts.id.initialize({
       client_id: clientId,
       callback: onCredential,
       auto_select: false,
       cancel_on_tap_outside: true,
     });
+
     window.google.accounts.id.renderButton(googleBtn, {
       theme: 'outline',
       size: 'large',
@@ -276,328 +310,79 @@
     });
   }
 
-  async function getAdminOrders(force = false) {
-    if (sharedOrders.length && !force) return sharedOrders;
-    const { res, data } = await apiJSON('/api/admin/orders');
-    if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load orders.');
-    sharedOrders = Array.isArray(data.orders) ? data.orders : [];
-    return sharedOrders;
-  }
-
-  function getRangeBounds(preset, startValue, endValue) {
-    const now = new Date();
-    const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-    let start = null;
-    let end = null;
-    switch (preset) {
-      case 'today':
-        start = startOfDay(now);
-        end = endOfDay(now);
-        break;
-      case 'yesterday': {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 1);
-        start = startOfDay(d);
-        end = endOfDay(d);
-        break;
-      }
-      case 'last7': {
-        start = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6));
-        end = endOfDay(now);
-        break;
-      }
-      case 'last30': {
-        start = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
-        end = endOfDay(now);
-        break;
-      }
-      case 'thisMonth':
-        start = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
-        end = endOfDay(now);
-        break;
-      case 'custom': {
-        const s = startValue ? new Date(startValue + 'T00:00:00') : null;
-        const e = endValue ? new Date(endValue + 'T23:59:59') : null;
-        if (s && Number.isFinite(s.getTime())) start = s;
-        if (e && Number.isFinite(e.getTime())) end = e;
-        break;
-      }
-      default:
-        break;
-    }
-    return { start, end };
-  }
-
-  function filterOrdersByRange(orders, range) {
-    if (!range.start && !range.end) return orders.slice();
-    return orders.filter((order) => {
-      const at = new Date(order?.createdAt || 0);
-      if (!Number.isFinite(at.getTime())) return false;
-      if (range.start && at < range.start) return false;
-      if (range.end && at > range.end) return false;
-      return true;
-    });
-  }
-
+  // -----------------------------
+  // Dashboard (DB stats)
+  // -----------------------------
   async function initDashboard() {
     if (!pathIsAdminPage('dashboard')) return;
 
-    const revenue = qs('#statRevenueValue');
-    const ordersCount = qs('#statOrdersValue');
-    const customersCount = qs('#statCustomersValue');
-    const lowStock = qs('#statLowStockValue');
-    const lowSub = qs('#statLowStockSub');
-    const revenueSub = qs('#statRevenueSub');
-    const ordersSub = qs('#statOrdersSub');
-    const customersSub = qs('#statCustomersSub');
+    const [statsResp, ordersResp] = await Promise.all([
+      apiJSON('/api/admin/stats'),
+      apiJSON('/api/admin/orders'),
+    ]);
+
+    if (statsResp.res.ok && statsResp.data?.ok) {
+      const s = statsResp.data.stats || {};
+      const revenue = qs('#statRevenueValue');
+      const orders = qs('#statOrdersValue');
+      const customers = qs('#statCustomersValue');
+      const lowStock = qs('#statLowStockValue');
+
+      if (revenue) revenue.textContent = fmtJMD(s.revenueJMD);
+      if (orders) orders.textContent = String(s.ordersCount ?? 0);
+      if (customers) customers.textContent = String(s.usersCount ?? 0);
+      if (lowStock) lowStock.textContent = String(s.lowStockCount ?? 0);
+
+      const lowSub = qs('#statLowStockSub');
+      if (lowSub) lowSub.textContent = `≤ ${Number(s.lowStockThreshold ?? 3)} in stock`;
+    }
+
     const tbody = qs('#recentOrdersTbody');
-    const preset = qs('#rangePreset');
-    const startInput = qs('#rangeStart');
-    const endInput = qs('#rangeEnd');
-    const applyBtn = qs('#applyRangeBtn');
-    const hint = qs('.hint');
+    if (!tbody) return;
 
-    let stats = null;
-    let orders = [];
-
-    function renderRange() {
-      if (!stats) return;
-      const range = getRangeBounds(String(preset?.value || 'last30'), startInput?.value, endInput?.value);
-      const filtered = filterOrdersByRange(orders, range);
-      const revenueTotal = filtered.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0);
-      const uniqueCustomers = new Set(filtered.map((o) => String(o.email || '').toLowerCase()).filter(Boolean));
-
-      if (revenue) revenue.textContent = fmtJMD(revenueTotal);
-      if (ordersCount) ordersCount.textContent = String(filtered.length);
-      if (customersCount) customersCount.textContent = String(stats.usersCount ?? 0);
-      if (lowStock) lowStock.textContent = String(stats.lowStockCount ?? 0);
-      if (lowSub) lowSub.textContent = `≤ ${Number(stats.lowStockThreshold ?? 3)} in stock`;
-      if (revenueSub) revenueSub.textContent = filtered.length ? 'Range total' : 'No orders in range';
-      if (ordersSub) ordersSub.textContent = `${filtered.length} order${filtered.length === 1 ? '' : 's'} in range`;
-      if (customersSub) customersSub.textContent = `${uniqueCustomers.size} active customer${uniqueCustomers.size === 1 ? '' : 's'} in range`;
-      if (hint) {
-        hint.textContent = range.start || range.end
-          ? `Showing ${filtered.length} order${filtered.length === 1 ? '' : 's'} for the selected range.`
-          : 'Showing all available order data.';
-      }
-
-      if (!tbody) return;
-      const recent = filtered.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 6);
-      if (!recent.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">No orders in this range.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = recent.map((o) => `
+    if (!ordersResp.res.ok || !ordersResp.data?.ok) {
+      tbody.innerHTML = `
         <tr>
-          <td class="mono">${escapeHtml(o.id || '')}</td>
-          <td>${escapeHtml(o.customerName || o.email || '')}</td>
-          <td>${statusChip(o.status)}</td>
-          <td class="right">${fmtJMD(o.totalJMD)}</td>
+          <td colspan="4" class="muted">Could not load recent orders.</td>
         </tr>
-      `).join('');
-    }
-
-    try {
-      const [statsResp, ordersResp] = await Promise.all([
-        apiJSON('/api/admin/stats'),
-        apiJSON('/api/admin/orders'),
-      ]);
-      if (!statsResp.res.ok || !statsResp.data?.ok) throw new Error(statsResp.data?.error || 'Failed to load stats.');
-      if (!ordersResp.res.ok || !ordersResp.data?.ok) throw new Error(ordersResp.data?.error || 'Failed to load orders.');
-      stats = statsResp.data.stats || {};
-      orders = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders : [];
-      sharedOrders = orders.slice();
-      renderRange();
-    } catch (err) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="muted">Could not load dashboard data.</td></tr>';
-      toast(err?.message || 'Could not load dashboard data.', 'error');
-    }
-
-    applyBtn?.addEventListener('click', renderRange);
-    preset?.addEventListener('change', renderRange);
-  }
-
-  async function fetchAdminOrder(id) {
-    const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}`);
-    if (!res.ok || !data?.ok) throw new Error(data?.error || 'Could not load order.');
-    return data.order;
-  }
-
-  async function updateOrderStatus(id, status) {
-    const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update order status.');
-    return data.order;
-  }
-
-  async function showOrderModal(id) {
-    const modal = qs('#orderModal');
-    const title = qs('#orderModalTitle');
-    const meta = qs('#orderModalMeta');
-    const historyWrap = qs('#orderModalHistory');
-    const itemsWrap = qs('#orderModalItems');
-    if (!modal || !meta || !itemsWrap) return;
-
-    const setOpen = (open) => {
-      modal.hidden = !open;
-      document.body.classList.toggle('modal-open', !!open);
-    };
-
-    try {
-      const order = await fetchAdminOrder(id);
-      if (title) title.textContent = `Order ${order.id}`;
-      const currentStatus = String(order.status || 'placed').toLowerCase();
-      const created = order.createdAt ? new Date(order.createdAt).toLocaleString() : '—';
-      meta.innerHTML = `
-        <div class="grid grid-2 gap-12">
-          <div><div class="muted">Customer</div><div>${escapeHtml(order.customerName || order.email || '')}</div></div>
-          <div><div class="muted">Placed</div><div>${escapeHtml(created)}</div></div>
-          <div><div class="muted">Total</div><div>${fmtJMD(order.totalJMD)}</div></div>
-          <div>
-            <div class="muted">Status</div>
-            <div class="row gap-8 order-status-row">
-              ${statusChip(currentStatus)}
-              <select class="input input-sm" id="orderStatusSelect">
-                ${['placed','processing','shipped','delivered','cancelled'].map((status) => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${escapeHtml(prettyStatus(status))}</option>`).join('')}
-              </select>
-              <button class="btn btn-primary btn-sm" type="button" id="orderStatusSave">Save</button>
-            </div>
-          </div>
-        </div>
       `;
-      itemsWrap.innerHTML = `
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th class="right">Price</th></tr></thead>
-            <tbody>
-              ${(Array.isArray(order.items) ? order.items : []).map((it) => `
-                <tr>
-                  <td>${escapeHtml(it.name || 'Item')}</td>
-                  <td>${escapeHtml(it.size || '')}</td>
-                  <td>${escapeHtml(String(it.qty ?? ''))}</td>
-                  <td class="right">${fmtJMD(it.priceJMD)}</td>
-                </tr>
-              `).join('') || '<tr><td colspan="4" class="muted">No items found.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      `;
-      const history = Array.isArray(order.history) ? order.history : [];
-      if (historyWrap) {
-        historyWrap.innerHTML = history.length ? `<ul class="timeline">${history.map((h) => `
-          <li>
-            <div class="muted">${escapeHtml(new Date(h.at).toLocaleString())}</div>
-            <div><strong>${escapeHtml(prettyStatus(h.from))}</strong> → <strong>${escapeHtml(prettyStatus(h.to))}</strong></div>
-            <div class="muted">By: ${escapeHtml(h.by || 'admin')}</div>
-          </li>
-        `).join('')}</ul>` : '<div class="muted">No status history yet.</div>';
-      }
-      qs('#orderStatusSave', meta)?.addEventListener('click', async () => {
-        try {
-          const next = String(qs('#orderStatusSelect', meta)?.value || '').trim().toLowerCase();
-          if (!next) return;
-          await updateOrderStatus(order.id, next);
-          sharedOrders = [];
-          toast('Order status updated.');
-          await showOrderModal(order.id);
-          document.dispatchEvent(new CustomEvent('bs:admin-orders-changed'));
-        } catch (err) {
-          toast(err?.message || 'Failed to update order status.', 'error');
-        }
-      }, { once: true });
-      setOpen(true);
-    } catch (err) {
-      toast(err?.message || 'Could not load order.', 'error');
+      return;
     }
 
-    qs('#orderModalClose')?.addEventListener('click', () => setOpen(false), { once: true });
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) setOpen(false);
-    }, { once: true });
+    const recent = Array.isArray(ordersResp.data.orders) ? ordersResp.data.orders.slice(0, 6) : [];
+    if (!recent.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" class="muted">No orders yet.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = recent.map((o) => `
+      <tr>
+        <td class="mono">${escapeHtml(o.id || '')}</td>
+        <td>${escapeHtml(o.customerName || o.email || '')}</td>
+        <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
+        <td class="right">${fmtJMD(o.totalJMD)}</td>
+      </tr>
+    `).join('');
   }
 
+  // -----------------------------
+  // Orders
+  // -----------------------------
   async function initOrders() {
     if (!pathIsAdminPage('orders')) return;
+
     const tbody = qs('#ordersTbody');
     const search = qs('#orderSearch');
-    const prevBtn = qs('[data-action="orders-prev"]');
-    const nextBtn = qs('[data-action="orders-next"]');
-    const indicator = qs('[data-ui="ordersPageIndicator"]');
-    let orders = [];
-    let page = 1;
-
-    const getFiltered = () => {
-      const q = String(search?.value || '').trim().toLowerCase();
-      return orders.filter((o) => {
-        if (!q) return true;
-        return [o.id, o.email, o.customerName, o.status].some((v) => String(v || '').toLowerCase().includes(q));
-      });
-    };
-
-    function render() {
-      if (!tbody) return;
-      const filtered = getFiltered();
-      const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-      page = Math.min(Math.max(page, 1), totalPages);
-      const start = (page - 1) * PAGE_SIZE;
-      const rows = filtered.slice(start, start + PAGE_SIZE);
-      if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="muted">No orders found.</td></tr>';
-      } else {
-        tbody.innerHTML = rows.map((o) => `
-          <tr data-order-id="${escapeHtml(o.id)}" data-status="${escapeHtml(String(o.status || '').toLowerCase())}">
-            <td class="mono">${escapeHtml(o.id)}</td>
-            <td>${escapeHtml(o.createdAt ? new Date(o.createdAt).toLocaleString() : '—')}</td>
-            <td>${escapeHtml(o.customerName || o.email || '')}</td>
-            <td>${statusChip(o.status)}</td>
-            <td class="right">${fmtJMD(o.totalJMD)}</td>
-            <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
-          </tr>
-        `).join('');
-      }
-      if (indicator) indicator.textContent = `Page ${page} of ${totalPages}`;
-      if (prevBtn) prevBtn.disabled = page <= 1;
-      if (nextBtn) nextBtn.disabled = page >= totalPages;
-    }
-
-    async function load(force = false) {
-      try {
-        orders = await getAdminOrders(force);
-        render();
-      } catch (err) {
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="muted">Could not load orders.</td></tr>';
-        toast(err?.message || 'Could not load orders.', 'error');
-      }
-    }
-
-    tbody?.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action="view-order"]');
-      if (!btn) return;
-      const tr = e.target.closest('tr');
-      const id = tr?.getAttribute('data-order-id');
-      if (id) showOrderModal(id);
-    });
-    search?.addEventListener('input', () => { page = 1; render(); });
-    prevBtn?.addEventListener('click', () => { page -= 1; render(); });
-    nextBtn?.addEventListener('click', () => { page += 1; render(); });
-    document.addEventListener('bs:admin-orders-changed', () => load(true));
-    await load();
-  }
-
-  async function initCustomers() {
-    if (!pathIsAdminPage('customers')) return;
-    const tbody = qs('#customersTbody');
-    const search = qs('#customerSearch');
-    const modal = qs('#customerModal');
-    const modalClose = qs('#customerModalClose');
-    const modalTitle = qs('#customerModalTitle');
-    const modalMeta = qs('#customerModalMeta');
-    const modalOrders = qs('#customerModalOrders');
-    let users = [];
-    let orders = [];
+    const modal = qs('#orderModal');
+    const modalClose = qs('#orderModalClose');
+    const modalTitle = qs('#orderModalTitle');
+    const modalMeta = qs('#orderModalMeta');
+    const modalHistory = qs('#orderModalHistory');
+    const modalItems = qs('#orderModalItems');
 
     const setModalOpen = (open) => {
       if (!modal) return;
@@ -605,156 +390,371 @@
       document.body.classList.toggle('modal-open', !!open);
     };
     modalClose?.addEventListener('click', () => setModalOpen(false));
-    modal?.addEventListener('click', (e) => { if (e.target === modal) setModalOpen(false); });
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) setModalOpen(false);
+    });
 
-    const userStatsByEmail = (email) => {
-      const em = String(email || '').toLowerCase();
-      const mine = orders.filter((o) => String(o.email || '').toLowerCase() === em);
-      return {
-        count: mine.length,
-        spend: mine.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0),
-        orders: mine,
-      };
-    };
+    let orders = [];
+    let orderPage = 1;
+    const pageSize = 10;
+    const pageStatus = qs('#ordersPageStatus');
+    const prevBtn = qs('[data-action="orders-prev"]');
+    const nextBtn = qs('[data-action="orders-next"]');
 
-    async function setRole(user, role) {
-      const { res, data } = await apiJSON(`/api/admin/users/${encodeURIComponent(user.id)}/role`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role }),
-      });
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update role.');
-      users = users.map((row) => row.id === user.id ? data.user : row);
-      return data.user;
+    async function load() {
+      const { res, data } = await apiJSON('/api/admin/orders');
+      if (!res.ok || !data?.ok) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="muted">Could not load orders.</td></tr>';
+        if (pageStatus) pageStatus.textContent = 'Orders unavailable';
+        return;
+      }
+      orders = Array.isArray(data.orders) ? data.orders : [];
+      orderPage = 1;
+      render();
     }
 
     function render() {
       if (!tbody) return;
       const q = String(search?.value || '').trim().toLowerCase();
-      const rows = users.filter((u) => {
+
+      const filtered = orders.filter((o) => {
         if (!q) return true;
-        return [u.name, u.email, u.role].some((v) => String(v || '').toLowerCase().includes(q));
+        return (
+          String(o.id || '').toLowerCase().includes(q) ||
+          String(o.email || '').toLowerCase().includes(q) ||
+          String(o.customerName || '').toLowerCase().includes(q) ||
+          String(o.status || '').toLowerCase().includes(q)
+        );
       });
+
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      if (orderPage > totalPages) orderPage = totalPages;
+      const start = (orderPage - 1) * pageSize;
+      const rows = filtered.slice(start, start + pageSize);
+
+      if (pageStatus) pageStatus.textContent = filtered.length ? `Page ${orderPage} of ${totalPages}` : 'No orders';
+      if (prevBtn) prevBtn.disabled = orderPage <= 1;
+      if (nextBtn) nextBtn.disabled = orderPage >= totalPages;
+
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="muted">No customers found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">No orders found.</td></tr>';
         return;
       }
-      tbody.innerHTML = rows.map((u) => {
-        const stats = userStatsByEmail(u.email);
-        const isAdmin = String(u.role || '').toLowerCase() === 'admin';
-        return `
-          <tr data-user-id="${escapeHtml(u.id)}">
-            <td>${escapeHtml(u.name || '—')}</td>
-            <td>${escapeHtml(u.email || '')}</td>
-            <td>${escapeHtml(prettyStatus(u.role || 'customer'))}</td>
-            <td>${escapeHtml(String(stats.count))}</td>
-            <td class="right">${fmtJMD(stats.spend)}</td>
-            <td>${escapeHtml(u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—')}</td>
-            <td class="right actions-cell">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="view-customer">View</button>
-              <button class="btn btn-primary btn-sm" type="button" data-action="toggle-role">${isAdmin ? 'Make customer' : 'Promote'}</button>
-            </td>
-          </tr>
-        `;
-      }).join('');
+
+      tbody.innerHTML = rows
+        .map((o) => {
+          const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '—';
+          const status = String(o.status || '').toLowerCase() || 'placed';
+          return `
+            <tr data-order-id="${escapeHtml(o.id)}" data-status="${escapeHtml(status)}">
+              <td class="mono">${escapeHtml(o.id)}</td>
+              <td>${escapeHtml(date)}</td>
+              <td>${escapeHtml(o.customerName || o.email || '')}</td>
+              <td>${statusChip(status)}</td>
+              <td class="right">${fmtJMD(o.totalJMD)}</td>
+              <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="view-order">View</button></td>
+            </tr>
+          `;
+        })
+        .join('');
     }
 
-    function openCustomer(id) {
-      const user = users.find((u) => String(u.id) === String(id));
-      if (!user || !modalMeta || !modalOrders) return;
-      const stats = userStatsByEmail(user.email);
-      if (modalTitle) modalTitle.textContent = user.name || user.email;
-      modalMeta.innerHTML = `
-        <div class="grid grid-2 gap-12">
-          <div><div class="muted">Email</div><div>${escapeHtml(user.email)}</div></div>
-          <div><div class="muted">Joined</div><div>${escapeHtml(user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—')}</div></div>
-          <div>
-            <div class="muted">Role</div>
-            <div class="row gap-8">
-              <select class="input input-sm" id="userRoleSelect">
-                <option value="customer" ${String(user.role).toLowerCase() === 'customer' ? 'selected' : ''}>Customer</option>
-                <option value="admin" ${String(user.role).toLowerCase() === 'admin' ? 'selected' : ''}>Admin</option>
-              </select>
-              <button class="btn btn-primary btn-sm" type="button" data-action="save-role">Save</button>
-            </div>
-          </div>
-          <div><div class="muted">Orders</div><div>${escapeHtml(String(stats.count))}</div></div>
-          <div><div class="muted">Lifetime value</div><div>${fmtJMD(stats.spend)}</div></div>
-        </div>
-      `;
-      modalOrders.innerHTML = stats.orders.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Date</th><th class="right">Action</th></tr></thead><tbody>${stats.orders.map((o) => `
-        <tr>
-          <td class="mono">${escapeHtml(o.id)}</td>
-          <td>${statusChip(o.status)}</td>
-          <td>${fmtJMD(o.totalJMD)}</td>
-          <td>${escapeHtml(o.createdAt ? new Date(o.createdAt).toLocaleString() : '—')}</td>
-          <td class="right"><button class="btn btn-ghost btn-sm" type="button" data-action="open-customer-order" data-order-id="${escapeHtml(o.id)}">View order</button></td>
-        </tr>
-      `).join('')}</tbody></table></div>` : '<div class="muted">No orders yet.</div>';
-      qs('[data-action="save-role"]', modalMeta)?.addEventListener('click', async () => {
-        try {
-          const role = String(qs('#userRoleSelect', modalMeta)?.value || '').trim().toLowerCase();
-          await setRole(user, role);
-          render();
-          toast('Role updated.');
-          setModalOpen(false);
-        } catch (err) {
-          toast(err?.message || 'Failed to update role.', 'error');
-        }
-      }, { once: true });
-      modalOrders.querySelectorAll('[data-action="open-customer-order"]').forEach((btn) => {
-        btn.addEventListener('click', () => showOrderModal(btn.getAttribute('data-order-id')));
+    async function updateOrderStatus(id, status) {
+      const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
       });
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update order status.');
+    }
+
+    async function openOrder(id) {
+      const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}`);
+      if (!res.ok || !data?.ok) {
+        alert(data?.error || 'Could not load order.');
+        return;
+      }
+
+      const o = data.order;
+      if (modalTitle) modalTitle.textContent = `Order ${o.id}`;
+      if (modalMeta) {
+        const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '—';
+        const currentStatus = String(o.status || 'placed').toLowerCase();
+        modalMeta.innerHTML = `
+          <div class="grid grid-2 gap-12">
+            <div><div class="muted">Customer</div><div>${escapeHtml(o.customerName || o.email || '')}</div></div>
+            <div>
+              <div class="muted">Status</div>
+              <div class="row gap-8 order-status-row">
+                ${statusChip(currentStatus)}
+                <select class="input input-sm" id="orderStatusSelect">
+                  ${['placed','processing','shipped','delivered','cancelled'].map((status) => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${escapeHtml(prettyStatus(status))}</option>`).join('')}
+                </select>
+                <button class="btn btn-primary btn-sm" type="button" id="orderStatusSave">Update</button>
+              </div>
+            </div>
+            <div><div class="muted">Total</div><div>${fmtJMD(o.totalJMD)}</div></div>
+            <div><div class="muted">Placed</div><div>${escapeHtml(date)}</div></div>
+          </div>
+        `;
+      }
+
+      if (modalItems) {
+        const items = Array.isArray(o.items) ? o.items : [];
+        modalItems.innerHTML = `
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th class="right">Price</th></tr></thead>
+              <tbody>
+                ${items.map((it) => `
+                  <tr>
+                    <td>${escapeHtml(it.name || 'Item')}</td>
+                    <td>${escapeHtml(it.size || '')}</td>
+                    <td>${escapeHtml(String(it.qty ?? ''))}</td>
+                    <td class="right">${fmtJMD(it.priceJMD)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      if (modalHistory) {
+        const hist = Array.isArray(o.history) ? o.history : [];
+        modalHistory.innerHTML = hist.length
+          ? `<ul class="timeline">${hist.map((h) => `
+              <li>
+                <div class="muted">${escapeHtml(new Date(h.at).toLocaleString())}</div>
+                <div><strong>${escapeHtml(prettyStatus(h.from))}</strong> → <strong>${escapeHtml(prettyStatus(h.to))}</strong></div>
+                <div class="muted">By: ${escapeHtml(h.by || 'admin')}</div>
+                ${h.note ? `<div class="muted">${escapeHtml(h.note)}</div>` : ''}
+              </li>`).join('')}</ul>`
+          : `<div class="muted">No status history yet.</div>`;
+      }
+
+      qs('#orderStatusSave', modalMeta)?.addEventListener('click', async () => {
+        const next = String(qs('#orderStatusSelect', modalMeta)?.value || '').trim().toLowerCase();
+        if (!next) return;
+        try {
+          await updateOrderStatus(o.id, next);
+          await load();
+          await openOrder(o.id);
+        } catch (err) {
+          alert(err?.message || 'Failed to update status.');
+        }
+      });
+
       setModalOpen(true);
     }
 
-    async function load(force = false) {
-      try {
-        const [u, o] = await Promise.all([
-          apiJSON('/api/admin/users'),
-          force ? apiJSON('/api/admin/orders') : Promise.resolve({ res: { ok: true }, data: { ok: true, orders: await getAdminOrders() } }),
-        ]);
-        if (!u.res.ok || !u.data?.ok) throw new Error(u.data?.error || 'Failed to load customers.');
-        users = Array.isArray(u.data.users) ? u.data.users : [];
-        orders = Array.isArray(o.data?.orders) ? o.data.orders : await getAdminOrders(force);
-        render();
-      } catch (err) {
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="muted">Could not load customers.</td></tr>';
-        toast(err?.message || 'Could not load customers.', 'error');
-      }
-    }
-
-    tbody?.addEventListener('click', async (e) => {
+    tbody?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="view-order"]');
+      if (!btn) return;
       const tr = e.target.closest('tr');
-      const id = tr?.getAttribute('data-user-id');
-      if (!id) return;
-      const user = users.find((u) => String(u.id) === String(id));
-      if (!user) return;
-      if (e.target.closest('[data-action="view-customer"]')) {
-        openCustomer(id);
-        return;
-      }
-      if (e.target.closest('[data-action="toggle-role"]')) {
-        const nextRole = String(user.role || '').toLowerCase() === 'admin' ? 'customer' : 'admin';
-        try {
-          await setRole(user, nextRole);
-          render();
-          toast(nextRole === 'admin' ? 'User promoted to admin.' : 'User changed to customer.');
-        } catch (err) {
-          toast(err?.message || 'Failed to update role.', 'error');
-        }
-      }
+      const id = tr?.getAttribute('data-order-id');
+      if (id) openOrder(id);
     });
 
-    search?.addEventListener('input', render);
-    document.addEventListener('bs:admin-orders-changed', () => load(true));
+    search?.addEventListener('input', () => { orderPage = 1; render(); });
+    prevBtn?.addEventListener('click', () => { if (orderPage > 1) { orderPage -= 1; render(); } });
+    nextBtn?.addEventListener('click', () => { orderPage += 1; render(); });
+
     await load();
   }
 
+  // -----------------------------
+  // Customers
+  // -----------------------------
+  async function initCustomers() {
+    if (!pathIsAdminPage('customers')) return;
+
+    const tbody = qs('#customersTbody');
+    const search = qs('#customerSearch');
+
+    const modal = qs('#customerModal');
+    const modalClose = qs('#customerModalClose');
+    const modalTitle = qs('#customerModalTitle');
+    const modalMeta = qs('#customerModalMeta');
+    const modalOrders = qs('#customerModalOrders');
+
+    const setModalOpen = (open) => {
+      if (!modal) return;
+      modal.hidden = !open;
+    };
+
+    modalClose?.addEventListener('click', () => setModalOpen(false));
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) setModalOpen(false);
+    });
+
+    let users = [];
+    let orders = [];
+
+    async function load() {
+      const [u, o] = await Promise.all([
+        apiJSON('/api/admin/users'),
+        apiJSON('/api/admin/orders'),
+      ]);
+
+      if (u.res.ok && u.data?.ok) users = Array.isArray(u.data.users) ? u.data.users : [];
+      if (o.res.ok && o.data?.ok) orders = Array.isArray(o.data.orders) ? o.data.orders : [];
+
+      render();
+    }
+
+    function userStatsByEmail(email) {
+      const em = String(email || '').toLowerCase();
+      const mine = orders.filter((o) => String(o.email || '').toLowerCase() === em);
+      const count = mine.length;
+      const spend = mine.reduce((sum, o) => sum + Number(o.totalJMD || 0), 0);
+      return { count, spend, orders: mine };
+    }
+
+    function render() {
+      if (!tbody) return;
+      const q = String(search?.value || '').trim().toLowerCase();
+
+      const rows = users.filter((u) => {
+        if (!q) return true;
+        return (
+          String(u.email || '').toLowerCase().includes(q) ||
+          String(u.name || '').toLowerCase().includes(q) ||
+          String(u.role || '').toLowerCase().includes(q)
+        );
+      });
+
+      tbody.innerHTML = rows
+        .map((u) => {
+          const stats = userStatsByEmail(u.email);
+          const created = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '';
+          return `
+            <tr data-user-id="${escapeHtml(u.id)}">
+              <td>${escapeHtml(u.name || '—')}</td>
+              <td>${escapeHtml(u.email || '')}</td>
+              <td>${escapeHtml(String(u.role || '').toUpperCase())}</td>
+              <td>${escapeHtml(String(stats.count))}</td>
+              <td>${fmtJMD(stats.spend)}</td>
+              <td>${escapeHtml(created)}</td>
+              <td><button class="btn btn-ghost btn-sm" type="button" data-action="view-customer">View</button></td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
+
+    async function openCustomer(id) {
+      const user = users.find((u) => String(u.id) === String(id));
+      if (!user) return;
+
+      const stats = userStatsByEmail(user.email);
+      if (modalTitle) modalTitle.textContent = user.name ? user.name : user.email;
+
+      if (modalMeta) {
+        modalMeta.innerHTML = `
+          <div class="grid grid-2 gap-12">
+            <div><div class="muted">Email</div><div>${escapeHtml(user.email)}</div></div>
+            <div><div class="muted">Role</div>
+              <div class="row gap-8">
+                <select class="select" id="userRoleSelect">
+                  <option value="customer"${String(user.role).toLowerCase() === 'customer' ? ' selected' : ''}>Customer</option>
+                  <option value="admin"${String(user.role).toLowerCase() === 'admin' ? ' selected' : ''}>Admin</option>
+                </select>
+                <button class="btn btn-primary btn-sm" type="button" data-action="save-role">Save</button>
+              </div>
+              <div class="hint mt-8">Save role changes for this customer account.</div>
+            </div>
+            <div><div class="muted">Orders</div><div>${escapeHtml(String(stats.count))}</div></div>
+            <div><div class="muted">Total spend</div><div>${fmtJMD(stats.spend)}</div></div>
+          </div>
+        `;
+      }
+
+      if (modalOrders) {
+        modalOrders.innerHTML = stats.orders.length
+          ? `<div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
+                <tbody>
+                  ${stats.orders
+                    .map((o) => {
+                      const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+                      return `
+                        <tr>
+                          <td class="mono">${escapeHtml(o.id)}</td>
+                          <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
+                          <td>${fmtJMD(o.totalJMD)}</td>
+                          <td>${escapeHtml(date)}</td>
+                        </tr>
+                      `;
+                    })
+                    .join('')}
+                </tbody>
+              </table>
+            </div>`
+          : `<div class="muted">No orders yet.</div>`;
+      }
+
+      setModalOpen(true);
+
+      // role save
+      const saveBtn = qs('[data-action="save-role"]', modalMeta);
+      saveBtn?.addEventListener(
+        'click',
+        async () => {
+          const role = String(qs('#userRoleSelect', modalMeta)?.value || '').trim().toLowerCase();
+          const { res, data } = await apiJSON(`/api/admin/users/${encodeURIComponent(user.id)}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role }),
+          });
+
+          if (!res.ok || !data?.ok) {
+            alert(data?.error || 'Failed to update role.');
+            return;
+          }
+
+          // Update local cache and rerender
+          users = users.map((u) => (u.id === user.id ? data.user : u));
+          alert('Role updated.');
+          setModalOpen(false);
+          render();
+        },
+        { once: true }
+      );
+    }
+
+    tbody?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="view-customer"]');
+      if (!btn) return;
+      const tr = e.target.closest('tr');
+      const id = tr?.getAttribute('data-user-id');
+      if (id) openCustomer(id);
+    });
+
+    search?.addEventListener('input', render);
+
+    await load();
+  }
+
+
+  // -----------------------------
+  // Products
+  // -----------------------------
   async function initProducts() {
     if (!pathIsAdminPage('products')) return;
+
     const form = qs('#productForm');
-    if (!form) return;
-    const listWrap = qs('.list');
+    const lists = qsa('.list');
+    const listWrap = lists[0] || null;
+    const previewName = qs('#previewName');
+    const previewDesc = qs('#previewDesc');
+    const previewPrice = qs('#previewPrice');
+    const previewStock = qs('#previewStock');
+    const previewStatus = qs('#previewStatus');
+    const imageGrid = qs('#imageGrid');
+    const previewMedia = qs('#previewMedia');
+
+    if (!form || !listWrap) return;
+
     const nameInput = qs('[name="name"]', form);
     const descInput = qs('[name="description"]', form);
     const priceInput = qs('[name="price"]', form);
@@ -763,40 +763,43 @@
     const stockM = qs('[name="stockM"]', form);
     const stockL = qs('[name="stockL"]', form);
     const stockXL = qs('[name="stockXL"]', form);
-    const imagesInput = qs('#productImages');
-    const previewName = qs('#previewName');
-    const previewDesc = qs('#previewDesc');
-    const previewPrice = qs('#previewPrice');
-    const previewStock = qs('#previewStock');
-    const previewStatus = qs('#previewStatus');
-    const previewMedia = qs('#previewMedia');
-    const imageGrid = qs('#imageGrid');
-    const stockBadge = qs('#stockTotalBadge');
-    const saveDraftBtn = qs('[data-action="save-draft"]');
-    const publishBtn = qs('[data-action="publish-product"]');
-    const deleteBtn = qs('[data-action="delete-product"]');
-    const newBtn = qs('[data-action="new-product"]');
-    const openShopBtn = qs('[data-action="open-shop"]');
+    const imagesInput = qs('#productImages', form);
+    const buttons = qsa('button', form);
+    const saveDraftBtn = buttons[0] || null;
+    const publishBtn = buttons[1] || null;
+    const deleteBtn = buttons[2] || null;
 
-    let editingId = null;
     let products = [];
+    let editingId = null;
     let images = [];
 
-    const totalStock = () => ['S', 'M', 'L', 'XL'].reduce((sum, size) => sum + Number(qs(`[name="stock${size}"]`, form)?.value || 0), 0);
-    const inventoryPayload = () => ['S', 'M', 'L', 'XL'].map((size) => ({ size, stock: Math.max(0, Math.floor(Number(qs(`[name="stock${size}"]`, form)?.value || 0))) }));
+    function inventoryPayload() {
+      return [
+        { size: 'S', stock: Number(stockS?.value || 0) },
+        { size: 'M', stock: Number(stockM?.value || 0) },
+        { size: 'L', stock: Number(stockL?.value || 0) },
+        { size: 'XL', stock: Number(stockXL?.value || 0) },
+      ];
+    }
+
+    function totalStock() {
+      return inventoryPayload().reduce((sum, row) => sum + Number(row.stock || 0), 0);
+    }
 
     function renderImagePreview() {
-      const first = images[0]?.url || '';
       if (previewMedia) {
-        previewMedia.innerHTML = first ? `<img src="${escapeHtml(first)}" alt="Preview" />` : '<span class="muted">No image selected</span>';
+        const first = images[0]?.url || '';
+        previewMedia.innerHTML = first
+          ? `<img src="${escapeHtml(first)}" alt="Preview" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />`
+          : `<span class="muted">No image</span>`;
       }
       if (imageGrid) {
-        imageGrid.innerHTML = images.length ? images.map((img, i) => `
-          <div class="image-tile">
-            <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt || `Image ${i + 1}`)}" />
-            <div class="meta">Image ${i + 1}</div>
+        imageGrid.innerHTML = images.map((img, i) => `
+          <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
+            <img src="${escapeHtml(img.url)}" alt="Image ${i+1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />
+            <div class="muted">Image ${i + 1}</div>
           </div>
-        `).join('') : '';
+        `).join('');
       }
     }
 
@@ -805,7 +808,6 @@
       if (previewDesc) previewDesc.textContent = descInput?.value?.trim() || '—';
       if (previewPrice) previewPrice.textContent = fmtJMD(Number(priceInput?.value || 0));
       if (previewStock) previewStock.textContent = `Stock: ${totalStock()}`;
-      if (stockBadge) stockBadge.textContent = `Total: ${totalStock()}`;
       if (previewStatus) previewStatus.textContent = statusInput?.value === 'published' ? 'Published' : 'Draft';
       renderImagePreview();
     }
@@ -816,7 +818,7 @@
       descInput.value = product.description || '';
       priceInput.value = String(product.priceJMD || 0);
       statusInput.value = product.isPublished ? 'published' : 'draft';
-      const bySize = Object.fromEntries((product.inventory || []).map((row) => [String(row.size).toUpperCase(), Number(row.stock || 0)]));
+      const bySize = Object.fromEntries((product.inventory || []).map((r) => [String(r.size).toUpperCase(), Number(r.stock || 0)]));
       stockS.value = String(bySize.S || 0);
       stockM.value = String(bySize.M || 0);
       stockL.value = String(bySize.L || 0);
@@ -828,25 +830,23 @@
     function resetForm() {
       editingId = null;
       form.reset();
-      statusInput.value = 'draft';
       images = [];
       updatePreview();
     }
 
     function renderList() {
-      if (!listWrap) return;
       if (!products.length) {
-        listWrap.innerHTML = '<div class="muted" style="padding:16px;">No products yet.</div>';
+        listWrap.innerHTML = `<div class="muted" style="padding:16px;">No products yet.</div>`;
         return;
       }
       listWrap.innerHTML = products.map((p) => `
-        <button type="button" class="card mini product-list-item" data-product-id="${escapeHtml(p.id)}">
+        <button type="button" class="card mini" data-product-id="${escapeHtml(p.id)}" style="width:100%;text-align:left;padding:14px;margin-bottom:10px;border:none;cursor:pointer;">
           <div class="row-between">
             <div>
               <div><strong>${escapeHtml(p.name || 'Product')}</strong></div>
               <div class="muted">${escapeHtml(p.description || '')}</div>
             </div>
-            <div class="right">
+            <div>
               <div>${fmtJMD(p.priceJMD)}</div>
               <div class="muted">${p.isPublished ? 'Published' : 'Draft'}</div>
             </div>
@@ -857,7 +857,10 @@
 
     async function loadProducts() {
       const { res, data } = await apiJSON('/api/admin/products');
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products.');
+      if (!res.ok || !data?.ok) {
+        listWrap.innerHTML = `<div class="muted" style="padding:16px;">Failed to load products.</div>`;
+        return;
+      }
       products = Array.isArray(data.products) ? data.products : [];
       renderList();
     }
@@ -871,25 +874,34 @@
         inventory: inventoryPayload(),
         images,
       };
-      if (!payload.name) return toast('Product name is required.', 'error');
+      if (!payload.name) {
+        alert('Product name is required.');
+        return;
+      }
       const endpoint = editingId ? `/api/admin/products/${encodeURIComponent(editingId)}` : '/api/admin/products';
       const method = editingId ? 'PATCH' : 'POST';
       const { res, data } = await apiJSON(endpoint, { method, body: JSON.stringify(payload) });
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save product.');
+      if (!res.ok || !data?.ok) {
+        alert(data?.error || 'Failed to save product.');
+        return;
+      }
       await loadProducts();
       if (data.product) fillForm(data.product);
-      toast(isPublished ? 'Product published.' : 'Draft saved.');
+      alert(isPublished ? 'Product published.' : 'Draft saved.');
     }
 
     async function deleteProduct() {
-      if (!editingId) return toast('Select a product first.', 'error');
-      const confirmed = window.confirm('Delete this product? This cannot be undone.');
-      if (!confirmed) return;
+      if (!editingId) return;
+      const ok = window.confirm('Delete this product? This cannot be undone.');
+      if (!ok) return;
       const { res, data } = await apiJSON(`/api/admin/products/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to delete product.');
+      if (!res.ok || !data?.ok) {
+        alert(data?.error || 'Failed to delete product.');
+        return;
+      }
       await loadProducts();
       resetForm();
-      toast('Product deleted.');
+      alert('Product deleted.');
     }
 
     form.addEventListener('input', updatePreview);
@@ -902,32 +914,34 @@
       })));
       updatePreview();
     });
-    listWrap?.addEventListener('click', (e) => {
+    listWrap.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-product-id]');
       if (!btn) return;
       const id = btn.getAttribute('data-product-id');
       const product = products.find((p) => String(p.id) === String(id));
       if (product) fillForm(product);
     });
-    saveDraftBtn?.addEventListener('click', async () => { try { await saveProduct(false); } catch (err) { toast(err?.message || 'Failed to save draft.', 'error'); } });
-    publishBtn?.addEventListener('click', async () => { try { await saveProduct(true); } catch (err) { toast(err?.message || 'Failed to publish product.', 'error'); } });
-    deleteBtn?.addEventListener('click', async () => { try { await deleteProduct(); } catch (err) { toast(err?.message || 'Failed to delete product.', 'error'); } });
-    newBtn?.addEventListener('click', resetForm);
-    openShopBtn?.addEventListener('click', () => { location.href = '../shop-page.html'; });
+    saveDraftBtn?.addEventListener('click', () => saveProduct(false));
+    publishBtn?.addEventListener('click', () => saveProduct(true));
+    deleteBtn?.addEventListener('click', deleteProduct);
 
     resetForm();
-    try { await loadProducts(); } catch (err) { toast(err?.message || 'Failed to load products.', 'error'); }
+    await loadProducts();
   }
 
+  // -----------------------------
+  // Settings (Home CMS + Admin Config)
+  // -----------------------------
   async function initSettings() {
     if (!pathIsAdminPage('settings')) return;
+
     const errBox = qs('[data-ui="settingsError"]');
-    const statusBox = qs('[data-ui="settingsStatus"]');
     const headline = qs('#homeHeadline');
     const subheadline = qs('#homeSubheadline');
-    const searchInput = qs('#settingsProductSearch');
     const slideshowInput = qs('#homeSlideshow');
     const featuredInput = qs('#homeFeatured');
+    const searchInput = qs('#settingsProductSearch');
+    const uploadInput = qs('#homeUploadImages');
     const slideshowPool = qs('#slideshowPool');
     const slideshowSelected = qs('#slideshowSelected');
     const featuredPool = qs('#featuredPool');
@@ -941,38 +955,35 @@
     let featuredIds = [];
 
     const setError = (msg) => {
-      if (errBox) {
-        errBox.hidden = !msg;
-        errBox.textContent = msg || '';
-      }
-    };
-    const setStatus = (msg) => {
-      if (statusBox) statusBox.textContent = msg || '';
+      if (!errBox) return;
+      errBox.hidden = !msg;
+      errBox.textContent = msg || '';
     };
 
-    const normalizeImages = (product) => (Array.isArray(product?.images) ? product.images : []).map((img, idx) => ({
-      url: String(img?.url || '').trim(),
-      alt: String(img?.alt || product?.name || `Image ${idx + 1}`),
-      productId: String(product?.id || ''),
-      productName: String(product?.name || 'Product'),
-    })).filter((img) => img.url);
-
-    const matchesSearch = (product) => {
-      const q = String(searchInput?.value || '').trim().toLowerCase();
-      if (!q) return true;
-      return [product?.name, product?.id].some((v) => String(v || '').toLowerCase().includes(q));
+    const normalizeImages = (product) => {
+      const imgs = Array.isArray(product?.images) ? product.images : [];
+      return imgs.map((img, idx) => ({
+        url: String(img?.url || '').trim(),
+        alt: String(img?.alt || product?.name || `Image ${idx + 1}`),
+        productId: String(product?.id || ''),
+        productName: String(product?.name || 'Product'),
+      })).filter((img) => img.url);
     };
 
-    const thumb = (url, alt) => url
-      ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" />`
-      : '<div class="picker-thumb picker-thumb-empty">No image</div>';
-
-    function syncInputs() {
+    const syncInputs = () => {
       if (slideshowInput) slideshowInput.value = slideshowUrls.join('\n');
       if (featuredInput) featuredInput.value = featuredIds.join('\n');
       if (slideshowCount) slideshowCount.textContent = String(slideshowUrls.length);
       if (featuredCount) featuredCount.textContent = String(featuredIds.length);
-    }
+    };
+
+    const matchesSearch = (product) => {
+      const q = String(searchInput?.value || '').trim().toLowerCase();
+      if (!q) return true;
+      return String(product?.name || '').toLowerCase().includes(q) || String(product?.id || '').toLowerCase().includes(q);
+    };
+
+    const thumb = (url, alt) => url ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" />` : '<div class="picker-thumb picker-thumb-empty">No image</div>';
 
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
@@ -1017,13 +1028,13 @@
 
     async function loadProducts() {
       const { res, data } = await apiJSON('/api/admin/products');
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products.');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load products');
       products = Array.isArray(data.products) ? data.products : [];
     }
 
     async function loadHome() {
       const { res, data } = await apiJSON('/api/admin/site/home');
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load homepage settings.');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
       const home = data.home || {};
       if (headline) headline.value = home.headline || '';
       if (subheadline) subheadline.value = home.subheadline || '';
@@ -1039,30 +1050,49 @@
         featuredProductIds: featuredIds.slice(0, 3),
       };
       const { res, data } = await apiJSON('/api/admin/site/home', { method: 'PUT', body: JSON.stringify(payload) });
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save homepage settings.');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
     }
 
     async function loadConfig() {
       const { res, data } = await apiJSON('/api/admin/config');
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load admin config.');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load config');
       if (lowStock) lowStock.value = String(data?.config?.lowStockThreshold ?? 3);
     }
 
     async function saveConfig() {
       const payload = { lowStockThreshold: Math.max(0, Math.floor(Number(lowStock?.value || 0))) };
       const { res, data } = await apiJSON('/api/admin/config', { method: 'PUT', body: JSON.stringify(payload) });
-      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save admin config.');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
     }
 
     searchInput?.addEventListener('input', renderAll);
+    uploadInput?.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []).slice(0, 6);
+      for (const file of files) {
+        if (slideshowUrls.length >= 6) break;
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read image.'));
+          reader.readAsDataURL(file);
+        });
+        if (dataUrl && !slideshowUrls.includes(dataUrl)) slideshowUrls = [...slideshowUrls, dataUrl];
+      }
+      if (uploadInput) uploadInput.value = '';
+      renderAll();
+    });
     slideshowPool?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-pick-slideshow]');
       if (!btn) return;
       const url = btn.getAttribute('data-pick-slideshow');
       if (!url) return;
-      if (slideshowUrls.includes(url)) slideshowUrls = slideshowUrls.filter((item) => item !== url);
-      else {
-        if (slideshowUrls.length >= 6) return toast('Limit: 6 slideshow images.', 'error');
+      if (slideshowUrls.includes(url)) {
+        slideshowUrls = slideshowUrls.filter((item) => item !== url);
+      } else {
+        if (slideshowUrls.length >= 6) {
+          alert('Limit: 6 slideshow images.');
+          return;
+        }
         slideshowUrls = [...slideshowUrls, url];
       }
       renderAll();
@@ -1070,7 +1100,8 @@
     slideshowSelected?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-remove-slideshow]');
       if (!btn) return;
-      slideshowUrls = slideshowUrls.filter((item) => item !== btn.getAttribute('data-remove-slideshow'));
+      const url = btn.getAttribute('data-remove-slideshow');
+      slideshowUrls = slideshowUrls.filter((item) => item !== url);
       renderAll();
     });
     featuredPool?.addEventListener('click', (e) => {
@@ -1078,9 +1109,13 @@
       if (!btn) return;
       const id = btn.getAttribute('data-pick-featured');
       if (!id) return;
-      if (featuredIds.includes(id)) featuredIds = featuredIds.filter((item) => item !== id);
-      else {
-        if (featuredIds.length >= 3) return toast('Limit: 3 featured products.', 'error');
+      if (featuredIds.includes(id)) {
+        featuredIds = featuredIds.filter((item) => item !== id);
+      } else {
+        if (featuredIds.length >= 3) {
+          alert('Limit: 3 featured products.');
+          return;
+        }
         featuredIds = [...featuredIds, id];
       }
       renderAll();
@@ -1088,69 +1123,66 @@
     featuredSelected?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-remove-featured]');
       if (!btn) return;
-      featuredIds = featuredIds.filter((item) => item !== btn.getAttribute('data-remove-featured'));
+      const id = btn.getAttribute('data-remove-featured');
+      featuredIds = featuredIds.filter((item) => item !== id);
       renderAll();
     });
 
     qs('[data-action="home-refresh"]')?.addEventListener('click', async () => {
       setError('');
-      setStatus('Refreshing…');
       try {
         await Promise.all([loadProducts(), loadHome()]);
         renderAll();
-        setStatus('Homepage settings refreshed.');
-      } catch (err) {
-        setError(err?.message || 'Failed to refresh settings.');
-        setStatus('');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to refresh'));
       }
     });
 
     qs('[data-action="home-save"]')?.addEventListener('click', async () => {
       setError('');
-      setStatus('Saving homepage settings…');
       try {
         await saveHome();
-        setStatus('Homepage settings saved.');
-        toast('Homepage settings saved.');
-      } catch (err) {
-        setError(err?.message || 'Failed to save homepage settings.');
-        setStatus('');
+        alert('Home settings saved.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to save home settings'));
       }
     });
 
     qs('[data-action="config-save"]')?.addEventListener('click', async () => {
       setError('');
-      setStatus('Saving admin config…');
       try {
         await saveConfig();
-        setStatus('Admin config saved.');
-        toast('Admin config saved.');
-      } catch (err) {
-        setError(err?.message || 'Failed to save admin config.');
-        setStatus('');
+        alert('Config saved.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to save config'));
       }
     });
 
     try {
       await Promise.all([loadProducts(), loadHome(), loadConfig()]);
       renderAll();
-      setStatus('Settings loaded.');
-    } catch (err) {
-      setError(err?.message || 'Failed to load settings.');
+    } catch (e) {
+      setError(String(e?.message || 'Failed to load settings'));
     }
   }
 
+  // -----------------------------
+  // Boot
+  // -----------------------------
   async function init() {
-    qsa('[data-ui="year"]').forEach((n) => n.textContent = String(new Date().getFullYear()));
-    loadSavedTheme();
+    // Year
+    qsa('[data-ui="year"]').forEach((n) => (n.textContent = String(new Date().getFullYear())));
+
     bindThemeToggle();
     bindSidebarToggle();
     bindToasts();
     bindLogoutButtons();
+
     await requireAdminGate();
     await fetchMe();
     hydrateAdminName();
     setActiveNav();
+
     await initAdminLogin();
     await initDashboard();
     await initOrders();
@@ -1160,6 +1192,6 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    init().catch((err) => console.error(err));
+    init().catch((e) => console.error(e));
   });
 })();

@@ -5,13 +5,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="icon" type="image/png" href="/assets/favicon.png">
-  <title>BeyondSilhouette • Admin Settings</title>
+  <title>BeyondSilhouette • Admin Orders</title>
   <link rel="stylesheet" href="./admin.css" />
 </head>
 
 <body class="admin">
-  <button class="btn sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Open menu">☰</button>
 
+  <button class="btn sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Open menu">
+    ☰
+  </button>
+
+  <!-- Sidebar -->
   <aside class="sidebar" aria-label="Admin sidebar">
     <div class="sidebar-top">
       <a class="brand brand-link" href="./dashboard.html">
@@ -47,91 +51,71 @@
     </div>
   </aside>
 
-  <div class="main">
+  <main class="main">
     <header class="topbar">
-      <div>
-        <h1 class="h1">Settings</h1>
-        <p class="muted">Manage homepage content and admin thresholds from one place.</p>
+      <div class="topbar-left">
+        <h1 class="h2">Orders</h1>
+        <p class="muted">View orders placed from the live checkout flow and manage their fulfillment status.</p>
       </div>
-      <div class="topbar-actions"><span class="muted settings-status" data-ui="settingsStatus"></span></div>
+
+      <div class="topbar-right">
+        <div class="input-wrap">
+          <input id="orderSearch" class="input" type="search" placeholder="Search by order #, customer, or email…" />
+        </div>
+      </div>
     </header>
 
-    <section class="section">
-      <article class="card">
-        <div class="card-head">
-          <div>
-            <h2 class="card-title">Home Page CMS</h2>
-            <p class="muted">Choose the homepage slideshow images and featured products shown on the storefront.</p>
-          </div>
-          <div class="row gap-8">
-            <button class="btn btn-ghost btn-sm" type="button" data-action="home-refresh">Refresh</button>
-            <button class="btn btn-primary btn-sm" type="button" data-action="home-save">Save</button>
-          </div>
+    <section class="card">
+      <div class="table-wrap">
+        <table class="table table-orders">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th class="right">Total</th>
+              <th class="right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ordersTbody">
+            <tr>
+              <td colspan="6" class="muted">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-foot row row-between">
+        <div class="muted" id="ordersPageStatus">Page 1</div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" type="button" data-action="orders-prev">Prev</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="orders-next">Next</button>
         </div>
-
-        <div class="card-body">
-          <form id="homeSettingsForm" class="grid grid-2 gap-16" autocomplete="off">
-            <div class="field">
-              <label class="label" for="homeHeadline">Headline</label>
-              <input class="input" id="homeHeadline" name="headline" type="text" placeholder="e.g., Redefine your silhouette." />
-            </div>
-
-            <div class="field">
-              <label class="label" for="homeSubheadline">Subheadline</label>
-              <input class="input" id="homeSubheadline" name="subheadline" type="text" placeholder="Short supporting line for the hero." />
-            </div>
-
-            <div class="field col-span-2">
-              <label class="label" for="settingsProductSearch">Search products</label>
-              <input class="input" id="settingsProductSearch" type="search" placeholder="Search products by name or ID" />
-            </div>
-
-            <div class="field col-span-2">
-              <label class="label">Homepage slideshow images</label>
-              <div class="hint">Select up to 6 product images for the homepage slideshow.</div>
-              <textarea class="textarea is-hidden" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
-              <div class="selection-summary"><span class="badge badge-soft"><span id="slideshowCount">0</span>/6 selected</span></div>
-              <div id="slideshowSelected" class="selected-grid mt-12"></div>
-              <div id="slideshowPool" class="picker-grid mt-12"></div>
-            </div>
-
-            <div class="field col-span-2">
-              <label class="label">Featured products</label>
-              <div class="hint">Select up to 3 featured pieces for the home page.</div>
-              <textarea class="textarea is-hidden" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
-              <div class="selection-summary"><span class="badge badge-soft"><span id="featuredCountInline">0</span>/3 selected</span></div>
-              <div id="featuredSelected" class="selected-grid mt-12"></div>
-              <div id="featuredPool" class="picker-grid mt-12"></div>
-            </div>
-          </form>
-        </div>
-      </article>
-    </section>
-
-    <section class="section">
-      <article class="card">
-        <div class="card-head row-between">
-          <div>
-            <h2 class="card-title">Admin Config</h2>
-            <p class="muted">Controls admin thresholds used on the dashboard.</p>
-          </div>
-          <button class="btn btn-primary btn-sm" type="button" data-action="config-save">Save</button>
-        </div>
-
-        <div class="card-body">
-          <form id="adminConfigForm" class="grid grid-2 gap-16" autocomplete="off">
-            <div class="field">
-              <label class="label" for="lowStockThreshold">Low stock threshold</label>
-              <input class="input" id="lowStockThreshold" type="number" min="0" step="1" value="3" />
-              <div class="hint">A product counts as low stock when any size is less than or equal to this number and still above zero.</div>
-            </div>
-          </form>
-          <div class="alert" data-ui="settingsError" hidden></div>
-        </div>
-      </article>
+      </div>
     </section>
 
     <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+  </main>
+
+  <!-- Order Details Modal -->
+  <div class="modal-overlay" id="orderModal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="orderModalTitle">Order</div>
+        <button class="btn btn-ghost btn-sm" type="button" id="orderModalClose" aria-label="Close">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-meta" id="orderModalMeta"></div>
+
+        <h3 class="section-title">History</h3>
+        <div id="orderModalHistory"></div>
+
+        <h3 class="section-title">Items</h3>
+        <div id="orderModalItems"></div>
+      </div>
+    </div>
   </div>
 
   <script src="./admin.js"></script>

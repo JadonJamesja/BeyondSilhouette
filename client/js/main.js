@@ -412,12 +412,10 @@
       return data.user;
     },
 
-    updateProfile({ name, currentPassword, newPassword }) {
-      // NOTE: still demo-only in this file (we can add server endpoint later if you want)
+    async updateProfile({ name, currentPassword, newPassword }) {
       const user = this.currentUser();
       if (!user || !user.email) throw new Error('Please log in to continue.');
 
-      const em = String(user.email).trim().toLowerCase();
       const nm = String(name || '').trim();
       const curr = String(currentPassword || '').trim();
       const next = (newPassword == null) ? '' : String(newPassword).trim();
@@ -425,37 +423,18 @@
       if (!nm) throw new Error('Please enter your display name.');
       if (!curr) throw new Error('Please enter your current password.');
 
-      const users = readUsers();
-      const u = users[em];
-      if (!u) throw new Error('Account not found.');
+      const { ok, data, status } = await apiJson('/api/me/profile', {
+        method: 'PATCH',
+        body: { name: nm, currentPassword: curr, newPassword: next || undefined },
+      });
 
-      if (!u.passwordHash) {
-        throw new Error('Password is not set for this account.');
+      if (!ok || !data?.ok || !data?.user?.email) {
+        const msg = data?.error || `Could not update profile (${status})`;
+        throw new Error(msg);
       }
 
-      if (u.passwordHash !== demoHash(curr)) {
-        throw new Error('Current password is incorrect.');
-      }
-
-      u.name = nm;
-
-      if (next) {
-        u.passwordHash = demoHash(next);
-      }
-
-      u.email = u.email || em;
-      u.createdAt = u.createdAt || user.createdAt || nowISO();
-      u.role = u.role || user.role || 'customer';
-
-      users[em] = u;
-      writeUsers(users);
-
-      const sess = readSession();
-      if (sess && String(sess.email || '').toLowerCase() === em) {
-        writeSession(sess);
-      }
-
-      return u;
+      this._serverUser = data.user;
+      return data.user;
     },
 
     requestPasswordReset(email) {
@@ -596,7 +575,7 @@
       const { ok, data } = await apiJson('/api/cart/item', { method: 'PATCH', body: payload });
       if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to update cart');
       _items = Array.isArray(data.items) ? data.items : _items;
-      return _items;
+      return Number.isFinite(Number(data?.appliedQty)) ? Number(data.appliedQty) : q;
     }
 
     async function clear() {
@@ -970,6 +949,53 @@
         console.warn("Products fetch failed.", err);
         container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
         return;
+      }
+    }
+
+    async function renderHomeIfOnHomePage() {
+      if (page() !== 'home') return;
+
+      const titleEl = document.getElementById('homeHeroTitle');
+      const subtitleEl = document.getElementById('homeHeroSubtitle');
+      const featuredGrid = document.getElementById('homeFeaturedGrid');
+      const slides = Array.from(document.querySelectorAll('#hero .slide'));
+
+      try {
+        const { ok, data } = await apiJson('/api/site/home');
+        if (!ok || !data?.ok) return;
+
+        const home = data.home || {};
+        const featured = Array.isArray(data.featured) ? data.featured : [];
+        const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
+
+        if (titleEl && home.headline) titleEl.textContent = home.headline;
+        if (subtitleEl && home.subheadline) subtitleEl.textContent = home.subheadline;
+
+        if (slides.length && slideshowUrls.length) {
+          slides.forEach((slide, index) => {
+            const url = slideshowUrls[index % slideshowUrls.length];
+            slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
+          });
+        }
+
+        if (featuredGrid && featured.length) {
+          featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
+            const cover = String(p?.media?.coverUrl || '');
+            const name = String(p?.title || 'Product');
+            const price = Number(p?.priceJMD || 0).toLocaleString('en-JM');
+            return `
+              <div class="product-card">
+                <a href="shop-page.html">
+                  <img src="${escapeHtml(cover)}" alt="${escapeHtml(name)}" class="product-image" />
+                  <h3 class="product-title">${escapeHtml(name)}</h3>
+                  <p class="product-price">J$ ${escapeHtml(price)}</p>
+                </a>
+              </div>
+            `;
+          }).join('');
+        }
+      } catch (err) {
+        console.warn('Home settings fetch failed.', err);
       }
     }
 
@@ -1427,7 +1453,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const email = String(emailInput?.value || '').trim();
@@ -1438,7 +1464,7 @@
           if (codeEl) codeEl.textContent = String(code);
           if (codeWrap) codeWrap.hidden = false;
 
-          toast('Reset instructions generated.');
+          toast('Reset code generated (demo).');
         } catch (err) {
           toast(err?.message || 'Could not generate reset code.', { important: true });
         }
@@ -1473,7 +1499,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         try {
@@ -1531,7 +1557,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         try {
@@ -1549,7 +1575,7 @@
             if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
           }
 
-          Auth.updateProfile({
+          await Auth.updateProfile({
             name,
             currentPassword,
             newPassword: wantsPwChange ? newPassword : null
@@ -1828,7 +1854,8 @@
               msg.toLowerCase().includes('failed to fetch') ||
               msg.toLowerCase().includes('networkerror') ||
               msg.toLowerCase().includes('not found') ||
-              msg.toLowerCase().includes('unexpected token');
+              msg.toLowerCase().includes('unexpected token') ||
+              msg.toLowerCase().includes('load failed');
 
             if (!canFallback) {
               toast(msg || 'Could not place order.', { important: true });
@@ -1858,7 +1885,7 @@
 
           await Cart.clear();
           UI.updateCartBadges();
-          toast('Order placed successfully.');
+          toast('Order placed (demo).');
           location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
         };
       }
@@ -2018,6 +2045,7 @@
 
       bindGoogleSignInIfPresent();
 
+      await renderHomeIfOnHomePage();
       await renderShopFromStore();
       bindAddToCart();
 
