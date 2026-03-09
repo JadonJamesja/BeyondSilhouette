@@ -15,28 +15,40 @@
     ☰
   </button>
 
-  <aside class="sidebar" aria-label="Admin sidebar">
-    <nav class="nav">
-      <a class="nav-item" href="./dashboard.html">Dashboard</a>
-      <a class="nav-item" href="./orders.html">Orders</a>
-      <a class="nav-item" href="./products.html">Products</a>
-      <a class="nav-item" href="./customers.html">Customers</a>
-      <a class="nav-item active" href="./settings.html">Settings</a>
-    </nav>
-
-    <div class="sidebar-bottom">
-      <div class="user-pill">
-        <div class="avatar" aria-hidden="true">A</div>
-        <div class="user-meta">
-          <div class="user-name" data-ui="adminName">Admin</div>
-          <div class="user-role muted">Administrator</div>
-        </div>
+ <aside class="sidebar" aria-label="Admin sidebar">
+  <div class="sidebar-top">
+    <a class="brand brand-link" href="./dashboard.html">
+      <div class="brand-mark" aria-hidden="true">BS</div>
+      <div class="brand-meta">
+        <div class="brand-title">BeyondSilhouette</div>
+        <div class="brand-subtitle">Admin</div>
       </div>
-      <div class="sidebar-actions">
-                <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+    </a>
+  </div>
+
+  <nav class="nav">
+    <a class="nav-item" href="./dashboard.html">Dashboard</a>
+    <a class="nav-item" href="./products.html">Products</a>
+    <a class="nav-item" href="./orders.html">Orders</a>
+    <a class="nav-item" href="./customers.html">Customers</a>
+    <a class="nav-item" href="./settings.html">Settings</a>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <div class="user-pill">
+      <div class="avatar" aria-hidden="true">A</div>
+      <div class="user-meta">
+        <div class="user-name" data-ui="adminName">Admin</div>
+        <div class="user-role muted">Administrator</div>
       </div>
     </div>
-  </aside>
+
+    <div class="sidebar-actions">
+      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+    </div>
+  </div>
+</aside>
 
   <div class="main">
     <header class="topbar">
