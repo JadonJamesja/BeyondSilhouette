@@ -16,15 +16,6 @@
     ☰
   </button>
   <aside class="sidebar" aria-label="Admin sidebar">
-    <div class="sidebar-top">
-      <a class="brand brand-link" href="./dashboard.html">
-        <div class="brand-mark" aria-hidden="true">BS</div>
-        <div class="brand-meta">
-          <div class="brand-title">BeyondSilhouette</div>
-          <div class="brand-subtitle">Admin</div>
-        </div>
-      </a>
-    </div>
 
     <nav class="nav">
       <a class="nav-item" href="./dashboard.html">Dashboard</a>
@@ -59,8 +50,7 @@
 
       <div class="topbar-actions">
         <input class="input input-sm" id="customerSearch" placeholder="Search name / email…" />
-        <button class="btn btn-ghost btn-sm" type="button" data-action="toast"
-          data-toast="Filter opened (demo).">Filter</button>
+        
       </div>
     </header>
 
@@ -71,13 +61,15 @@
       </div>
 
       <div class="table-wrap">
-        <table class="table">
+        <table class="table table-customers">
           <thead>
             <tr>
               <th>Name</th>
               <th>Email</th>
+              <th>Role</th>
               <th>Orders</th>
               <th class="right">Lifetime Value</th>
+              <th>Joined</th>
               <th class="right">Actions</th>
             </tr>
           </thead>
@@ -91,7 +83,7 @@
     </footer>
   </main>
 
-
+  
   <div class="modal-overlay" id="customerModal" hidden>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
       <div class="modal-head">
@@ -108,7 +100,7 @@
     </div>
   </div>
 
-
+  
   <div class="modal-overlay" id="orderModal" hidden>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
       <div class="modal-head">

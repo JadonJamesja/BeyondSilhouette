@@ -412,10 +412,12 @@
       return data.user;
     },
 
-    async updateProfile({ name, currentPassword, newPassword }) {
+    updateProfile({ name, currentPassword, newPassword }) {
+      // NOTE: still demo-only in this file (we can add server endpoint later if you want)
       const user = this.currentUser();
       if (!user || !user.email) throw new Error('Please log in to continue.');
 
+      const em = String(user.email).trim().toLowerCase();
       const nm = String(name || '').trim();
       const curr = String(currentPassword || '').trim();
       const next = (newPassword == null) ? '' : String(newPassword).trim();
@@ -423,18 +425,37 @@
       if (!nm) throw new Error('Please enter your display name.');
       if (!curr) throw new Error('Please enter your current password.');
 
-      const { ok, data, status } = await apiJson('/api/me/profile', {
-        method: 'PATCH',
-        body: { name: nm, currentPassword: curr, newPassword: next || undefined },
-      });
+      const users = readUsers();
+      const u = users[em];
+      if (!u) throw new Error('Account not found.');
 
-      if (!ok || !data?.ok || !data?.user?.email) {
-        const msg = data?.error || `Could not update profile (${status})`;
-        throw new Error(msg);
+      if (!u.passwordHash) {
+        throw new Error('Password is not set for this account.');
       }
 
-      this._serverUser = data.user;
-      return data.user;
+      if (u.passwordHash !== demoHash(curr)) {
+        throw new Error('Current password is incorrect.');
+      }
+
+      u.name = nm;
+
+      if (next) {
+        u.passwordHash = demoHash(next);
+      }
+
+      u.email = u.email || em;
+      u.createdAt = u.createdAt || user.createdAt || nowISO();
+      u.role = u.role || user.role || 'customer';
+
+      users[em] = u;
+      writeUsers(users);
+
+      const sess = readSession();
+      if (sess && String(sess.email || '').toLowerCase() === em) {
+        writeSession(sess);
+      }
+
+      return u;
     },
 
     requestPasswordReset(email) {
@@ -575,7 +596,7 @@
       const { ok, data } = await apiJson('/api/cart/item', { method: 'PATCH', body: payload });
       if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to update cart');
       _items = Array.isArray(data.items) ? data.items : _items;
-      return Number.isFinite(Number(data?.appliedQty)) ? Number(data.appliedQty) : q;
+      return _items;
     }
 
     async function clear() {
@@ -1406,7 +1427,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', async (e) => {
+      form.addEventListener('submit', (e) => {
         e.preventDefault();
 
         const email = String(emailInput?.value || '').trim();
@@ -1417,7 +1438,7 @@
           if (codeEl) codeEl.textContent = String(code);
           if (codeWrap) codeWrap.hidden = false;
 
-          toast('Reset code generated (demo).');
+          toast('Reset instructions generated.');
         } catch (err) {
           toast(err?.message || 'Could not generate reset code.', { important: true });
         }
@@ -1452,7 +1473,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', async (e) => {
+      form.addEventListener('submit', (e) => {
         e.preventDefault();
 
         try {
@@ -1510,7 +1531,7 @@
       if (form.dataset.bound) return;
       form.dataset.bound = '1';
 
-      form.addEventListener('submit', async (e) => {
+      form.addEventListener('submit', (e) => {
         e.preventDefault();
 
         try {
@@ -1528,7 +1549,7 @@
             if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
           }
 
-          await Auth.updateProfile({
+          Auth.updateProfile({
             name,
             currentPassword,
             newPassword: wantsPwChange ? newPassword : null
@@ -1807,8 +1828,7 @@
               msg.toLowerCase().includes('failed to fetch') ||
               msg.toLowerCase().includes('networkerror') ||
               msg.toLowerCase().includes('not found') ||
-              msg.toLowerCase().includes('unexpected token') ||
-              msg.toLowerCase().includes('load failed');
+              msg.toLowerCase().includes('unexpected token');
 
             if (!canFallback) {
               toast(msg || 'Could not place order.', { important: true });
@@ -1838,7 +1858,7 @@
 
           await Cart.clear();
           UI.updateCartBadges();
-          toast('Order placed (demo).');
+          toast('Order placed successfully.');
           location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
         };
       }

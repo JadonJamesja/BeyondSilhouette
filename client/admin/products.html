@@ -59,12 +59,12 @@
     <header class="topbar">
       <div>
         <h1 class="h1">Products</h1>
-        <div class="muted">Create, edit, publish, and manage inventory.</div>
+        <div class="muted">Create, edit, publish, and manage inventory from the live catalog.</div>
       </div>
 
       <div class="topbar-actions">
-        <button class="btn btn-primary" type="button">New Product</button>
-        <button class="btn btn-ghost" type="button">Open Shop</button>
+        <button class="btn btn-primary" type="button" data-action="new-product">New Product</button>
+        <button class="btn btn-ghost" type="button" data-action="open-shop">Open Shop</button>
       </div>
     </header>
 
@@ -74,7 +74,7 @@
         <div class="card-head row-between">
           <div>
             <div class="h2">Product Editor</div>
-            <div class="muted">Changes save to <code>bs_products_v1</code>.</div>
+            <div class="muted">Changes save directly to the live catalog database.</div>
           </div>
           <span id="stockTotalBadge" class="badge badge-soft">Total: 0</span>
         </div>
@@ -130,13 +130,13 @@
           </div>
 
           <div class="row">
-            <button class="btn btn-ghost" type="button">Save Draft</button>
-            <button class="btn btn-primary" type="button">Publish</button>
-            <button class="btn btn-danger" type="button">Delete</button>
+            <button class="btn btn-ghost" type="button" data-action="save-draft">Save Draft</button>
+            <button class="btn btn-primary" type="button" data-action="publish-product">Publish</button>
+            <button class="btn btn-danger" type="button" data-action="delete-product">Delete</button>
           </div>
 
           <div class="hint">
-            Tip: for now, the first image becomes the cover. We’ll add “set cover” later.
+            The first image will be used as the cover image on the storefront.
           </div>
         </form>
 
@@ -170,7 +170,7 @@
         <div class="list"></div>
 
         <div class="card-foot muted">
-          “Published” products are visible on the shop page (based on your existing front-end logic).
+          Published products appear on the storefront automatically.
         </div>
       </div>
     </section>

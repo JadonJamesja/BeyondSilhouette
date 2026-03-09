@@ -10,62 +10,58 @@
 </head>
 
 <body class="admin">
+  <button class="btn sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Open menu">☰</button>
 
-  <button class="btn sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="Open menu">
-    ☰
-  </button>
-
- <aside class="sidebar" aria-label="Admin sidebar">
-  <div class="sidebar-top">
-    <a class="brand brand-link" href="./dashboard.html">
-      <div class="brand-mark" aria-hidden="true">BS</div>
-      <div class="brand-meta">
-        <div class="brand-title">BeyondSilhouette</div>
-        <div class="brand-subtitle">Admin</div>
-      </div>
-    </a>
-  </div>
-
-  <nav class="nav">
-    <a class="nav-item" href="./dashboard.html">Dashboard</a>
-    <a class="nav-item" href="./products.html">Products</a>
-    <a class="nav-item" href="./orders.html">Orders</a>
-    <a class="nav-item" href="./customers.html">Customers</a>
-    <a class="nav-item" href="./settings.html">Settings</a>
-  </nav>
-
-  <div class="sidebar-bottom">
-    <div class="user-pill">
-      <div class="avatar" aria-hidden="true">A</div>
-      <div class="user-meta">
-        <div class="user-name" data-ui="adminName">Admin</div>
-        <div class="user-role muted">Administrator</div>
-      </div>
+  <aside class="sidebar" aria-label="Admin sidebar">
+    <div class="sidebar-top">
+      <a class="brand brand-link" href="./dashboard.html">
+        <div class="brand-mark" aria-hidden="true">BS</div>
+        <div class="brand-meta">
+          <div class="brand-title">BeyondSilhouette</div>
+          <div class="brand-subtitle">Admin</div>
+        </div>
+      </a>
     </div>
 
-    <div class="sidebar-actions">
-      <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
-      <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+    <nav class="nav">
+      <a class="nav-item" href="./dashboard.html">Dashboard</a>
+      <a class="nav-item" href="./products.html">Products</a>
+      <a class="nav-item" href="./orders.html">Orders</a>
+      <a class="nav-item" href="./customers.html">Customers</a>
+      <a class="nav-item" href="./settings.html">Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="avatar" aria-hidden="true">A</div>
+        <div class="user-meta">
+          <div class="user-name" data-ui="adminName">Admin</div>
+          <div class="user-role muted">Administrator</div>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="toggle-theme">Theme</button>
+        <button class="btn btn-danger btn-sm" type="button" data-action="logout">Logout</button>
+      </div>
     </div>
-  </div>
-</aside>
+  </aside>
 
   <div class="main">
     <header class="topbar">
       <div>
         <h1 class="h1">Settings</h1>
-        <p class="muted">Manage the homepage CMS and live admin thresholds from here.</p>
+        <p class="muted">Manage homepage content and admin thresholds from one place.</p>
       </div>
+      <div class="topbar-actions"><span class="muted settings-status" data-ui="settingsStatus"></span></div>
+    </header>
 
-          </header>
-
-    
     <section class="section">
       <article class="card">
         <div class="card-head">
           <div>
             <h2 class="card-title">Home Page CMS</h2>
-            <p class="muted">Controls the public homepage slideshow + featured products (DB-backed).</p>
+            <p class="muted">Choose the homepage slideshow images and featured products shown on the storefront.</p>
           </div>
           <div class="row gap-8">
             <button class="btn btn-ghost btn-sm" type="button" data-action="home-refresh">Refresh</button>
@@ -127,14 +123,15 @@
             <div class="field">
               <label class="label" for="lowStockThreshold">Low stock threshold</label>
               <input class="input" id="lowStockThreshold" type="number" min="0" step="1" value="3" />
-              <div class="hint">A product counts as “low stock” when any size is ≤ this number (and > 0).</div>
+              <div class="hint">A product counts as low stock when any size is less than or equal to this number and still above zero.</div>
             </div>
           </form>
           <div class="alert" data-ui="settingsError" hidden></div>
         </div>
       </article>
     </section>
-<footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
+
+    <footer class="footer muted">© <span data-ui="year"></span> BeyondSilhouette Admin</footer>
   </div>
 
   <script src="./admin.js"></script>
