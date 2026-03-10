@@ -93,12 +93,14 @@
             <div class="field col-span-2">
               <label class="label">Homepage slideshow images</label>
               <div class="hint">Select up to 6 product images for the homepage slideshow, or upload custom hero images for the home page.</div>
-              <div class="row gap-8 mt-12">
-                <input class="input" id="homeUploadImages" type="file" accept="image/*" multiple />
+              <div class="row gap-8 mt-12 wrap">
+                <label class="btn btn-ghost btn-sm file-btn" for="homeUploadImages">Upload slide image</label>
+                <input id="homeUploadImages" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+                <span class="muted">Recommended: compressed JPG/WEBP, landscape image, 2MB max each.</span>
               </div>
               <textarea class="textarea is-hidden" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
               <div class="selection-summary"><span class="badge badge-soft"><span id="slideshowCount">0</span>/6 selected</span></div>
-              <div id="slideshowSelected" class="selected-grid mt-12"></div>
+              <div id="slideshowSelected" class="selected-grid selected-grid-compact mt-12"></div>
               <div id="slideshowPool" class="picker-grid mt-12"></div>
             </div>
 
@@ -107,7 +109,7 @@
               <div class="hint">Select up to 3 featured pieces for the home page.</div>
               <textarea class="textarea is-hidden" id="homeFeatured" rows="6" placeholder="cuid..."></textarea>
               <div class="selection-summary"><span class="badge badge-soft"><span id="featuredCountInline">0</span>/3 selected</span></div>
-              <div id="featuredSelected" class="selected-grid mt-12"></div>
+              <div id="featuredSelected" class="selected-grid selected-grid-compact mt-12"></div>
               <div id="featuredPool" class="picker-grid mt-12"></div>
             </div>
           </form>

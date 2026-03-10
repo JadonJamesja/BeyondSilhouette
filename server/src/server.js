@@ -22,6 +22,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const CLIENT_DIR = path.join(__dirname, "../../client");
+const HOME_UPLOAD_DIR = path.join(CLIENT_DIR, "uploads", "home");
+if (!fs.existsSync(HOME_UPLOAD_DIR)) fs.mkdirSync(HOME_UPLOAD_DIR, { recursive: true });
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -32,7 +34,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
 
 // Body parsing
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "6mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 // Cookies (auth uses signed httpOnly cookie)
@@ -60,6 +62,19 @@ function requireAdmin(req, res) {
   return sess;
 }
 
+
+function safeImageExtension(mime = "", fallbackName = "") {
+  const m = String(mime || "").toLowerCase();
+  if (m.includes("png")) return ".png";
+  if (m.includes("webp")) return ".webp";
+  if (m.includes("jpeg") || m.includes("jpg")) return ".jpg";
+
+  const lower = String(fallbackName || "").toLowerCase();
+  if (lower.endsWith(".png")) return ".png";
+  if (lower.endsWith(".webp")) return ".webp";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return ".jpg";
+  return ".jpg";
+}
 
 function parseQty(value) {
   const n = Number(value);
@@ -361,6 +376,53 @@ app.get("/api/admin/site/home", async (req, res) => {
   } catch (err) {
     console.error("GET /api/admin/site/home failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load home settings" });
+  }
+});
+
+app.post("/api/admin/site/home/upload", async (req, res) => {
+  const sess = requireAdmin(req, res);
+  if (!sess) return;
+
+  try {
+    const dataUrl = String(req.body?.dataUrl || "").trim();
+    const filename = String(req.body?.filename || "slide").trim();
+
+    if (!dataUrl.startsWith("data:image/")) {
+      return res.status(400).json({ ok: false, error: "Invalid image payload" });
+    }
+
+    const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ ok: false, error: "Invalid data URL format" });
+    }
+
+    const mime = match[1];
+    const base64 = match[2];
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+    if (!allowed.has(mime)) {
+      return res.status(400).json({ ok: false, error: "Only PNG, JPG, and WEBP are allowed" });
+    }
+
+    const buffer = Buffer.from(base64, "base64");
+    if (!buffer.length) {
+      return res.status(400).json({ ok: false, error: "Empty image" });
+    }
+
+    if (buffer.length > 2 * 1024 * 1024) {
+      return res.status(400).json({ ok: false, error: "Image must be 2MB or smaller" });
+    }
+
+    const ext = safeImageExtension(mime, filename);
+    const fileBase = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+    const finalName = `${fileBase}${ext}`;
+    const absPath = path.join(HOME_UPLOAD_DIR, finalName);
+
+    fs.writeFileSync(absPath, buffer);
+
+    return res.json({ ok: true, url: `/uploads/home/${finalName}` });
+  } catch (err) {
+    console.error("POST /api/admin/site/home/upload failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to upload image" });
   }
 });
 
@@ -1896,3 +1958,4 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
+  

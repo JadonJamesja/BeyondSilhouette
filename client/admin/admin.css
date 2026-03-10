@@ -1593,6 +1593,48 @@ html[data-theme="light"] .btn-danger {
   box-shadow: 0 0 0 2px hsla(var(--accent), .12);
 }
 
+.selected-grid-compact {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 110px));
+  justify-content: start;
+}
+
+.selected-grid-compact .selection-card {
+  gap: 8px;
+  padding: 8px;
+}
+
+.selected-grid-compact .selection-card img,
+.selected-grid-compact .picker-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.selected-grid-compact .selection-card-body {
+  gap: 2px;
+}
+
+.selected-grid-compact .selection-card-body strong {
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+
+.selected-grid-compact .selection-card-body .muted,
+.selected-grid-compact .selection-card-body .mono {
+  font-size: 0.72rem;
+  line-height: 1.1;
+  word-break: break-word;
+}
+
+.file-btn {
+  cursor: pointer;
+}
+
+.wrap {
+  flex-wrap: wrap;
+}
+
 .order-status-row {
   flex-wrap: wrap;
 }

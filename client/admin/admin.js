@@ -942,6 +942,7 @@
     const featuredInput = qs('#homeFeatured');
     const searchInput = qs('#settingsProductSearch');
     const uploadInput = qs('#homeUploadImages');
+    const saveNote = qs('#settingsSaveNote');
     const slideshowPool = qs('#slideshowPool');
     const slideshowSelected = qs('#slideshowSelected');
     const featuredPool = qs('#featuredPool');
@@ -958,6 +959,11 @@
       if (!errBox) return;
       errBox.hidden = !msg;
       errBox.textContent = msg || '';
+    };
+
+    const setStatus = (msg) => {
+      if (!saveNote) return;
+      saveNote.textContent = msg || 'Changes save to the live site settings.';
     };
 
     const normalizeImages = (product) => {
@@ -984,6 +990,32 @@
     };
 
     const thumb = (url, alt) => url ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" />` : '<div class="picker-thumb picker-thumb-empty">No image</div>';
+
+
+    async function uploadSlideImage(file) {
+      if (!file) throw new Error('No file selected.');
+      const allowed = new Set(['image/png', 'image/jpeg', 'image/webp']);
+      if (!allowed.has(file.type)) throw new Error('Only PNG, JPG, and WEBP files are allowed.');
+      if (file.size > 2 * 1024 * 1024) throw new Error('Image must be 2MB or smaller.');
+
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read image.'));
+        reader.readAsDataURL(file);
+      });
+
+      const { res, data } = await apiJSON('/api/admin/site/home/upload', {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, dataUrl }),
+      });
+
+      if (!res.ok || !data?.ok || !data?.url) {
+        throw new Error(data?.error || 'Failed to upload image.');
+      }
+
+      return String(data.url);
+    }
 
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
@@ -1068,18 +1100,23 @@
     searchInput?.addEventListener('input', renderAll);
     uploadInput?.addEventListener('change', async (e) => {
       const files = Array.from(e.target.files || []).slice(0, 6);
-      for (const file of files) {
-        if (slideshowUrls.length >= 6) break;
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(new Error('Failed to read image.'));
-          reader.readAsDataURL(file);
-        });
-        if (dataUrl && !slideshowUrls.includes(dataUrl)) slideshowUrls = [...slideshowUrls, dataUrl];
+      if (!files.length) return;
+      setError('');
+      setStatus('Uploading image…');
+      try {
+        for (const file of files) {
+          if (slideshowUrls.length >= 6) break;
+          const url = await uploadSlideImage(file);
+          if (url && !slideshowUrls.includes(url)) slideshowUrls = [...slideshowUrls, url];
+        }
+        renderAll();
+        setStatus('Image uploaded. Click Save to publish homepage changes.');
+      } catch (err) {
+        setError(String(err?.message || 'Failed to upload image.'));
+        setStatus('');
+      } finally {
+        if (uploadInput) uploadInput.value = '';
       }
-      if (uploadInput) uploadInput.value = '';
-      renderAll();
     });
     slideshowPool?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-pick-slideshow]');
@@ -1133,6 +1170,7 @@
       try {
         await Promise.all([loadProducts(), loadHome()]);
         renderAll();
+        setStatus('Settings refreshed.');
       } catch (e) {
         setError(String(e?.message || 'Failed to refresh'));
       }
@@ -1142,6 +1180,7 @@
       setError('');
       try {
         await saveHome();
+        setStatus('Home page settings saved.');
         alert('Home settings saved.');
       } catch (e) {
         setError(String(e?.message || 'Failed to save home settings'));
@@ -1152,6 +1191,7 @@
       setError('');
       try {
         await saveConfig();
+        setStatus('Admin config saved.');
         alert('Config saved.');
       } catch (e) {
         setError(String(e?.message || 'Failed to save config'));
@@ -1159,10 +1199,20 @@
     });
 
     try {
-      await Promise.all([loadProducts(), loadHome(), loadConfig()]);
+      setError('');
+      setStatus('Loading settings…');
+      const results = await Promise.allSettled([loadProducts(), loadHome(), loadConfig()]);
       renderAll();
+      const failures = results.filter((r) => r.status === 'rejected');
+      if (failures.length) {
+        setError(String(failures[0]?.reason?.message || 'Some settings failed to load.'));
+        setStatus('Settings loaded with partial issues.');
+      } else {
+        setStatus('Settings loaded.');
+      }
     } catch (e) {
       setError(String(e?.message || 'Failed to load settings'));
+      setStatus('');
     }
   }
 
