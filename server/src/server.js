@@ -379,6 +379,7 @@ app.get("/api/admin/site/home", async (req, res) => {
   }
 });
 
+// Admin: POST /api/admin/site/home/upload
 app.post("/api/admin/site/home/upload", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
@@ -407,16 +408,13 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
     if (!buffer.length) {
       return res.status(400).json({ ok: false, error: "Empty image" });
     }
-
     if (buffer.length > 2 * 1024 * 1024) {
       return res.status(400).json({ ok: false, error: "Image must be 2MB or smaller" });
     }
 
     const ext = safeImageExtension(mime, filename);
-    const fileBase = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
-    const finalName = `${fileBase}${ext}`;
+    const finalName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`;
     const absPath = path.join(HOME_UPLOAD_DIR, finalName);
-
     fs.writeFileSync(absPath, buffer);
 
     return res.json({ ok: true, url: `/uploads/home/${finalName}` });
@@ -1958,4 +1956,3 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
-  

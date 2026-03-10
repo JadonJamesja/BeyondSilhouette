@@ -94,9 +94,9 @@
               <label class="label">Homepage slideshow images</label>
               <div class="hint">Select up to 6 product images for the homepage slideshow, or upload custom hero images for the home page.</div>
               <div class="row gap-8 mt-12 wrap">
-                <label class="btn btn-ghost btn-sm file-btn" for="homeUploadImages">Upload slide image</label>
-                <input id="homeUploadImages" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
-                <span class="muted">Recommended: compressed JPG/WEBP, landscape image, 2MB max each.</span>
+                <label class="btn btn-ghost btn-sm file-btn" for="homeUploadImages">Upload slideshow image</label>
+                <input id="homeUploadImages" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                <span class="muted">Recommended: landscape JPG or WEBP, up to 2MB.</span>
               </div>
               <textarea class="textarea is-hidden" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
               <div class="selection-summary"><span class="badge badge-soft"><span id="slideshowCount">0</span>/6 selected</span></div>
@@ -136,7 +136,7 @@
             </div>
           </form>
           <div class="alert" data-ui="settingsError" hidden></div>
-          <div class="hint mt-12" id="settingsSaveNote">Changes save to the live site settings.</div>
+          <div class="hint mt-12" id="settingsSaveNote">Make your changes, then save to update the live homepage and admin thresholds.</div>
         </div>
       </article>
     </section>
