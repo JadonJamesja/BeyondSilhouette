@@ -400,6 +400,45 @@ body {
   color: #fff;
 }
 
+
+
+.promo-banner {
+  position: relative;
+  min-height: 360px;
+  margin: 0;
+}
+
+.promo-banner-media {
+  min-height: 360px;
+  background-size: cover;
+  background-position: center;
+}
+
+.promo-banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: #fff;
+}
+
+.promo-banner-content {
+  padding: 24px;
+  max-width: 700px;
+}
+
+.promo-banner-content h2 {
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  margin-bottom: 10px;
+}
+
+.promo-banner-content p {
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+
 /* ------------------------------
    4. FEATURED SECTION
 ------------------------------ */

@@ -936,24 +936,32 @@
     if (!pathIsAdminPage('settings')) return;
 
     const errBox = qs('[data-ui="settingsError"]');
-    const headline = qs('#homeHeadline');
-    const subheadline = qs('#homeSubheadline');
+    const heroTitleInput = qs('#homeHeroTitle');
+    const heroSubtitleInput = qs('#homeHeroSubtitle');
     const slideshowInput = qs('#homeSlideshow');
     const featuredInput = qs('#homeFeatured');
     const searchInput = qs('#settingsProductSearch');
     const uploadInput = qs('#homeUploadImages');
+    const promoUploadInput = qs('#promoUploadImage');
     const slideshowPool = qs('#slideshowPool');
     const slideshowSelected = qs('#slideshowSelected');
     const featuredPool = qs('#featuredPool');
     const featuredSelected = qs('#featuredSelected');
+    const promoSelected = qs('#promoSelected');
     const slideshowCount = qs('#slideshowCount');
     const featuredCount = qs('#featuredCountInline');
     const lowStock = qs('#lowStockThreshold');
     const saveNote = qs('#settingsSaveNote');
+    const promoEnabledInput = qs('#promoEnabled');
+    const promoTitleInput = qs('#promoTitle');
+    const promoSubtitleInput = qs('#promoSubtitle');
+    const promoCtaTextInput = qs('#promoCtaText');
+    const promoCtaLinkInput = qs('#promoCtaLink');
 
     let products = [];
     let slideshowUrls = [];
     let featuredIds = [];
+    let promoImageUrl = '';
 
     const setError = (msg) => {
       if (!errBox) return;
@@ -1027,10 +1035,20 @@
       }
     }
 
+    function renderPromo() {
+      if (!promoSelected) return;
+      if (!promoImageUrl) {
+        promoSelected.innerHTML = '<div class="muted">No banner image selected yet.</div>';
+        return;
+      }
+      promoSelected.innerHTML = `<button type="button" class="selection-card is-selected" data-remove-promo-image="1">${thumb(promoImageUrl, 'Promo banner image')}<div class="selection-card-body"><strong>Banner image</strong><span class="muted">Remove</span></div></button>`;
+    }
+
     function renderAll() {
       syncInputs();
       renderSlideshow();
       renderFeatured();
+      renderPromo();
     }
 
     async function loadProducts() {
@@ -1043,18 +1061,30 @@
       const { res, data } = await apiJSON('/api/admin/site/home');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
       const home = data.home || {};
-      if (headline) headline.value = home.headline || '';
-      if (subheadline) subheadline.value = home.subheadline || '';
+      if (heroTitleInput) heroTitleInput.value = home.heroTitle || '';
+      if (heroSubtitleInput) heroSubtitleInput.value = home.heroSubtitle || '';
+      if (promoTitleInput) promoTitleInput.value = home.promoTitle || '';
+      if (promoSubtitleInput) promoSubtitleInput.value = home.promoSubtitle || '';
+      if (promoCtaTextInput) promoCtaTextInput.value = home.promoCtaText || '';
+      if (promoCtaLinkInput) promoCtaLinkInput.value = home.promoCtaLink || '';
+      if (promoEnabledInput) promoEnabledInput.checked = !!home.promoEnabled;
+      promoImageUrl = String(home.promoImageUrl || '');
       slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 6) : [];
       featuredIds = Array.isArray(home.featuredProductIds) ? home.featuredProductIds.filter(Boolean).slice(0, 3) : [];
     }
 
     async function saveHome() {
       const payload = {
-        headline: headline?.value?.trim() || '',
-        subheadline: subheadline?.value?.trim() || '',
+        heroTitle: heroTitleInput?.value?.trim() || '',
+        heroSubtitle: heroSubtitleInput?.value?.trim() || '',
         slideshowUrls: slideshowUrls.slice(0, 6),
         featuredProductIds: featuredIds.slice(0, 3),
+        promoEnabled: !!promoEnabledInput?.checked,
+        promoImageUrl: promoImageUrl || '',
+        promoTitle: promoTitleInput?.value?.trim() || '',
+        promoSubtitle: promoSubtitleInput?.value?.trim() || '',
+        promoCtaText: promoCtaTextInput?.value?.trim() || '',
+        promoCtaLink: promoCtaLinkInput?.value?.trim() || '',
       };
       const { res, data } = await apiJSON('/api/admin/site/home', { method: 'PUT', body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
@@ -1072,11 +1102,11 @@
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
     }
 
-    async function uploadSlideImage(file) {
+    async function uploadHomeImage(file) {
       if (!file) throw new Error('No file selected.');
       const allowed = new Set(['image/png', 'image/jpeg', 'image/webp']);
       if (!allowed.has(file.type)) throw new Error('Only PNG, JPG, and WEBP files are allowed.');
-      if (file.size > 2 * 1024 * 1024) throw new Error('Image must be 2MB or smaller.');
+      if (file.size > 5 * 1024 * 1024) throw new Error('Image must be 5MB or smaller.');
 
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1100,10 +1130,10 @@
       const file = e.target?.files?.[0];
       if (!file) return;
       setError('');
-      setStatus('Uploading image…');
+      setStatus('Uploading slideshow image…');
       try {
         if (slideshowUrls.length >= 6) throw new Error('Limit: 6 slideshow images.');
-        const url = await uploadSlideImage(file);
+        const url = await uploadHomeImage(file);
         if (!slideshowUrls.includes(url)) slideshowUrls = [...slideshowUrls, url];
         renderAll();
         setStatus('Image uploaded. Save homepage settings to publish it.');
@@ -1113,6 +1143,30 @@
       } finally {
         if (uploadInput) uploadInput.value = '';
       }
+    });
+
+    promoUploadInput?.addEventListener('change', async (e) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+      setError('');
+      setStatus('Uploading promo banner image…');
+      try {
+        promoImageUrl = await uploadHomeImage(file);
+        renderAll();
+        setStatus('Banner uploaded. Save homepage settings to publish it.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to upload banner image.'));
+        setStatus('');
+      } finally {
+        if (promoUploadInput) promoUploadInput.value = '';
+      }
+    });
+
+    promoSelected?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-promo-image]');
+      if (!btn) return;
+      promoImageUrl = '';
+      renderAll();
     });
 
     slideshowPool?.addEventListener('click', (e) => {
@@ -1224,6 +1278,7 @@
       setStatus('');
     }
   }
+
 
   // -----------------------------
   // Boot

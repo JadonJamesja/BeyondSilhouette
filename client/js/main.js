@@ -959,6 +959,11 @@
       const subtitleEl = document.getElementById('homeHeroSubtitle');
       const featuredGrid = document.getElementById('homeFeaturedGrid');
       const slides = Array.from(document.querySelectorAll('#hero .slide'));
+      const promoSection = document.getElementById('promoBanner');
+      const promoMedia = document.getElementById('promoBannerMedia');
+      const promoTitle = document.getElementById('promoBannerTitle');
+      const promoSubtitle = document.getElementById('promoBannerSubtitle');
+      const promoCta = document.getElementById('promoBannerCta');
 
       try {
         const { ok, data } = await apiJson('/api/site/home');
@@ -968,14 +973,32 @@
         const featured = Array.isArray(data.featured) ? data.featured : [];
         const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
 
-        if (titleEl && home.headline) titleEl.textContent = home.headline;
-        if (subtitleEl && home.subheadline) subtitleEl.textContent = home.subheadline;
+        if (titleEl && home.heroTitle) titleEl.textContent = home.heroTitle;
+        if (subtitleEl && home.heroSubtitle) subtitleEl.textContent = home.heroSubtitle;
 
         if (slides.length && slideshowUrls.length) {
           slides.forEach((slide, index) => {
             const url = slideshowUrls[index % slideshowUrls.length];
             slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
           });
+        }
+
+
+        if (promoSection) {
+          const enabled = !!home.promoEnabled;
+          const hasImage = !!home.promoImageUrl;
+          promoSection.hidden = !(enabled && hasImage);
+          if (enabled && hasImage) {
+            if (promoMedia) {
+              promoMedia.style.backgroundImage = 'url("' + String(home.promoImageUrl).replace(/"/g, '\"') + '")';
+            }
+            if (promoTitle && home.promoTitle) promoTitle.textContent = home.promoTitle;
+            if (promoSubtitle && home.promoSubtitle) promoSubtitle.textContent = home.promoSubtitle;
+            if (promoCta) {
+              promoCta.textContent = home.promoCtaText || 'Shop now';
+              promoCta.setAttribute('href', home.promoCtaLink || 'shop-page.html');
+            }
+          }
         }
 
         if (featuredGrid && featured.length) {
