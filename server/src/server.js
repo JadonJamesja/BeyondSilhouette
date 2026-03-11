@@ -280,10 +280,16 @@ app.get("/api/site/home", async (req, res) => {
       where: { id: "singleton" },
       select: {
         id: true,
-        headline: true,
-        subheadline: true,
+        heroTitle: true,
+        heroSubtitle: true,
         slideshowUrls: true,
         featuredProductIds: true,
+        promoEnabled: true,
+        promoImageUrl: true,
+        promoTitle: true,
+        promoSubtitle: true,
+        promoCtaText: true,
+        promoCtaLink: true,
         updatedAt: true,
       },
     }) : null;
@@ -328,8 +334,14 @@ app.get("/api/site/home", async (req, res) => {
     return res.json({
       ok: true,
       home: {
-        headline: settings?.headline || null,
-        subheadline: settings?.subheadline || null,
+        heroTitle: settings?.heroTitle || null,
+        heroSubtitle: settings?.heroSubtitle || null,
+        promoEnabled: !!settings?.promoEnabled,
+        promoImageUrl: settings?.promoImageUrl || null,
+        promoTitle: settings?.promoTitle || null,
+        promoSubtitle: settings?.promoSubtitle || null,
+        promoCtaText: settings?.promoCtaText || null,
+        promoCtaLink: settings?.promoCtaLink || null,
         slideshowUrls: Array.isArray(settings?.slideshowUrls) ? settings.slideshowUrls : [],
         featuredProductIds: featuredIds,
         updatedAt: settings?.updatedAt || null,
@@ -352,10 +364,16 @@ app.get("/api/admin/site/home", async (req, res) => {
       where: { id: "singleton" },
       select: {
         id: true,
-        headline: true,
-        subheadline: true,
+        heroTitle: true,
+        heroSubtitle: true,
         slideshowUrls: true,
         featuredProductIds: true,
+        promoEnabled: true,
+        promoImageUrl: true,
+        promoTitle: true,
+        promoSubtitle: true,
+        promoCtaText: true,
+        promoCtaLink: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -365,8 +383,14 @@ app.get("/api/admin/site/home", async (req, res) => {
       ok: true,
       home: settings || {
         id: "singleton",
-        headline: null,
-        subheadline: null,
+        heroTitle: null,
+        heroSubtitle: null,
+        promoEnabled: false,
+        promoImageUrl: null,
+        promoTitle: null,
+        promoSubtitle: null,
+        promoCtaText: null,
+        promoCtaLink: null,
         slideshowUrls: [],
         featuredProductIds: [],
         createdAt: null,
@@ -408,8 +432,8 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
     if (!buffer.length) {
       return res.status(400).json({ ok: false, error: "Empty image" });
     }
-    if (buffer.length > 2 * 1024 * 1024) {
-      return res.status(400).json({ ok: false, error: "Image must be 2MB or smaller" });
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ ok: false, error: "Image must be 5MB or smaller" });
     }
 
     const ext = safeImageExtension(mime, filename);
@@ -429,8 +453,8 @@ app.put("/api/admin/site/home", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
 
-  const headline = req.body?.headline === null || req.body?.headline === undefined ? null : String(req.body.headline).trim() || null;
-  const subheadline = req.body?.subheadline === null || req.body?.subheadline === undefined ? null : String(req.body.subheadline).trim() || null;
+  const heroTitle = req.body?.heroTitle === null || req.body?.heroTitle === undefined ? null : String(req.body.heroTitle).trim() || null;
+  const heroSubtitle = req.body?.heroSubtitle === null || req.body?.heroSubtitle === undefined ? null : String(req.body.heroSubtitle).trim() || null;
 
   const slideshowUrlsIn = Array.isArray(req.body?.slideshowUrls) ? req.body.slideshowUrls : [];
   const slideshowUrls = slideshowUrlsIn.map((u) => String(u || "").trim()).filter(Boolean).slice(0, 20);
@@ -438,21 +462,34 @@ app.put("/api/admin/site/home", async (req, res) => {
   const featuredIn = Array.isArray(req.body?.featuredProductIds) ? req.body.featuredProductIds : [];
   const featuredProductIds = featuredIn.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20);
 
+  const promoEnabled = !!req.body?.promoEnabled;
+  const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined ? null : String(req.body.promoImageUrl).trim() || null;
+  const promoTitle = req.body?.promoTitle === null || req.body?.promoTitle === undefined ? null : String(req.body.promoTitle).trim() || null;
+  const promoSubtitle = req.body?.promoSubtitle === null || req.body?.promoSubtitle === undefined ? null : String(req.body.promoSubtitle).trim() || null;
+  const promoCtaText = req.body?.promoCtaText === null || req.body?.promoCtaText === undefined ? null : String(req.body.promoCtaText).trim() || null;
+  const promoCtaLink = req.body?.promoCtaLink === null || req.body?.promoCtaLink === undefined ? null : String(req.body.promoCtaLink).trim() || null;
+
   try {
     if (!hasPrismaModel("siteHomeSettings")) {
-      return res.json({ ok: true, home: { id: "singleton", headline, subheadline, slideshowUrls, featuredProductIds, updatedAt: new Date().toISOString() } });
+      return res.json({ ok: true, home: { id: "singleton", heroTitle, heroSubtitle, slideshowUrls, featuredProductIds, promoEnabled, promoImageUrl, promoTitle, promoSubtitle, promoCtaText, promoCtaLink, updatedAt: new Date().toISOString() } });
     }
 
     const saved = await prisma.siteHomeSettings.upsert({
       where: { id: "singleton" },
-      update: { headline, subheadline, slideshowUrls, featuredProductIds },
-      create: { id: "singleton", headline, subheadline, slideshowUrls, featuredProductIds },
+      update: { heroTitle, heroSubtitle, slideshowUrls, featuredProductIds, promoEnabled, promoImageUrl, promoTitle, promoSubtitle, promoCtaText, promoCtaLink },
+      create: { id: "singleton", heroTitle, heroSubtitle, slideshowUrls, featuredProductIds, promoEnabled, promoImageUrl, promoTitle, promoSubtitle, promoCtaText, promoCtaLink },
       select: {
         id: true,
-        headline: true,
-        subheadline: true,
+        heroTitle: true,
+        heroSubtitle: true,
         slideshowUrls: true,
         featuredProductIds: true,
+        promoEnabled: true,
+        promoImageUrl: true,
+        promoTitle: true,
+        promoSubtitle: true,
+        promoCtaText: true,
+        promoCtaLink: true,
         createdAt: true,
         updatedAt: true,
       },

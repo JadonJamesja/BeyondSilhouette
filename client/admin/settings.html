@@ -65,7 +65,7 @@
         <div class="card-head">
           <div>
             <h2 class="card-title">Home Page CMS</h2>
-            <p class="muted">Control the public homepage slideshow, featured pieces, and home page content.</p>
+            <p class="muted">Control the public homepage hero slideshow, promo banner, and featured pieces.</p>
           </div>
           <div class="row gap-8">
             <button class="btn btn-ghost btn-sm" type="button" data-action="home-refresh">Refresh</button>
@@ -76,13 +76,13 @@
         <div class="card-body">
           <form id="homeSettingsForm" class="grid grid-2 gap-16" autocomplete="off">
             <div class="field">
-              <label class="label" for="homeHeadline">Headline</label>
-              <input class="input" id="homeHeadline" name="headline" type="text" placeholder="e.g., Redefine your silhouette." />
+              <label class="label" for="homeHeroTitle">Hero title</label>
+              <input class="input" id="homeHeroTitle" name="heroTitle" type="text" placeholder="e.g., Redefine your silhouette." />
             </div>
 
             <div class="field">
-              <label class="label" for="homeSubheadline">Subheadline</label>
-              <input class="input" id="homeSubheadline" name="subheadline" type="text" placeholder="Short supporting line for the hero." />
+              <label class="label" for="homeHeroSubtitle">Hero subtitle</label>
+              <input class="input" id="homeHeroSubtitle" name="heroSubtitle" type="text" placeholder="Short supporting line for the hero." />
             </div>
 
             <div class="field col-span-2">
@@ -96,12 +96,48 @@
               <div class="row gap-8 mt-12 wrap">
                 <label class="btn btn-ghost btn-sm file-btn" for="homeUploadImages">Upload slideshow image</label>
                 <input id="homeUploadImages" type="file" accept="image/png,image/jpeg,image/webp" hidden />
-                <span class="muted">Recommended: landscape JPG or WEBP, up to 2MB.</span>
+                <span class="muted">Recommended: landscape JPG or WEBP, up to 5MB.</span>
               </div>
               <textarea class="textarea is-hidden" id="homeSlideshow" rows="6" placeholder="https://..."></textarea>
               <div class="selection-summary"><span class="badge badge-soft"><span id="slideshowCount">0</span>/6 selected</span></div>
               <div id="slideshowSelected" class="selected-grid selected-grid-compact mt-12"></div>
               <div id="slideshowPool" class="picker-grid mt-12"></div>
+            </div>
+
+
+
+            <div class="field col-span-2">
+              <label class="label">Promotional banner</label>
+              <div class="hint">Shown between hero slideshow and featured products on homepage.</div>
+              <div class="row gap-8 mt-12 wrap">
+                <label class="btn btn-ghost btn-sm file-btn" for="promoUploadImage">Upload banner image</label>
+                <input id="promoUploadImage" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                <span class="muted">Recommended: wide image, JPG/PNG/WEBP, up to 5MB.</span>
+              </div>
+              <div id="promoSelected" class="selected-grid selected-grid-compact mt-12"></div>
+              <div class="grid grid-2 gap-16 mt-12">
+                <div class="field">
+                  <label class="label" for="promoTitle">Banner title</label>
+                  <input class="input" id="promoTitle" type="text" placeholder="Seasonal drop is live" />
+                </div>
+                <div class="field">
+                  <label class="label" for="promoSubtitle">Banner subtitle</label>
+                  <input class="input" id="promoSubtitle" type="text" placeholder="Limited time styles and colors" />
+                </div>
+                <div class="field">
+                  <label class="label" for="promoCtaText">CTA button text</label>
+                  <input class="input" id="promoCtaText" type="text" placeholder="Shop now" />
+                </div>
+                <div class="field">
+                  <label class="label" for="promoCtaLink">CTA link</label>
+                  <input class="input" id="promoCtaLink" type="text" placeholder="shop-page.html" />
+                </div>
+                <div class="field">
+                  <label class="label" for="promoEnabled">
+                    <input id="promoEnabled" type="checkbox" /> Enable promotional banner
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div class="field col-span-2">
