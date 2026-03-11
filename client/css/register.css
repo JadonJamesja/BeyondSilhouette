@@ -134,3 +134,7 @@ body {
 .login-link a:hover {
   text-decoration: underline;
 }
+
+html[data-theme="dark"] .btn-register {
+  color: hsl(225 22% 10%);
+}
