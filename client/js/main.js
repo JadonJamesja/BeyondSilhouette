@@ -59,6 +59,24 @@
     return p.split('/').pop() || 'home';
   };
 
+
+  function applyStoredTheme() {
+    let saved = null;
+    try {
+      saved = localStorage.getItem('bs_theme') || localStorage.getItem('bs_admin_theme');
+    } catch (_) {
+      saved = null;
+    }
+
+    const prefersDark = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const nextTheme = saved === 'dark' || saved === 'light'
+      ? saved
+      : (prefersDark ? 'dark' : 'light');
+
+    document.documentElement.setAttribute('data-theme', nextTheme);
+  }
+
   function escapeHtml(s) {
     return String(s || '')
       .replaceAll('&', '&amp;')
@@ -972,15 +990,40 @@
         const home = data.home || {};
         const featured = Array.isArray(data.featured) ? data.featured : [];
         const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
+        const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
         if (titleEl && home.heroTitle) titleEl.textContent = home.heroTitle;
         if (subtitleEl && home.heroSubtitle) subtitleEl.textContent = home.heroSubtitle;
 
-        if (slides.length && slideshowUrls.length) {
-          slides.forEach((slide, index) => {
-            const url = slideshowUrls[index % slideshowUrls.length];
-            slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
-          });
+        if (slides.length) {
+          if (slideshowUrls.length) {
+            slides.forEach((slide, index) => {
+              const url = slideshowUrls[index % slideshowUrls.length];
+              slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
+            });
+          } else if (hasSettings) {
+            slides.forEach((slide) => {
+              slide.style.backgroundImage = '';
+            });
+          }
+        }
+
+
+        if (promoSection) {
+          const enabled = !!home.promoEnabled;
+          const hasImage = !!home.promoImageUrl;
+          promoSection.hidden = !(enabled && hasImage);
+          if (enabled && hasImage) {
+            if (promoMedia) {
+              promoMedia.style.backgroundImage = 'url("' + String(home.promoImageUrl).replace(/"/g, '\"') + '")';
+            }
+            if (promoTitle && home.promoTitle) promoTitle.textContent = home.promoTitle;
+            if (promoSubtitle && home.promoSubtitle) promoSubtitle.textContent = home.promoSubtitle;
+            if (promoCta) {
+              promoCta.textContent = home.promoCtaText || 'Shop now';
+              promoCta.setAttribute('href', home.promoCtaLink || 'shop-page.html');
+            }
+          }
         }
 
 
@@ -1016,6 +1059,8 @@
               </div>
             `;
           }).join('');
+        } else if (featuredGrid && hasSettings) {
+          featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
         }
       } catch (err) {
         console.warn('Home settings fetch failed.', err);
@@ -2054,6 +2099,7 @@
     // INIT
     // -----------------------------
     async function init() {
+      applyStoredTheme();
       UI.ensureHeaderFooter();
 
       // IMPORTANT: hydrate from server cookie session FIRST
@@ -2066,7 +2112,7 @@
 
       gateCheckoutAndOrders();
 
-      bindGoogleSignInIfPresent();
+      await bindGoogleSignInIfPresent();
 
       await renderHomeIfOnHomePage();
       await renderShopFromStore();

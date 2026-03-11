@@ -42,17 +42,28 @@
   // API helper
   // -----------------------------
   async function apiJSON(path, opts = {}) {
-    const res = await fetch(path, {
-      credentials: 'include',
-      ...opts,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(opts.headers || {}),
-      },
-    });
+    try {
+      const res = await fetch(path, {
+        credentials: 'include',
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(opts.headers || {}),
+        },
+      });
 
-    const data = await res.json().catch(() => null);
-    return { res, data };
+      const contentType = String(res.headers.get('content-type') || '');
+      const data = contentType.includes('application/json')
+        ? await res.json().catch(() => null)
+        : { ok: false, error: 'Service temporarily unavailable. Please try again.' };
+
+      return { res, data };
+    } catch (err) {
+      return {
+        res: { ok: false, status: 0 },
+        data: { ok: false, error: 'Unable to reach the server. Please check your connection and try again.' },
+      };
+    }
   }
 
   // -----------------------------

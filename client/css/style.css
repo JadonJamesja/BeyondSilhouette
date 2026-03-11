@@ -7,9 +7,7 @@
 }
 
 /* =========================================================
-   Beyond Silhouette — SINGLE THEME (LIGHT ONLY)
-   Dark theme + theme toggle removed entirely.
-   These tokens are used throughout the file.
+   Beyond Silhouette — theme tokens (light + dark)
 ========================================================= */
 :root {
   /* Unified site font (text + headings) */
@@ -49,6 +47,29 @@
   --text-lg: 1.08rem;
 }
 
+html[data-theme="dark"] {
+  --bg: 225 22% 9%;
+  --surface: 225 22% 13%;
+  --surface2: 225 20% 11%;
+  --text: 220 18% 92%;
+  --muted: 220 12% 70%;
+  --border: 225 16% 24%;
+
+  --accent: 212 72% 62%;
+  --accent2: 334 62% 68%;
+  --accent3: 35 65% 66%;
+
+  --header-glass: rgba(18, 22, 33, 0.86);
+  --header-glass-scrolled: rgba(18, 22, 33, 0.68);
+  --section-alt: rgba(255, 255, 255, 0.03);
+
+  --shadow-soft: 0 10px 26px rgba(0, 0, 0, 0.35);
+  --shadow-med: 0 14px 34px rgba(0, 0, 0, 0.46);
+
+  --btn-bg: hsl(220 20% 94%);
+  --btn-bg-hover: hsl(220 18% 84%);
+}
+
 
 /* Utility container */
 .container {
@@ -63,6 +84,7 @@ body {
   background-color: hsl(var(--bg));
   color: hsl(var(--text));
   font-size: var(--text-base);
+  transition: background-color .2s ease, color .2s ease;
 }
 
 /* ------------------------------
@@ -708,4 +730,18 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
 a.btn-primary,
 a.btn-secondary {
   display: inline-flex;
+}
+
+html[data-theme="dark"] .hero-overlay,
+html[data-theme="dark"] .promo-banner-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="dark"] .login-menu {
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="dark"] .btn-secondary {
+  background: hsla(var(--text), 0.06);
+  border-color: hsla(var(--border), 0.95);
 }

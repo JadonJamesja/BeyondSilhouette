@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
     <meta charset="UTF-8">
@@ -37,16 +37,9 @@
 
                 <button type="submit" class="btn-login">Sign In</button>
 
-                <!-- Google Sign-In (minimal add, no layout redesign) -->
-                <div style="margin-top: 14px; display: flex; justify-content: center;">
-                    <!-- Required: this div configures Google Identity Services -->
-                    <div id="g_id_onload"
-                        data-client_id="YOUR_CLIENT_ID_HERE.apps.googleusercontent.com"
-                        data-callback="BSGoogleLoginCallback">
-                    </div>
-
-                    <!-- This renders the actual Google button -->
-                    <div class="g_id_signin" data-type="standard" data-size="large"></div>
+                <!-- Google Sign-In -->
+                <div class="google-login-wrap" style="margin-top: 14px; display: flex; justify-content: center;">
+                    <div class="g_id_signin" id="siteGoogleSignIn"></div>
                 </div>
             </form>
 

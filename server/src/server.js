@@ -333,6 +333,7 @@ app.get("/api/site/home", async (req, res) => {
 
     return res.json({
       ok: true,
+      hasSettings: !!settings,
       home: {
         heroTitle: settings?.heroTitle || null,
         heroSubtitle: settings?.heroSubtitle || null,
@@ -381,6 +382,7 @@ app.get("/api/admin/site/home", async (req, res) => {
 
     return res.json({
       ok: true,
+      hasSettings: !!settings,
       home: settings || {
         id: "singleton",
         heroTitle: null,
