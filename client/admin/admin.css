@@ -301,6 +301,25 @@ code {
   color: hsl(var(--text));
 }
 
+.settings-flash {
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid hsl(var(--border));
+  background: hsla(var(--text), .03);
+  color: hsl(var(--text));
+}
+
+.settings-flash.is-success {
+  border-color: hsla(var(--ok), .45);
+  background: hsla(var(--ok), .12);
+}
+
+.settings-flash.is-error {
+  border-color: hsla(var(--danger), .45);
+  background: hsla(var(--danger), .12);
+}
+
 .hint {
   font-size: 0.86rem;
   color: hsl(var(--muted));
