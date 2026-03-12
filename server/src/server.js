@@ -80,10 +80,23 @@ function normalizeHomeImageUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw) || raw.startsWith("data:image/")) return raw;
-  if (raw.startsWith("/uploads/home/")) return raw;
-  if (raw.startsWith("uploads/home/")) return `/${raw}`;
-  if (raw.includes("/")) return raw.startsWith("/") ? raw : `/${raw}`;
-  return `/uploads/home/${raw}`;
+
+  const cleaned = raw.replace(/\\/g, "/").replace(/\s+\./g, ".").replace(/\.\s+/g, ".");
+  const ensureLeadingSlash = (v) => (v.startsWith("/") ? v : `/${v}`);
+
+  if (cleaned.startsWith("/uploads/home/")) return cleaned;
+  if (cleaned.startsWith("uploads/home/")) return ensureLeadingSlash(cleaned);
+
+  // Legacy values may be stored as /uploads/<filename> (without /home).
+  if (cleaned.startsWith("/uploads/") || cleaned.startsWith("uploads/")) {
+    const parts = cleaned.split("/").filter(Boolean);
+    const maybeFile = parts[parts.length - 1] || "";
+    if (parts[1] !== "home" && maybeFile) return `/uploads/home/${maybeFile}`;
+    return ensureLeadingSlash(cleaned);
+  }
+
+  if (cleaned.includes("/")) return ensureLeadingSlash(cleaned);
+  return `/uploads/home/${cleaned}`;
 }
 
 function parseQty(value) {
@@ -1923,6 +1936,9 @@ app.use("/api", (req, res) => {
 });
 
 const clientDir = path.join(projectRoot, "client");
+const uploadsDir = path.join(CLIENT_DIR, "uploads");
+
+app.use("/uploads", express.static(uploadsDir));
 
 // Static files (this comes AFTER admin gate middleware on purpose)
 
