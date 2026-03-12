@@ -836,20 +836,33 @@
 
     async function bindGoogleSignInIfPresent() {
       const p = page();
-      if (p !== 'login.html' && p !== 'register.html' && p !== 'login' && p !== 'register') return;
+      if (p !== 'login' && p !== 'register') return;
 
-      const btnHost = document.querySelector('.g_id_signin');
-      if (!btnHost) return;
-
-      // Google Identity Services must be loaded (login.html includes it)
-      const gis = window.google?.accounts?.id;
-      if (!gis) return;
+      const btnHosts = Array.from(document.querySelectorAll('.g_id_signin'));
+      if (!btnHosts.length) return;
 
       // Get client_id from server (no hardcoding in HTML)
       const { ok, data } = await apiJson('/api/public/config');
       const clientId = String(data?.googleClientId || '').trim();
       if (!ok || !clientId) {
         console.warn('Google client id not configured on server.');
+        return;
+      }
+
+      const waitForGIS = () => new Promise((resolve) => {
+        const started = Date.now();
+        const tick = () => {
+          const gis = window.google?.accounts?.id;
+          if (gis) return resolve(gis);
+          if (Date.now() - started > 8000) return resolve(null);
+          setTimeout(tick, 120);
+        };
+        tick();
+      });
+
+      const gis = await waitForGIS();
+      if (!gis) {
+        console.warn('Google Identity Services script did not load in time.');
         return;
       }
 
@@ -865,9 +878,11 @@
           auto_select: false,
         });
 
-        // Render button
-        gis.renderButton(btnHost, { type: 'standard', size: 'large' });
-        gis.prompt(); // optional
+        btnHosts.forEach((btnHost) => {
+          btnHost.innerHTML = '';
+          gis.renderButton(btnHost, { type: 'standard', size: 'large', width: 260, theme: 'outline', text: 'continue_with' });
+        });
+        gis.prompt();
       } catch (e) {
         console.error('Google init failed:', e);
       }
@@ -1481,7 +1496,7 @@
 
         const confirmPassword =
           (form.querySelector(
-            'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
+            'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm-password"], input[name="confirm"], input#confirmPassword, input#confirm_password, input#confirm-password'
           )?.value || '').trim();
 
         try {

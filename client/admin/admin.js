@@ -1048,7 +1048,7 @@
         }).join('') : '<div class="muted">No featured products selected yet.</div>';
       }
       if (featuredPool) {
-        const pool = products.filter(matchesSearch);
+        const pool = products.filter((p) => !!p?.isPublished).filter(matchesSearch);
         featuredPool.innerHTML = pool.length ? pool.map((p) => {
           const active = featuredIds.includes(p.id);
           const cover = p?.images?.[0]?.url || '';
@@ -1100,7 +1100,7 @@
         heroTitle: heroTitleInput?.value?.trim() || '',
         heroSubtitle: heroSubtitleInput?.value?.trim() || '',
         slideshowUrls: slideshowUrls.slice(0, 6),
-        featuredProductIds: featuredIds.slice(0, 3),
+        featuredProductIds: featuredIds.filter((id) => products.some((p) => p.id === id && p.isPublished)).slice(0, 3),
         promoEnabled: !!promoEnabledInput?.checked,
         promoImageUrl: promoImageUrl || '',
         promoTitle: promoTitleInput?.value?.trim() || '',
