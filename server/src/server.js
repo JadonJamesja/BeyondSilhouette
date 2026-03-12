@@ -276,7 +276,14 @@ app.get("/api/products", async (req, res) => {
 // Returns the singleton home settings + featured products (published only).
 app.get("/api/site/home", async (req, res) => {
   try {
-    const settings = hasPrismaModel("siteHomeSettings") ? await prisma.siteHomeSettings.findUnique({
+    if (!hasPrismaModel("siteHomeSettings")) {
+      return res.status(503).json({
+        ok: false,
+        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before using this endpoint.",
+      });
+    }
+
+    const settings = await prisma.siteHomeSettings.findUnique({
       where: { id: "singleton" },
       select: {
         id: true,
@@ -292,7 +299,7 @@ app.get("/api/site/home", async (req, res) => {
         promoCtaLink: true,
         updatedAt: true,
       },
-    }) : null;
+    });
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
     const featuredProducts = featuredIds.length
@@ -361,7 +368,14 @@ app.get("/api/admin/site/home", async (req, res) => {
   if (!sess) return;
 
   try {
-    const settings = hasPrismaModel("siteHomeSettings") ? await prisma.siteHomeSettings.findUnique({
+    if (!hasPrismaModel("siteHomeSettings")) {
+      return res.status(503).json({
+        ok: false,
+        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before using this endpoint.",
+      });
+    }
+
+    const settings = await prisma.siteHomeSettings.findUnique({
       where: { id: "singleton" },
       select: {
         id: true,
@@ -378,7 +392,7 @@ app.get("/api/admin/site/home", async (req, res) => {
         createdAt: true,
         updatedAt: true,
       },
-    }) : null;
+    });
 
     return res.json({
       ok: true,
@@ -473,7 +487,10 @@ app.put("/api/admin/site/home", async (req, res) => {
 
   try {
     if (!hasPrismaModel("siteHomeSettings")) {
-      return res.json({ ok: true, home: { id: "singleton", heroTitle, heroSubtitle, slideshowUrls, featuredProductIds, promoEnabled, promoImageUrl, promoTitle, promoSubtitle, promoCtaText, promoCtaLink, updatedAt: new Date().toISOString() } });
+      return res.status(503).json({
+        ok: false,
+        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before saving homepage settings.",
+      });
     }
 
     const saved = await prisma.siteHomeSettings.upsert({

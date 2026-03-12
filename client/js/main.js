@@ -992,7 +992,12 @@
 
       try {
         const { ok, data } = await apiJson('/api/site/home');
-        if (!ok || !data?.ok) return;
+        if (!ok || !data?.ok) {
+          if (featuredGrid) {
+            featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
+          }
+          return;
+        }
 
         const home = data.home || {};
         const featured = Array.isArray(data.featured) ? data.featured : [];
@@ -1012,24 +1017,6 @@
             slides.forEach((slide) => {
               slide.style.backgroundImage = '';
             });
-          }
-        }
-
-
-        if (promoSection) {
-          const enabled = !!home.promoEnabled;
-          const hasImage = !!home.promoImageUrl;
-          promoSection.hidden = !(enabled && hasImage);
-          if (enabled && hasImage) {
-            if (promoMedia) {
-              promoMedia.style.backgroundImage = 'url("' + String(home.promoImageUrl).replace(/"/g, '\"') + '")';
-            }
-            if (promoTitle && home.promoTitle) promoTitle.textContent = home.promoTitle;
-            if (promoSubtitle && home.promoSubtitle) promoSubtitle.textContent = home.promoSubtitle;
-            if (promoCta) {
-              promoCta.textContent = home.promoCtaText || 'Shop now';
-              promoCta.setAttribute('href', home.promoCtaLink || 'shop-page.html');
-            }
           }
         }
 
