@@ -142,8 +142,29 @@ html[data-theme="dark"] .admin .picker-thumb-empty {
   color: hsl(var(--text));
 }
 
+html[data-theme="dark"] .auth,
+html[data-theme="dark"] .auth h1,
+html[data-theme="dark"] .auth h2,
+html[data-theme="dark"] .auth h3,
+html[data-theme="dark"] .auth h4,
+html[data-theme="dark"] .auth h5,
+html[data-theme="dark"] .auth h6,
+html[data-theme="dark"] .auth p,
+html[data-theme="dark"] .auth label,
+html[data-theme="dark"] .auth span,
+html[data-theme="dark"] .auth a,
+html[data-theme="dark"] .auth strong,
+html[data-theme="dark"] .auth small,
+html[data-theme="dark"] .auth .muted,
+html[data-theme="dark"] .auth .hint,
+html[data-theme="dark"] .auth .label {
+  color: hsl(var(--text));
+}
+
 html[data-theme="dark"] .admin input::placeholder,
-html[data-theme="dark"] .admin textarea::placeholder {
+html[data-theme="dark"] .admin textarea::placeholder,
+html[data-theme="dark"] .auth input::placeholder,
+html[data-theme="dark"] .auth textarea::placeholder {
   color: hsla(var(--text), .88);
 }
 
