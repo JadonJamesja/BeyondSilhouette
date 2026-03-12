@@ -225,7 +225,7 @@
   async function initAdminLogin() {
     if (!isAdminLoginPage()) return;
 
-    const form = qs('#loginForm');
+    const form = qs('#loginForm') || qs('[data-form="login"]');
     const errorBox = qs('[data-ui="error"]');
     const setError = (msg) => {
       if (!errorBox) return;
@@ -238,13 +238,24 @@
       }
     };
 
+
+    const pwToggle = qs('[data-action="toggle-password"]');
+    const pwScope = form || document;
+    const pwInput = qs('#password', pwScope) || qs('[name="password"]', pwScope);
+    pwToggle?.addEventListener('click', () => {
+      if (!pwInput) return;
+      const nextType = pwInput.type === 'password' ? 'text' : 'password';
+      pwInput.type = nextType;
+      pwToggle.textContent = nextType === 'password' ? 'Show' : 'Hide';
+    });
+
     if (form) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         setError('');
 
-        const email = String(qs('#email')?.value || '').trim().toLowerCase();
-        const password = String(qs('#password')?.value || '');
+        const email = String((qs('#email', form) || qs('[name="email"]', form))?.value || '').trim().toLowerCase();
+        const password = String((qs('#password', form) || qs('[name="password"]', form))?.value || '');
 
         const { res, data } = await apiJSON('/api/auth/login', {
           method: 'POST',
