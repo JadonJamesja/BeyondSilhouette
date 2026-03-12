@@ -960,6 +960,8 @@
     const errBox = qs('[data-ui="settingsError"]');
     const homeFlash = qs('[data-ui="settingsFlash"]');
     const configFlash = qs('[data-ui="configFlash"]');
+    const homeForm = qs('#homeSettingsForm');
+    const adminConfigForm = qs('#adminConfigForm');
     const heroTitleInput = qs('#homeHeroTitle');
     const heroSubtitleInput = qs('#homeHeroSubtitle');
     const slideshowInput = qs('#homeSlideshow');
@@ -1062,6 +1064,11 @@
       return `/uploads/home/${cleaned}`;
     };
 
+    const parseTextareaList = (input) => String(input?.value || '')
+      .split('\n')
+      .map((line) => String(line || '').trim())
+      .filter(Boolean);
+
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
       if (slideshowSelected) {
@@ -1142,6 +1149,12 @@
     }
 
     async function saveHome() {
+      const manualSlides = parseTextareaList(slideshowInput).map((url) => normalizeHomeImageUrl(url)).filter(Boolean);
+      if (manualSlides.length) slideshowUrls = manualSlides.slice(0, 6);
+
+      const manualFeatured = parseTextareaList(featuredInput);
+      if (manualFeatured.length) featuredIds = manualFeatured.slice(0, 3);
+
       const payload = {
         heroTitle: heroTitleInput?.value?.trim() || '',
         heroSubtitle: heroSubtitleInput?.value?.trim() || '',
@@ -1306,7 +1319,7 @@
       }
     });
 
-    qs('[data-action="home-save"]')?.addEventListener('click', async () => {
+    const runHomeSave = async () => {
       setError('');
       setStatus('Saving homepage settings…');
       try {
@@ -1318,9 +1331,15 @@
         setError(String(e?.message || 'Failed to save home settings'));
         setStatus('');
       }
+    };
+
+    qs('[data-action="home-save"]')?.addEventListener('click', runHomeSave);
+    homeForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await runHomeSave();
     });
 
-    qs('[data-action="config-save"]')?.addEventListener('click', async () => {
+    const runConfigSave = async () => {
       setError('');
       setStatus('Saving admin config…');
       try {
@@ -1332,6 +1351,12 @@
         setError(String(e?.message || 'Failed to save config'));
         setStatus('');
       }
+    };
+
+    qs('[data-action="config-save"]')?.addEventListener('click', runConfigSave);
+    adminConfigForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await runConfigSave();
     });
 
     try {
