@@ -138,3 +138,29 @@ body {
 html[data-theme="dark"] .btn-register {
   color: hsl(225 22% 10%);
 }
+
+
+.google-login-wrap {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.btn-sign-in {
+  width: 100%;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 10px;
+  border: 1px solid hsla(var(--border), 0.95);
+  background: hsl(var(--surface));
+  color: hsl(var(--text));
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.btn-sign-in:hover {
+  background: hsla(var(--text), 0.05);
+}

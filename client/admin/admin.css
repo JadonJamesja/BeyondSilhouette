@@ -1654,3 +1654,9 @@ html[data-theme="light"] .btn-danger {
 .order-status-row {
   flex-wrap: wrap;
 }
+
+
+#promoSelected .selection-card img,
+#promoSelected .picker-thumb {
+  aspect-ratio: 16 / 9;
+}
