@@ -958,6 +958,8 @@
     if (!pathIsAdminPage('settings')) return;
 
     const errBox = qs('[data-ui="settingsError"]');
+    const homeFlash = qs('[data-ui="settingsFlash"]');
+    const configFlash = qs('[data-ui="configFlash"]');
     const heroTitleInput = qs('#homeHeroTitle');
     const heroSubtitleInput = qs('#homeHeroSubtitle');
     const slideshowInput = qs('#homeSlideshow');
@@ -984,6 +986,8 @@
     let slideshowUrls = [];
     let featuredIds = [];
     let promoImageUrl = '';
+    let homeFlashTimer = null;
+    let configFlashTimer = null;
 
     const setError = (msg) => {
       if (!errBox) return;
@@ -993,6 +997,27 @@
 
     const setStatus = (msg) => {
       if (saveNote) saveNote.textContent = msg || '';
+    };
+
+    const showFlash = (node, timerName, kind, message) => {
+      if (!node) return;
+      node.hidden = false;
+      node.classList.remove('is-success', 'is-error');
+      node.classList.add(kind === 'error' ? 'is-error' : 'is-success');
+      node.textContent = message;
+      if (timerName === 'home') {
+        if (homeFlashTimer) clearTimeout(homeFlashTimer);
+        homeFlashTimer = setTimeout(() => {
+          node.hidden = true;
+          node.textContent = '';
+        }, 3500);
+      } else {
+        if (configFlashTimer) clearTimeout(configFlashTimer);
+        configFlashTimer = setTimeout(() => {
+          node.hidden = true;
+          node.textContent = '';
+        }, 3500);
+      }
     };
 
     const normalizeImages = (product) => {
@@ -1263,8 +1288,10 @@
       setStatus('Saving homepage settings…');
       try {
         await saveHome();
+        showFlash(homeFlash, 'home', 'success', 'Settings saved successfully.');
         setStatus('Homepage settings saved. Refresh the homepage to confirm the changes.');
       } catch (e) {
+        showFlash(homeFlash, 'home', 'error', 'Failed to save settings.');
         setError(String(e?.message || 'Failed to save home settings'));
         setStatus('');
       }
@@ -1275,8 +1302,10 @@
       setStatus('Saving admin config…');
       try {
         await saveConfig();
+        showFlash(configFlash, 'config', 'success', 'Settings saved successfully.');
         setStatus('Admin config saved.');
       } catch (e) {
+        showFlash(configFlash, 'config', 'error', 'Failed to save settings.');
         setError(String(e?.message || 'Failed to save config'));
         setStatus('');
       }

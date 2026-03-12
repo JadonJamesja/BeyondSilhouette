@@ -76,6 +76,16 @@ function safeImageExtension(mime = "", fallbackName = "") {
   return ".jpg";
 }
 
+function normalizeHomeImageUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw) || raw.startsWith("data:image/")) return raw;
+  if (raw.startsWith("/uploads/home/")) return raw;
+  if (raw.startsWith("uploads/home/")) return `/${raw}`;
+  if (raw.includes("/")) return raw.startsWith("/") ? raw : `/${raw}`;
+  return `/uploads/home/${raw}`;
+}
+
 function parseQty(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -302,6 +312,10 @@ app.get("/api/site/home", async (req, res) => {
     });
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
+    const slideshowUrls = Array.isArray(settings?.slideshowUrls)
+      ? settings.slideshowUrls.map((u) => normalizeHomeImageUrl(u)).filter(Boolean)
+      : [];
+    const promoImageUrl = normalizeHomeImageUrl(settings?.promoImageUrl);
     const featuredProducts = featuredIds.length
       ? await prisma.product.findMany({
         where: { id: { in: featuredIds }, isPublished: true },
@@ -345,12 +359,12 @@ app.get("/api/site/home", async (req, res) => {
         heroTitle: settings?.heroTitle || null,
         heroSubtitle: settings?.heroSubtitle || null,
         promoEnabled: !!settings?.promoEnabled,
-        promoImageUrl: settings?.promoImageUrl || null,
+        promoImageUrl: promoImageUrl || null,
         promoTitle: settings?.promoTitle || null,
         promoSubtitle: settings?.promoSubtitle || null,
         promoCtaText: settings?.promoCtaText || null,
         promoCtaLink: settings?.promoCtaLink || null,
-        slideshowUrls: Array.isArray(settings?.slideshowUrls) ? settings.slideshowUrls : [],
+        slideshowUrls,
         featuredProductIds: featuredIds,
         updatedAt: settings?.updatedAt || null,
       },
@@ -394,10 +408,20 @@ app.get("/api/admin/site/home", async (req, res) => {
       },
     });
 
+    const normalized = settings
+      ? {
+        ...settings,
+        slideshowUrls: Array.isArray(settings.slideshowUrls)
+          ? settings.slideshowUrls.map((u) => normalizeHomeImageUrl(u)).filter(Boolean)
+          : [],
+        promoImageUrl: normalizeHomeImageUrl(settings.promoImageUrl) || null,
+      }
+      : null;
+
     return res.json({
       ok: true,
       hasSettings: !!settings,
-      home: settings || {
+      home: normalized || {
         id: "singleton",
         heroTitle: null,
         heroSubtitle: null,
@@ -473,13 +497,18 @@ app.put("/api/admin/site/home", async (req, res) => {
   const heroSubtitle = req.body?.heroSubtitle === null || req.body?.heroSubtitle === undefined ? null : String(req.body.heroSubtitle).trim() || null;
 
   const slideshowUrlsIn = Array.isArray(req.body?.slideshowUrls) ? req.body.slideshowUrls : [];
-  const slideshowUrls = slideshowUrlsIn.map((u) => String(u || "").trim()).filter(Boolean).slice(0, 20);
+  const slideshowUrls = slideshowUrlsIn
+    .map((u) => normalizeHomeImageUrl(u))
+    .filter(Boolean)
+    .slice(0, 20);
 
   const featuredIn = Array.isArray(req.body?.featuredProductIds) ? req.body.featuredProductIds : [];
   const featuredProductIds = featuredIn.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20);
 
   const promoEnabled = !!req.body?.promoEnabled;
-  const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined ? null : String(req.body.promoImageUrl).trim() || null;
+  const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined
+    ? null
+    : normalizeHomeImageUrl(req.body.promoImageUrl) || null;
   const promoTitle = req.body?.promoTitle === null || req.body?.promoTitle === undefined ? null : String(req.body.promoTitle).trim() || null;
   const promoSubtitle = req.body?.promoSubtitle === null || req.body?.promoSubtitle === undefined ? null : String(req.body.promoSubtitle).trim() || null;
   const promoCtaText = req.body?.promoCtaText === null || req.body?.promoCtaText === undefined ? null : String(req.body.promoCtaText).trim() || null;
