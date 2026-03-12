@@ -79,10 +79,27 @@ function safeImageExtension(mime = "", fallbackName = "") {
 function normalizeHomeUploadUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  if (raw.startsWith("/uploads/home/")) return raw;
+
+  // Keep fully-qualified external URLs untouched.
   if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith("/")) return raw;
-  return "/uploads/home/" + raw.replace(/^\/+/, "");
+
+  const cleaned = raw.replace(/\\/g, "/").trim();
+  if (!cleaned) return "";
+
+  if (cleaned.startsWith("/uploads/home/")) return cleaned;
+  if (cleaned.startsWith("uploads/home/")) return `/${cleaned}`;
+
+  // Existing absolute client paths should remain absolute (e.g. /images/foo.jpg).
+  if (cleaned.startsWith("/")) return cleaned;
+
+  // Resolve dotted relative paths to web-root absolute paths.
+  if (cleaned.startsWith("./")) return `/${cleaned.slice(2)}`;
+
+  // Preserve folder paths like images/foo.jpg instead of forcing uploads/home.
+  if (cleaned.includes("/")) return `/${cleaned.replace(/^\/+/, "")}`;
+
+  // Bare filenames are considered home uploads.
+  return "/uploads/home/" + cleaned.replace(/^\/+/, "");
 }
 
 function isExistingHomeUploadUrl(value) {
