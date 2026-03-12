@@ -34,7 +34,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
 
 // Body parsing
-app.use(express.json({ limit: "6mb" }));
+app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 // Cookies (auth uses signed httpOnly cookie)
@@ -1888,8 +1888,8 @@ const clientDir = path.join(projectRoot, "client");
 app.use((req, res, next) => {
   try {
     if (!req.path || typeof req.path !== 'string') return next();
-    // Never touch APIs
-    if (req.path.startsWith('/api/')) return next();
+    // Never touch APIs or admin pages (admin login uses explicit .html paths).
+    if (req.path.startsWith('/api/') || req.path.startsWith('/admin/')) return next();
     // Ignore static assets (has a file extension)
     const hasExt = /\.[a-zA-Z0-9]+$/.test(req.path);
     if (hasExt) {

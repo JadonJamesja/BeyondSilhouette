@@ -60,21 +60,13 @@
   };
 
 
-  function applyStoredTheme() {
-    let saved = null;
+  function enforceStorefrontLightTheme() {
+    document.documentElement.setAttribute('data-theme', 'light');
+
+    // Keep storefront permanently light and prevent legacy storefront keys from re-enabling dark mode.
     try {
-      saved = localStorage.getItem('bs_theme') || localStorage.getItem('bs_admin_theme');
-    } catch (_) {
-      saved = null;
-    }
-
-    const prefersDark = typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const nextTheme = saved === 'dark' || saved === 'light'
-      ? saved
-      : (prefersDark ? 'dark' : 'light');
-
-    document.documentElement.setAttribute('data-theme', nextTheme);
+      localStorage.removeItem('bs_theme');
+    } catch (_) {}
   }
 
   function escapeHtml(s) {
@@ -2099,7 +2091,7 @@
     // INIT
     // -----------------------------
     async function init() {
-      applyStoredTheme();
+      enforceStorefrontLightTheme();
       UI.ensureHeaderFooter();
 
       // IMPORTANT: hydrate from server cookie session FIRST
