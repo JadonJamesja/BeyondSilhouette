@@ -1047,6 +1047,24 @@
       ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" loading="lazy" />`
       : '<div class="picker-thumb picker-thumb-empty">No image</div>';
 
+    const normalizeHomeImageUrl = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      if (/^https?:\/\//i.test(raw) || raw.startsWith('data:image/')) return raw;
+
+      const cleaned = raw.replace(/\\/g, '/').replace(/\s+\./g, '.').replace(/\.\s+/g, '.');
+      if (cleaned.startsWith('/uploads/home/')) return cleaned;
+      if (cleaned.startsWith('uploads/home/')) return `/${cleaned}`;
+      if (cleaned.startsWith('/uploads/') || cleaned.startsWith('uploads/')) {
+        const parts = cleaned.split('/').filter(Boolean);
+        const maybeFile = parts[parts.length - 1] || '';
+        if (parts[1] !== 'home' && maybeFile) return `/uploads/home/${maybeFile}`;
+        return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      }
+      if (cleaned.includes('/')) return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      return `/uploads/home/${cleaned}`;
+    };
+
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
       if (slideshowSelected) {
@@ -1115,8 +1133,10 @@
       if (promoCtaTextInput) promoCtaTextInput.value = home.promoCtaText || '';
       if (promoCtaLinkInput) promoCtaLinkInput.value = home.promoCtaLink || '';
       if (promoEnabledInput) promoEnabledInput.checked = !!home.promoEnabled;
-      promoImageUrl = String(home.promoImageUrl || '');
-      slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 6) : [];
+      promoImageUrl = normalizeHomeImageUrl(home.promoImageUrl);
+      slideshowUrls = Array.isArray(home.slideshowUrls)
+        ? home.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
+        : [];
       featuredIds = Array.isArray(home.featuredProductIds) ? home.featuredProductIds.filter(Boolean).slice(0, 3) : [];
     }
 
@@ -1168,7 +1188,7 @@
       });
 
       if (!res.ok || !data?.ok || !data?.url) throw new Error(data?.error || 'Failed to upload image.');
-      return String(data.url);
+      return normalizeHomeImageUrl(data.url);
     }
 
     searchInput?.addEventListener('input', renderAll);
