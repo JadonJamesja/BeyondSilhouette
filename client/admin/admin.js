@@ -955,7 +955,8 @@
   // Settings (Home CMS + Admin Config)
   // -----------------------------
   async function initSettings() {
-    if (!pathIsAdminPage('settings')) return;
+    const isSettingsPage = pathIsAdminPage('settings') || !!qs('#homeSettingsForm') || !!qs('#adminConfigForm');
+    if (!isSettingsPage) return;
 
     const errBox = qs('[data-ui="settingsError"]');
     const homeFlash = qs('[data-ui="settingsFlash"]');
