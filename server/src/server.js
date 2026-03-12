@@ -640,6 +640,10 @@ app.get("/api/me", async (req, res) => {
     });
 
     if (!user) return res.status(401).json({ ok: false, user: null });
+    // Keep the signed session cookie aligned with the canonical DB role.
+    // This prevents stale role data (e.g. after promoting a user to admin)
+    // from blocking admin-only endpoints even when /api/me reports admin.
+    setSession(res, { userId: user.id, email: user.email, role: user.role });
     return res.json({ ok: true, user });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err?.message || "Failed to load user" });
