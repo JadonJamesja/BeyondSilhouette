@@ -85,6 +85,23 @@ function normalizeHomeUploadUrl(value) {
   return "/uploads/home/" + raw.replace(/^\/+/, "");
 }
 
+function isExistingHomeUploadUrl(value) {
+  const url = normalizeHomeUploadUrl(value);
+  if (!url) return false;
+  if (!url.startsWith("/uploads/home/")) return true;
+  const filename = path.basename(url);
+  if (!filename || filename === "." || filename === "..") return false;
+  const absPath = path.join(HOME_UPLOAD_DIR, filename);
+  return fs.existsSync(absPath);
+}
+
+function sanitizeHomeUploadUrls(values) {
+  const list = Array.isArray(values) ? values : [];
+  return list
+    .map((value) => normalizeHomeUploadUrl(value))
+    .filter((url) => url && isExistingHomeUploadUrl(url));
+}
+
 function parseQty(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -311,10 +328,10 @@ app.get("/api/site/home", async (req, res) => {
     });
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
-    const slideshowUrls = Array.isArray(settings?.slideshowUrls)
-      ? settings.slideshowUrls.map((u) => normalizeHomeUploadUrl(u)).filter(Boolean)
-      : [];
-    const promoImageUrl = normalizeHomeUploadUrl(settings?.promoImageUrl);
+    const slideshowUrls = sanitizeHomeUploadUrls(settings?.slideshowUrls);
+    const promoImageUrl = isExistingHomeUploadUrl(settings?.promoImageUrl)
+      ? normalizeHomeUploadUrl(settings?.promoImageUrl)
+      : "";
     const featuredProducts = featuredIds.length
       ? await prisma.product.findMany({
         where: { id: { in: featuredIds }, isPublished: true },
@@ -410,10 +427,10 @@ app.get("/api/admin/site/home", async (req, res) => {
     const normalized = settings
       ? {
         ...settings,
-        slideshowUrls: Array.isArray(settings.slideshowUrls)
-          ? settings.slideshowUrls.map((u) => normalizeHomeUploadUrl(u)).filter(Boolean)
-          : [],
-        promoImageUrl: normalizeHomeUploadUrl(settings.promoImageUrl) || null,
+        slideshowUrls: sanitizeHomeUploadUrls(settings.slideshowUrls),
+        promoImageUrl: isExistingHomeUploadUrl(settings.promoImageUrl)
+          ? normalizeHomeUploadUrl(settings.promoImageUrl)
+          : null,
       }
       : null;
 
@@ -496,10 +513,7 @@ app.put("/api/admin/site/home", async (req, res) => {
   const heroSubtitle = req.body?.heroSubtitle === null || req.body?.heroSubtitle === undefined ? null : String(req.body.heroSubtitle).trim() || null;
 
   const slideshowUrlsIn = Array.isArray(req.body?.slideshowUrls) ? req.body.slideshowUrls : [];
-  const slideshowUrls = slideshowUrlsIn
-    .map((u) => normalizeHomeUploadUrl(u))
-    .filter(Boolean)
-    .slice(0, 20);
+  const slideshowUrls = sanitizeHomeUploadUrls(slideshowUrlsIn).slice(0, 20);
 
   const featuredIn = Array.isArray(req.body?.featuredProductIds) ? req.body.featuredProductIds : [];
   const featuredProductIds = featuredIn.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20);
@@ -507,7 +521,9 @@ app.put("/api/admin/site/home", async (req, res) => {
   const promoEnabled = !!req.body?.promoEnabled;
   const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined
     ? null
-    : normalizeHomeUploadUrl(req.body.promoImageUrl) || null;
+    : (isExistingHomeUploadUrl(req.body.promoImageUrl)
+      ? normalizeHomeUploadUrl(req.body.promoImageUrl)
+      : null);
   const promoTitle = req.body?.promoTitle === null || req.body?.promoTitle === undefined ? null : String(req.body.promoTitle).trim() || null;
   const promoSubtitle = req.body?.promoSubtitle === null || req.body?.promoSubtitle === undefined ? null : String(req.body.promoSubtitle).trim() || null;
   const promoCtaText = req.body?.promoCtaText === null || req.body?.promoCtaText === undefined ? null : String(req.body.promoCtaText).trim() || null;
@@ -546,10 +562,10 @@ app.put("/api/admin/site/home", async (req, res) => {
       ok: true,
       home: {
         ...saved,
-        slideshowUrls: Array.isArray(saved.slideshowUrls)
-          ? saved.slideshowUrls.map((u) => normalizeHomeUploadUrl(u)).filter(Boolean)
-          : [],
-        promoImageUrl: normalizeHomeUploadUrl(saved.promoImageUrl) || null,
+        slideshowUrls: sanitizeHomeUploadUrls(saved.slideshowUrls),
+        promoImageUrl: isExistingHomeUploadUrl(saved.promoImageUrl)
+          ? normalizeHomeUploadUrl(saved.promoImageUrl)
+          : null,
       },
     });
   } catch (err) {
