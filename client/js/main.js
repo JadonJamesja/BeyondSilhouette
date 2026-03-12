@@ -1000,13 +1000,25 @@
         promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
       };
 
+      const normalizeHomeImageUrl = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        if (/^https?:\/\//i.test(raw) || raw.startsWith('data:image/')) return raw;
+        const cleaned = raw.replace(/\\/g, '/').trim();
+        if (!cleaned) return '';
+        if (cleaned.startsWith('/')) return cleaned;
+        if (cleaned.startsWith('./')) return `/${cleaned.slice(2)}`;
+        return `/${cleaned.replace(/^\/+/, '')}`;
+      };
+
       const setText = (node, value, fallback, hasSettings) => {
         if (!node) return;
-        if (hasSettings) {
-          node.textContent = value == null ? '' : String(value);
+        if (!hasSettings) {
+          node.textContent = fallback;
           return;
         }
-        node.textContent = fallback;
+        const next = value == null ? '' : String(value).trim();
+        node.textContent = next || fallback;
       };
 
       const ensureSlideCount = (count) => {
@@ -1030,14 +1042,17 @@
       const setSlides = (urls, hasSettings) => {
         if (!hero) return;
 
-        const desiredCount = hasSettings
-          ? (urls.length ? urls.length : 1)
-          : 4;
+        const normalizedUrls = Array.isArray(urls)
+          ? urls.map((u) => normalizeHomeImageUrl(u)).filter(Boolean).slice(0, 6)
+          : [];
+
+        const useDefaults = !hasSettings || !normalizedUrls.length;
+        const desiredCount = useDefaults ? 4 : normalizedUrls.length;
         ensureSlideCount(desiredCount);
 
         if (!slides.length) return;
 
-        if (!hasSettings) {
+        if (useDefaults) {
           slides.forEach((slide) => {
             slide.style.backgroundImage = '';
             slide.style.animationDelay = '';
@@ -1046,11 +1061,11 @@
           return;
         }
 
-        const total = Math.max(1, urls.length);
+        const total = Math.max(1, normalizedUrls.length);
         const durationSeconds = total * 4;
 
         slides.forEach((slide, index) => {
-          const rawUrl = urls[index] || '';
+          const rawUrl = normalizedUrls[index] || '';
           slide.style.backgroundImage = rawUrl
             ? 'url("' + String(rawUrl).replace(/"/g, '\\"') + '")'
             : 'none';
@@ -1063,14 +1078,14 @@
         if (!promoSection) return;
 
         const enabled = !!home?.promoEnabled;
-        const imageUrl = String(home?.promoImageUrl || '').trim();
+        const imageUrl = normalizeHomeImageUrl(home?.promoImageUrl);
         const visible = enabled;
 
         promoSection.hidden = !visible;
 
         if (promoMedia) {
           promoMedia.style.backgroundImage = imageUrl
-            ? 'url("' + imageUrl.replace(/"/g, '\"') + '")'
+            ? 'url("' + String(imageUrl).replace(/"/g, '\\"') + '")'
             : '';
         }
 
@@ -1082,7 +1097,7 @@
             ? (home?.promoCtaText == null || home?.promoCtaText === '' ? defaults.promoCtaText : String(home.promoCtaText))
             : defaults.promoCtaText;
           promoCta.setAttribute('href', hasSettings
-            ? (home?.promoCtaLink == null || home?.promoCtaLink === '' ? defaults.promoCtaLink : String(home.promoCtaLink))
+            ? (home?.promoCtaLink == null || String(home?.promoCtaLink).trim() === '' ? defaults.promoCtaLink : String(home.promoCtaLink))
             : defaults.promoCtaLink);
         }
       };
@@ -1098,7 +1113,9 @@
 
         const home = data.home || {};
         const featured = Array.isArray(data.featured) ? data.featured : [];
-        const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 6) : [];
+        const slideshowUrls = Array.isArray(home.slideshowUrls)
+          ? home.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
+          : [];
         const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
         setText(titleEl, home.heroTitle, defaults.heroTitle, hasSettings);
