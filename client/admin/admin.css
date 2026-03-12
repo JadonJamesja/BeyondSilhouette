@@ -138,8 +138,24 @@ html[data-theme="dark"] .admin .hint,
 html[data-theme="dark"] .admin .label,
 html[data-theme="dark"] .admin .section-title,
 html[data-theme="dark"] .admin .page-indicator,
-html[data-theme="dark"] .admin .picker-thumb-empty {
+html[data-theme="dark"] .admin .picker-thumb-empty,
+html[data-theme="dark"] .admin .page-title,
+html[data-theme="dark"] .admin .card-title,
+html[data-theme="dark"] .admin .brand-subtitle,
+html[data-theme="dark"] .admin .table th,
+html[data-theme="dark"] .admin .table td,
+html[data-theme="dark"] .admin .selection-card,
+html[data-theme="dark"] .admin .selection-card * {
   color: hsl(var(--text));
+}
+
+html[data-theme="dark"] .admin .muted,
+html[data-theme="dark"] .admin .hint,
+html[data-theme="dark"] .admin .label,
+html[data-theme="dark"] .admin .brand-subtitle,
+html[data-theme="dark"] .admin .section-title {
+  color: hsl(var(--text));
+  opacity: 1;
 }
 
 html[data-theme="dark"] .auth,

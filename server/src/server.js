@@ -112,11 +112,19 @@ function isExistingHomeUploadUrl(value) {
   return fs.existsSync(absPath);
 }
 
+function isSafeHomeUploadUrl(value) {
+  const url = normalizeHomeUploadUrl(value);
+  if (!url) return false;
+  if (!url.startsWith("/uploads/home/")) return true;
+  const filename = path.basename(url);
+  return !!filename && filename !== "." && filename !== "..";
+}
+
 function sanitizeHomeUploadUrls(values) {
   const list = Array.isArray(values) ? values : [];
   return list
     .map((value) => normalizeHomeUploadUrl(value))
-    .filter((url) => url && isExistingHomeUploadUrl(url));
+    .filter((url) => url && isSafeHomeUploadUrl(url));
 }
 
 function parseQty(value) {
@@ -346,7 +354,7 @@ app.get("/api/site/home", async (req, res) => {
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
     const slideshowUrls = sanitizeHomeUploadUrls(settings?.slideshowUrls);
-    const promoImageUrl = isExistingHomeUploadUrl(settings?.promoImageUrl)
+    const promoImageUrl = isSafeHomeUploadUrl(settings?.promoImageUrl)
       ? normalizeHomeUploadUrl(settings?.promoImageUrl)
       : "";
     const featuredProducts = featuredIds.length
@@ -445,7 +453,7 @@ app.get("/api/admin/site/home", async (req, res) => {
       ? {
         ...settings,
         slideshowUrls: sanitizeHomeUploadUrls(settings.slideshowUrls),
-        promoImageUrl: isExistingHomeUploadUrl(settings.promoImageUrl)
+        promoImageUrl: isSafeHomeUploadUrl(settings.promoImageUrl)
           ? normalizeHomeUploadUrl(settings.promoImageUrl)
           : null,
       }
@@ -538,7 +546,7 @@ app.put("/api/admin/site/home", async (req, res) => {
   const promoEnabled = !!req.body?.promoEnabled;
   const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined
     ? null
-    : (isExistingHomeUploadUrl(req.body.promoImageUrl)
+    : (isSafeHomeUploadUrl(req.body.promoImageUrl)
       ? normalizeHomeUploadUrl(req.body.promoImageUrl)
       : null);
   const promoTitle = req.body?.promoTitle === null || req.body?.promoTitle === undefined ? null : String(req.body.promoTitle).trim() || null;
@@ -580,7 +588,7 @@ app.put("/api/admin/site/home", async (req, res) => {
       home: {
         ...saved,
         slideshowUrls: sanitizeHomeUploadUrls(saved.slideshowUrls),
-        promoImageUrl: isExistingHomeUploadUrl(saved.promoImageUrl)
+        promoImageUrl: isSafeHomeUploadUrl(saved.promoImageUrl)
           ? normalizeHomeUploadUrl(saved.promoImageUrl)
           : null,
       },
