@@ -76,27 +76,13 @@ function safeImageExtension(mime = "", fallbackName = "") {
   return ".jpg";
 }
 
-function normalizeHomeImageUrl(value) {
+function normalizeHomeUploadUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  if (/^https?:\/\//i.test(raw) || raw.startsWith("data:image/")) return raw;
-
-  const cleaned = raw.replace(/\\/g, "/").replace(/\s+\./g, ".").replace(/\.\s+/g, ".");
-  const ensureLeadingSlash = (v) => (v.startsWith("/") ? v : `/${v}`);
-
-  if (cleaned.startsWith("/uploads/home/")) return cleaned;
-  if (cleaned.startsWith("uploads/home/")) return ensureLeadingSlash(cleaned);
-
-  // Legacy values may be stored as /uploads/<filename> (without /home).
-  if (cleaned.startsWith("/uploads/") || cleaned.startsWith("uploads/")) {
-    const parts = cleaned.split("/").filter(Boolean);
-    const maybeFile = parts[parts.length - 1] || "";
-    if (parts[1] !== "home" && maybeFile) return `/uploads/home/${maybeFile}`;
-    return ensureLeadingSlash(cleaned);
-  }
-
-  if (cleaned.includes("/")) return ensureLeadingSlash(cleaned);
-  return `/uploads/home/${cleaned}`;
+  if (raw.startsWith("/uploads/home/")) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("/")) return raw;
+  return "/uploads/home/" + raw.replace(/^\/+/, "");
 }
 
 function parseQty(value) {
@@ -326,9 +312,9 @@ app.get("/api/site/home", async (req, res) => {
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
     const slideshowUrls = Array.isArray(settings?.slideshowUrls)
-      ? settings.slideshowUrls.map((u) => normalizeHomeImageUrl(u)).filter(Boolean)
+      ? settings.slideshowUrls.map((u) => normalizeHomeUploadUrl(u)).filter(Boolean)
       : [];
-    const promoImageUrl = normalizeHomeImageUrl(settings?.promoImageUrl);
+    const promoImageUrl = normalizeHomeUploadUrl(settings?.promoImageUrl);
     const featuredProducts = featuredIds.length
       ? await prisma.product.findMany({
         where: { id: { in: featuredIds }, isPublished: true },
@@ -425,9 +411,9 @@ app.get("/api/admin/site/home", async (req, res) => {
       ? {
         ...settings,
         slideshowUrls: Array.isArray(settings.slideshowUrls)
-          ? settings.slideshowUrls.map((u) => normalizeHomeImageUrl(u)).filter(Boolean)
+          ? settings.slideshowUrls.map((u) => normalizeHomeUploadUrl(u)).filter(Boolean)
           : [],
-        promoImageUrl: normalizeHomeImageUrl(settings.promoImageUrl) || null,
+        promoImageUrl: normalizeHomeUploadUrl(settings.promoImageUrl) || null,
       }
       : null;
 
@@ -511,7 +497,7 @@ app.put("/api/admin/site/home", async (req, res) => {
 
   const slideshowUrlsIn = Array.isArray(req.body?.slideshowUrls) ? req.body.slideshowUrls : [];
   const slideshowUrls = slideshowUrlsIn
-    .map((u) => normalizeHomeImageUrl(u))
+    .map((u) => normalizeHomeUploadUrl(u))
     .filter(Boolean)
     .slice(0, 20);
 
@@ -521,7 +507,7 @@ app.put("/api/admin/site/home", async (req, res) => {
   const promoEnabled = !!req.body?.promoEnabled;
   const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined
     ? null
-    : normalizeHomeImageUrl(req.body.promoImageUrl) || null;
+    : normalizeHomeUploadUrl(req.body.promoImageUrl) || null;
   const promoTitle = req.body?.promoTitle === null || req.body?.promoTitle === undefined ? null : String(req.body.promoTitle).trim() || null;
   const promoSubtitle = req.body?.promoSubtitle === null || req.body?.promoSubtitle === undefined ? null : String(req.body.promoSubtitle).trim() || null;
   const promoCtaText = req.body?.promoCtaText === null || req.body?.promoCtaText === undefined ? null : String(req.body.promoCtaText).trim() || null;
@@ -529,9 +515,9 @@ app.put("/api/admin/site/home", async (req, res) => {
 
   try {
     if (!hasPrismaModel("siteHomeSettings")) {
-      return res.status(503).json({
+      return res.status(500).json({
         ok: false,
-        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before saving homepage settings.",
+        error: "siteHomeSettings model unavailable. Run prisma generate + migrate deploy.",
       });
     }
 
@@ -556,7 +542,16 @@ app.put("/api/admin/site/home", async (req, res) => {
       },
     });
 
-    return res.json({ ok: true, home: saved });
+    return res.json({
+      ok: true,
+      home: {
+        ...saved,
+        slideshowUrls: Array.isArray(saved.slideshowUrls)
+          ? saved.slideshowUrls.map((u) => normalizeHomeUploadUrl(u)).filter(Boolean)
+          : [],
+        promoImageUrl: normalizeHomeUploadUrl(saved.promoImageUrl) || null,
+      },
+    });
   } catch (err) {
     console.error("PUT /api/admin/site/home failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to save home settings" });
@@ -572,10 +567,16 @@ app.get("/api/admin/config", async (req, res) => {
   if (!sess) return;
 
   try {
-    const cfg = hasPrismaModel("adminConfig") ? await prisma.adminConfig.findUnique({
+    if (!hasPrismaModel("adminConfig")) {
+      return res.status(500).json({
+        ok: false,
+        error: "adminConfig model unavailable. Run prisma generate + migrate deploy.",
+      });
+    }
+    const cfg = await prisma.adminConfig.findUnique({
       where: { id: "singleton" },
       select: { id: true, lowStockThreshold: true, updatedAt: true },
-    }) : null;
+    });
     return res.json({ ok: true, config: cfg || { id: "singleton", lowStockThreshold: 3, updatedAt: null } });
   } catch (err) {
     console.error("GET /api/admin/config failed:", err);
@@ -592,7 +593,10 @@ app.put("/api/admin/config", async (req, res) => {
 
   try {
     if (!hasPrismaModel("adminConfig")) {
-      return res.json({ ok: true, config: { id: "singleton", lowStockThreshold, updatedAt: new Date().toISOString() } });
+      return res.status(500).json({
+        ok: false,
+        error: "adminConfig model unavailable. Run prisma generate + migrate deploy.",
+      });
     }
     const cfg = await prisma.adminConfig.upsert({
       where: { id: "singleton" },
