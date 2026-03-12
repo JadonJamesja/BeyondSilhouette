@@ -34,7 +34,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
 
 // Body parsing
-app.use(express.json({ limit: "6mb" }));
+app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 // Cookies (auth uses signed httpOnly cookie)
@@ -74,6 +74,32 @@ function safeImageExtension(mime = "", fallbackName = "") {
   if (lower.endsWith(".webp")) return ".webp";
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return ".jpg";
   return ".jpg";
+}
+
+function normalizeHomeUploadUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("/uploads/home/")) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("/")) return raw;
+  return "/uploads/home/" + raw.replace(/^\/+/, "");
+}
+
+function isExistingHomeUploadUrl(value) {
+  const url = normalizeHomeUploadUrl(value);
+  if (!url) return false;
+  if (!url.startsWith("/uploads/home/")) return true;
+  const filename = path.basename(url);
+  if (!filename || filename === "." || filename === "..") return false;
+  const absPath = path.join(HOME_UPLOAD_DIR, filename);
+  return fs.existsSync(absPath);
+}
+
+function sanitizeHomeUploadUrls(values) {
+  const list = Array.isArray(values) ? values : [];
+  return list
+    .map((value) => normalizeHomeUploadUrl(value))
+    .filter((url) => url && isExistingHomeUploadUrl(url));
 }
 
 function parseQty(value) {
@@ -147,12 +173,12 @@ async function buildCartResponse(db, userId) {
     media: { coverUrl: row.product?.images?.[0]?.url || "" },
     product: row.product
       ? {
-        id: row.product.id,
-        name: row.product.name,
-        priceJMD: Number(row.product.priceJMD || 0),
-        isPublished: !!row.product.isPublished,
-        images: row.product.images || [],
-      }
+          id: row.product.id,
+          name: row.product.name,
+          priceJMD: Number(row.product.priceJMD || 0),
+          isPublished: !!row.product.isPublished,
+          images: row.product.images || [],
+        }
       : null,
   }));
 
@@ -276,19 +302,36 @@ app.get("/api/products", async (req, res) => {
 // Returns the singleton home settings + featured products (published only).
 app.get("/api/site/home", async (req, res) => {
   try {
-    const settings = hasPrismaModel("siteHomeSettings") ? await prisma.siteHomeSettings.findUnique({
+    if (!hasPrismaModel("siteHomeSettings")) {
+      return res.status(503).json({
+        ok: false,
+        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before using this endpoint.",
+      });
+    }
+
+    const settings = await prisma.siteHomeSettings.findUnique({
       where: { id: "singleton" },
       select: {
         id: true,
-        headline: true,
-        subheadline: true,
+        heroTitle: true,
+        heroSubtitle: true,
         slideshowUrls: true,
         featuredProductIds: true,
+        promoEnabled: true,
+        promoImageUrl: true,
+        promoTitle: true,
+        promoSubtitle: true,
+        promoCtaText: true,
+        promoCtaLink: true,
         updatedAt: true,
       },
-    }) : null;
+    });
 
     const featuredIds = Array.isArray(settings?.featuredProductIds) ? settings.featuredProductIds : [];
+    const slideshowUrls = sanitizeHomeUploadUrls(settings?.slideshowUrls);
+    const promoImageUrl = isExistingHomeUploadUrl(settings?.promoImageUrl)
+      ? normalizeHomeUploadUrl(settings?.promoImageUrl)
+      : "";
     const featuredProducts = featuredIds.length
       ? await prisma.product.findMany({
         where: { id: { in: featuredIds }, isPublished: true },
@@ -327,10 +370,17 @@ app.get("/api/site/home", async (req, res) => {
 
     return res.json({
       ok: true,
+      hasSettings: !!settings,
       home: {
-        headline: settings?.headline || null,
-        subheadline: settings?.subheadline || null,
-        slideshowUrls: Array.isArray(settings?.slideshowUrls) ? settings.slideshowUrls : [],
+        heroTitle: settings?.heroTitle || null,
+        heroSubtitle: settings?.heroSubtitle || null,
+        promoEnabled: !!settings?.promoEnabled,
+        promoImageUrl: promoImageUrl || null,
+        promoTitle: settings?.promoTitle || null,
+        promoSubtitle: settings?.promoSubtitle || null,
+        promoCtaText: settings?.promoCtaText || null,
+        promoCtaLink: settings?.promoCtaLink || null,
+        slideshowUrls,
         featuredProductIds: featuredIds,
         updatedAt: settings?.updatedAt || null,
       },
@@ -348,25 +398,55 @@ app.get("/api/admin/site/home", async (req, res) => {
   if (!sess) return;
 
   try {
-    const settings = hasPrismaModel("siteHomeSettings") ? await prisma.siteHomeSettings.findUnique({
+    if (!hasPrismaModel("siteHomeSettings")) {
+      return res.status(503).json({
+        ok: false,
+        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before using this endpoint.",
+      });
+    }
+
+    const settings = await prisma.siteHomeSettings.findUnique({
       where: { id: "singleton" },
       select: {
         id: true,
-        headline: true,
-        subheadline: true,
+        heroTitle: true,
+        heroSubtitle: true,
         slideshowUrls: true,
         featuredProductIds: true,
+        promoEnabled: true,
+        promoImageUrl: true,
+        promoTitle: true,
+        promoSubtitle: true,
+        promoCtaText: true,
+        promoCtaLink: true,
         createdAt: true,
         updatedAt: true,
       },
-    }) : null;
+    });
+
+    const normalized = settings
+      ? {
+        ...settings,
+        slideshowUrls: sanitizeHomeUploadUrls(settings.slideshowUrls),
+        promoImageUrl: isExistingHomeUploadUrl(settings.promoImageUrl)
+          ? normalizeHomeUploadUrl(settings.promoImageUrl)
+          : null,
+      }
+      : null;
 
     return res.json({
       ok: true,
-      home: settings || {
+      hasSettings: !!settings,
+      home: normalized || {
         id: "singleton",
-        headline: null,
-        subheadline: null,
+        heroTitle: null,
+        heroSubtitle: null,
+        promoEnabled: false,
+        promoImageUrl: null,
+        promoTitle: null,
+        promoSubtitle: null,
+        promoCtaText: null,
+        promoCtaLink: null,
         slideshowUrls: [],
         featuredProductIds: [],
         createdAt: null,
@@ -408,8 +488,8 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
     if (!buffer.length) {
       return res.status(400).json({ ok: false, error: "Empty image" });
     }
-    if (buffer.length > 2 * 1024 * 1024) {
-      return res.status(400).json({ ok: false, error: "Image must be 2MB or smaller" });
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ ok: false, error: "Image must be 5MB or smaller" });
     }
 
     const ext = safeImageExtension(mime, filename);
@@ -429,39 +509,65 @@ app.put("/api/admin/site/home", async (req, res) => {
   const sess = requireAdmin(req, res);
   if (!sess) return;
 
-  const headline = req.body?.headline === null || req.body?.headline === undefined ? null : String(req.body.headline).trim() || null;
-  const subheadline = req.body?.subheadline === null || req.body?.subheadline === undefined ? null : String(req.body.subheadline).trim() || null;
+  const heroTitle = req.body?.heroTitle === null || req.body?.heroTitle === undefined ? null : String(req.body.heroTitle).trim() || null;
+  const heroSubtitle = req.body?.heroSubtitle === null || req.body?.heroSubtitle === undefined ? null : String(req.body.heroSubtitle).trim() || null;
 
   const slideshowUrlsIn = Array.isArray(req.body?.slideshowUrls) ? req.body.slideshowUrls : [];
-  const slideshowUrls = slideshowUrlsIn.map((u) => String(u || "").trim()).filter(Boolean).slice(0, 20);
+  const slideshowUrls = sanitizeHomeUploadUrls(slideshowUrlsIn).slice(0, 20);
 
   const featuredIn = Array.isArray(req.body?.featuredProductIds) ? req.body.featuredProductIds : [];
   const featuredProductIds = featuredIn.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20);
+
+  const promoEnabled = !!req.body?.promoEnabled;
+  const promoImageUrl = req.body?.promoImageUrl === null || req.body?.promoImageUrl === undefined
+    ? null
+    : (isExistingHomeUploadUrl(req.body.promoImageUrl)
+      ? normalizeHomeUploadUrl(req.body.promoImageUrl)
+      : null);
+  const promoTitle = req.body?.promoTitle === null || req.body?.promoTitle === undefined ? null : String(req.body.promoTitle).trim() || null;
+  const promoSubtitle = req.body?.promoSubtitle === null || req.body?.promoSubtitle === undefined ? null : String(req.body.promoSubtitle).trim() || null;
+  const promoCtaText = req.body?.promoCtaText === null || req.body?.promoCtaText === undefined ? null : String(req.body.promoCtaText).trim() || null;
+  const promoCtaLink = req.body?.promoCtaLink === null || req.body?.promoCtaLink === undefined ? null : String(req.body.promoCtaLink).trim() || null;
 
   try {
     if (!hasPrismaModel("siteHomeSettings")) {
       return res.status(500).json({
         ok: false,
-        error: "siteHomeSettings model is unavailable at runtime. Run prisma generate + migrate deploy.",
+        error: "siteHomeSettings model unavailable. Run prisma generate + migrate deploy.",
       });
     }
 
     const saved = await prisma.siteHomeSettings.upsert({
       where: { id: "singleton" },
-      update: { headline, subheadline, slideshowUrls, featuredProductIds },
-      create: { id: "singleton", headline, subheadline, slideshowUrls, featuredProductIds },
+      update: { heroTitle, heroSubtitle, slideshowUrls, featuredProductIds, promoEnabled, promoImageUrl, promoTitle, promoSubtitle, promoCtaText, promoCtaLink },
+      create: { id: "singleton", heroTitle, heroSubtitle, slideshowUrls, featuredProductIds, promoEnabled, promoImageUrl, promoTitle, promoSubtitle, promoCtaText, promoCtaLink },
       select: {
         id: true,
-        headline: true,
-        subheadline: true,
+        heroTitle: true,
+        heroSubtitle: true,
         slideshowUrls: true,
         featuredProductIds: true,
+        promoEnabled: true,
+        promoImageUrl: true,
+        promoTitle: true,
+        promoSubtitle: true,
+        promoCtaText: true,
+        promoCtaLink: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
-    return res.json({ ok: true, home: saved });
+    return res.json({
+      ok: true,
+      home: {
+        ...saved,
+        slideshowUrls: sanitizeHomeUploadUrls(saved.slideshowUrls),
+        promoImageUrl: isExistingHomeUploadUrl(saved.promoImageUrl)
+          ? normalizeHomeUploadUrl(saved.promoImageUrl)
+          : null,
+      },
+    });
   } catch (err) {
     console.error("PUT /api/admin/site/home failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to save home settings" });
@@ -477,10 +583,16 @@ app.get("/api/admin/config", async (req, res) => {
   if (!sess) return;
 
   try {
-    const cfg = hasPrismaModel("adminConfig") ? await prisma.adminConfig.findUnique({
+    if (!hasPrismaModel("adminConfig")) {
+      return res.status(500).json({
+        ok: false,
+        error: "adminConfig model unavailable. Run prisma generate + migrate deploy.",
+      });
+    }
+    const cfg = await prisma.adminConfig.findUnique({
       where: { id: "singleton" },
       select: { id: true, lowStockThreshold: true, updatedAt: true },
-    }) : null;
+    });
     return res.json({ ok: true, config: cfg || { id: "singleton", lowStockThreshold: 3, updatedAt: null } });
   } catch (err) {
     console.error("GET /api/admin/config failed:", err);
@@ -497,7 +609,10 @@ app.put("/api/admin/config", async (req, res) => {
 
   try {
     if (!hasPrismaModel("adminConfig")) {
-      return res.json({ ok: true, config: { id: "singleton", lowStockThreshold, updatedAt: new Date().toISOString() } });
+      return res.status(500).json({
+        ok: false,
+        error: "adminConfig model unavailable. Run prisma generate + migrate deploy.",
+      });
     }
     const cfg = await prisma.adminConfig.upsert({
       where: { id: "singleton" },
@@ -1010,9 +1125,9 @@ app.get("/api/admin/stats", async (req, res) => {
   try {
     const cfg = hasPrismaModel("adminConfig")
       ? await prisma.adminConfig.findUnique({
-        where: { id: "singleton" },
-        select: { lowStockThreshold: true },
-      })
+          where: { id: "singleton" },
+          select: { lowStockThreshold: true },
+        })
       : null;
     const threshold = Number(cfg?.lowStockThreshold ?? 3);
 
@@ -1841,6 +1956,9 @@ app.use("/api", (req, res) => {
 });
 
 const clientDir = path.join(projectRoot, "client");
+const uploadsDir = path.join(CLIENT_DIR, "uploads");
+
+app.use("/uploads", express.static(uploadsDir));
 
 // Static files (this comes AFTER admin gate middleware on purpose)
 
@@ -1852,8 +1970,8 @@ const clientDir = path.join(projectRoot, "client");
 app.use((req, res, next) => {
   try {
     if (!req.path || typeof req.path !== 'string') return next();
-    // Never touch APIs
-    if (req.path.startsWith('/api/')) return next();
+    // Never touch APIs or admin pages (admin login uses explicit .html paths).
+    if (req.path.startsWith('/api/') || req.path.startsWith('/admin/')) return next();
     // Ignore static assets (has a file extension)
     const hasExt = /\.[a-zA-Z0-9]+$/.test(req.path);
     if (hasExt) {

@@ -44,14 +44,21 @@
                     <label for="terms">I agree to the <a href="#">Terms & Conditions</a></label>
                 </div>
 
-                <button type="submit" class="btn-register">Register</button>
+                <button type="submit" class="btn-register">Create Account</button>
+
+                <!-- Google Sign-In -->
+                <div class="google-login-wrap" aria-label="Google sign-in option">
+                    <div class="g_id_signin" id="siteGoogleSignInRegister"></div>
+                </div>
             </form>
 
             <p class="login-link">
-                Already have an account? <a href="login.html">Sign in</a>
+                Already have an account?
             </p>
+            <a class="btn-sign-in" href="login.html">Sign In</a>
         </div>
     </div>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="js/main.js"></script>
 </body>
 

@@ -162,10 +162,16 @@ model InventoryReservation {
 }
 model SiteHomeSettings {
   id                 String   @id @default("singleton")
-  headline           String?
-  subheadline        String?
+  heroTitle          String?
+  heroSubtitle       String?
   slideshowUrls      String[] @default([])
   featuredProductIds String[] @default([])
+  promoEnabled       Boolean  @default(false)
+  promoImageUrl      String?
+  promoTitle         String?
+  promoSubtitle      String?
+  promoCtaText       String?
+  promoCtaLink       String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

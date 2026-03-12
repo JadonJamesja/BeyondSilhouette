@@ -990,68 +990,6 @@
       const promoSubtitle = document.getElementById('promoBannerSubtitle');
       const promoCta = document.getElementById('promoBannerCta');
 
-      const defaults = {
-        heroTitle: titleEl?.textContent || '',
-        heroSubtitle: subtitleEl?.textContent || '',
-        promoTitle: promoTitle?.textContent || '',
-        promoSubtitle: promoSubtitle?.textContent || '',
-        promoCtaText: promoCta?.textContent || 'Shop now',
-        promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
-      };
-
-      const setText = (node, value, fallback, hasSettings) => {
-        if (!node) return;
-        if (hasSettings) {
-          node.textContent = value == null ? '' : String(value);
-          return;
-        }
-        node.textContent = fallback;
-      };
-
-      const setSlides = (urls, hasSettings) => {
-        if (!slides.length) return;
-        if (urls.length) {
-          slides.forEach((slide, index) => {
-            const url = urls[index % urls.length];
-            slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
-          });
-          return;
-        }
-        if (hasSettings) {
-          slides.forEach((slide) => {
-            slide.style.backgroundImage = '';
-          });
-        }
-      };
-
-      const setPromo = (home, hasSettings) => {
-        if (!promoSection) return;
-
-        const enabled = !!home?.promoEnabled;
-        const imageUrl = String(home?.promoImageUrl || '').trim();
-        const visible = enabled && !!imageUrl;
-
-        promoSection.hidden = !visible;
-
-        if (promoMedia) {
-          promoMedia.style.backgroundImage = visible
-            ? 'url("' + imageUrl.replace(/"/g, '\"') + '")'
-            : '';
-        }
-
-        setText(promoTitle, home?.promoTitle, defaults.promoTitle, hasSettings);
-        setText(promoSubtitle, home?.promoSubtitle, defaults.promoSubtitle, hasSettings);
-
-        if (promoCta) {
-          promoCta.textContent = hasSettings
-            ? (home?.promoCtaText == null || home?.promoCtaText === '' ? defaults.promoCtaText : String(home.promoCtaText))
-            : defaults.promoCtaText;
-          promoCta.setAttribute('href', hasSettings
-            ? (home?.promoCtaLink == null || home?.promoCtaLink === '' ? defaults.promoCtaLink : String(home.promoCtaLink))
-            : defaults.promoCtaLink);
-        }
-      };
-
       try {
         const { ok, data } = await apiJson('/api/site/home');
         if (!ok || !data?.ok) {
@@ -1066,10 +1004,39 @@
         const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
         const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
-        setText(titleEl, home.heroTitle, defaults.heroTitle, hasSettings);
-        setText(subtitleEl, home.heroSubtitle, defaults.heroSubtitle, hasSettings);
-        setSlides(slideshowUrls, hasSettings);
-        setPromo(home, hasSettings);
+        if (titleEl && home.heroTitle) titleEl.textContent = home.heroTitle;
+        if (subtitleEl && home.heroSubtitle) subtitleEl.textContent = home.heroSubtitle;
+
+        if (slides.length) {
+          if (slideshowUrls.length) {
+            slides.forEach((slide, index) => {
+              const url = slideshowUrls[index % slideshowUrls.length];
+              slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
+            });
+          } else if (hasSettings) {
+            slides.forEach((slide) => {
+              slide.style.backgroundImage = '';
+            });
+          }
+        }
+
+
+        if (promoSection) {
+          const enabled = !!home.promoEnabled;
+          const hasImage = !!home.promoImageUrl;
+          promoSection.hidden = !(enabled && hasImage);
+          if (enabled && hasImage) {
+            if (promoMedia) {
+              promoMedia.style.backgroundImage = 'url("' + String(home.promoImageUrl).replace(/"/g, '\"') + '")';
+            }
+            if (promoTitle && home.promoTitle) promoTitle.textContent = home.promoTitle;
+            if (promoSubtitle && home.promoSubtitle) promoSubtitle.textContent = home.promoSubtitle;
+            if (promoCta) {
+              promoCta.textContent = home.promoCtaText || 'Shop now';
+              promoCta.setAttribute('href', home.promoCtaLink || 'shop-page.html');
+            }
+          }
+        }
 
         if (featuredGrid && featured.length) {
           featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
