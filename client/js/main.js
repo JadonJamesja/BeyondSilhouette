@@ -59,6 +59,16 @@
     return p.split('/').pop() || 'home';
   };
 
+
+  function enforceStorefrontLightTheme() {
+    document.documentElement.setAttribute('data-theme', 'light');
+
+    // Keep storefront permanently light and prevent legacy storefront keys from re-enabling dark mode.
+    try {
+      localStorage.removeItem('bs_theme');
+    } catch (_) {}
+  }
+
   function escapeHtml(s) {
     return String(s || '')
       .replaceAll('&', '&amp;')
@@ -826,20 +836,33 @@
 
     async function bindGoogleSignInIfPresent() {
       const p = page();
-      if (p !== 'login.html' && p !== 'register.html' && p !== 'login' && p !== 'register') return;
+      if (p !== 'login' && p !== 'register') return;
 
-      const btnHost = document.querySelector('.g_id_signin');
-      if (!btnHost) return;
-
-      // Google Identity Services must be loaded (login.html includes it)
-      const gis = window.google?.accounts?.id;
-      if (!gis) return;
+      const btnHosts = Array.from(document.querySelectorAll('.g_id_signin'));
+      if (!btnHosts.length) return;
 
       // Get client_id from server (no hardcoding in HTML)
       const { ok, data } = await apiJson('/api/public/config');
       const clientId = String(data?.googleClientId || '').trim();
       if (!ok || !clientId) {
         console.warn('Google client id not configured on server.');
+        return;
+      }
+
+      const waitForGIS = () => new Promise((resolve) => {
+        const started = Date.now();
+        const tick = () => {
+          const gis = window.google?.accounts?.id;
+          if (gis) return resolve(gis);
+          if (Date.now() - started > 8000) return resolve(null);
+          setTimeout(tick, 120);
+        };
+        tick();
+      });
+
+      const gis = await waitForGIS();
+      if (!gis) {
+        console.warn('Google Identity Services script did not load in time.');
         return;
       }
 
@@ -855,9 +878,11 @@
           auto_select: false,
         });
 
-        // Render button
-        gis.renderButton(btnHost, { type: 'standard', size: 'large' });
-        gis.prompt(); // optional
+        btnHosts.forEach((btnHost) => {
+          btnHost.innerHTML = '';
+          gis.renderButton(btnHost, { type: 'standard', size: 'large', width: 260, theme: 'outline', text: 'continue_with' });
+        });
+        gis.prompt();
       } catch (e) {
         console.error('Google init failed:', e);
       }
@@ -959,24 +984,92 @@
       const subtitleEl = document.getElementById('homeHeroSubtitle');
       const featuredGrid = document.getElementById('homeFeaturedGrid');
       const slides = Array.from(document.querySelectorAll('#hero .slide'));
+      const promoSection = document.getElementById('promoBanner');
+      const promoMedia = document.getElementById('promoBannerMedia');
+      const promoTitle = document.getElementById('promoBannerTitle');
+      const promoSubtitle = document.getElementById('promoBannerSubtitle');
+      const promoCta = document.getElementById('promoBannerCta');
+
+      const defaults = {
+        heroTitle: titleEl?.textContent || '',
+        heroSubtitle: subtitleEl?.textContent || '',
+        promoTitle: promoTitle?.textContent || '',
+        promoSubtitle: promoSubtitle?.textContent || '',
+        promoCtaText: promoCta?.textContent || 'Shop now',
+        promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
+      };
+
+      const setText = (node, value, fallback, hasSettings) => {
+        if (!node) return;
+        if (hasSettings) {
+          node.textContent = value == null ? '' : String(value);
+          return;
+        }
+        node.textContent = fallback;
+      };
+
+      const setSlides = (urls, hasSettings) => {
+        if (!slides.length) return;
+        if (urls.length) {
+          slides.forEach((slide, index) => {
+            const url = urls[index % urls.length];
+            slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
+          });
+          return;
+        }
+        if (hasSettings) {
+          slides.forEach((slide) => {
+            slide.style.backgroundImage = '';
+          });
+        }
+      };
+
+      const setPromo = (home, hasSettings) => {
+        if (!promoSection) return;
+
+        const enabled = !!home?.promoEnabled;
+        const imageUrl = String(home?.promoImageUrl || '').trim();
+        const visible = enabled && !!imageUrl;
+
+        promoSection.hidden = !visible;
+
+        if (promoMedia) {
+          promoMedia.style.backgroundImage = visible
+            ? 'url("' + imageUrl.replace(/"/g, '\"') + '")'
+            : '';
+        }
+
+        setText(promoTitle, home?.promoTitle, defaults.promoTitle, hasSettings);
+        setText(promoSubtitle, home?.promoSubtitle, defaults.promoSubtitle, hasSettings);
+
+        if (promoCta) {
+          promoCta.textContent = hasSettings
+            ? (home?.promoCtaText == null || home?.promoCtaText === '' ? defaults.promoCtaText : String(home.promoCtaText))
+            : defaults.promoCtaText;
+          promoCta.setAttribute('href', hasSettings
+            ? (home?.promoCtaLink == null || home?.promoCtaLink === '' ? defaults.promoCtaLink : String(home.promoCtaLink))
+            : defaults.promoCtaLink);
+        }
+      };
 
       try {
         const { ok, data } = await apiJson('/api/site/home');
-        if (!ok || !data?.ok) return;
+        if (!ok || !data?.ok) {
+          if (featuredGrid) {
+            featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
+          }
+          return;
+        }
 
         const home = data.home || {};
         const featured = Array.isArray(data.featured) ? data.featured : [];
         const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
+        const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
-        if (titleEl && home.headline) titleEl.textContent = home.headline;
-        if (subtitleEl && home.subheadline) subtitleEl.textContent = home.subheadline;
-
-        if (slides.length && slideshowUrls.length) {
-          slides.forEach((slide, index) => {
-            const url = slideshowUrls[index % slideshowUrls.length];
-            slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
-          });
-        }
+        setText(titleEl, home.heroTitle, defaults.heroTitle, hasSettings);
+        setText(subtitleEl, home.heroSubtitle, defaults.heroSubtitle, hasSettings);
+        setSlides(slideshowUrls, hasSettings);
+        setPromo(home, hasSettings);
 
         if (featuredGrid && featured.length) {
           featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
@@ -993,6 +1086,8 @@
               </div>
             `;
           }).join('');
+        } else if (featuredGrid && hasSettings) {
+          featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
         }
       } catch (err) {
         console.warn('Home settings fetch failed.', err);
@@ -1421,7 +1516,7 @@
 
         const confirmPassword =
           (form.querySelector(
-            'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm"], input#confirmPassword, input#confirm_password'
+            'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm-password"], input[name="confirm"], input#confirmPassword, input#confirm_password, input#confirm-password'
           )?.value || '').trim();
 
         try {
@@ -2031,6 +2126,7 @@
     // INIT
     // -----------------------------
     async function init() {
+      enforceStorefrontLightTheme();
       UI.ensureHeaderFooter();
 
       // IMPORTANT: hydrate from server cookie session FIRST
@@ -2043,7 +2139,7 @@
 
       gateCheckoutAndOrders();
 
-      bindGoogleSignInIfPresent();
+      await bindGoogleSignInIfPresent();
 
       await renderHomeIfOnHomePage();
       await renderShopFromStore();

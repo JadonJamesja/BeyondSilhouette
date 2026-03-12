@@ -147,12 +147,12 @@ async function buildCartResponse(db, userId) {
     media: { coverUrl: row.product?.images?.[0]?.url || "" },
     product: row.product
       ? {
-          id: row.product.id,
-          name: row.product.name,
-          priceJMD: Number(row.product.priceJMD || 0),
-          isPublished: !!row.product.isPublished,
-          images: row.product.images || [],
-        }
+        id: row.product.id,
+        name: row.product.name,
+        priceJMD: Number(row.product.priceJMD || 0),
+        isPublished: !!row.product.isPublished,
+        images: row.product.images || [],
+      }
       : null,
   }));
 
@@ -440,7 +440,10 @@ app.put("/api/admin/site/home", async (req, res) => {
 
   try {
     if (!hasPrismaModel("siteHomeSettings")) {
-      return res.json({ ok: true, home: { id: "singleton", headline, subheadline, slideshowUrls, featuredProductIds, updatedAt: new Date().toISOString() } });
+      return res.status(500).json({
+        ok: false,
+        error: "siteHomeSettings model is unavailable at runtime. Run prisma generate + migrate deploy.",
+      });
     }
 
     const saved = await prisma.siteHomeSettings.upsert({
@@ -1007,9 +1010,9 @@ app.get("/api/admin/stats", async (req, res) => {
   try {
     const cfg = hasPrismaModel("adminConfig")
       ? await prisma.adminConfig.findUnique({
-          where: { id: "singleton" },
-          select: { lowStockThreshold: true },
-        })
+        where: { id: "singleton" },
+        select: { lowStockThreshold: true },
+      })
       : null;
     const threshold = Number(cfg?.lowStockThreshold ?? 3);
 

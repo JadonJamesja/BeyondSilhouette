@@ -42,17 +42,28 @@
   // API helper
   // -----------------------------
   async function apiJSON(path, opts = {}) {
-    const res = await fetch(path, {
-      credentials: 'include',
-      ...opts,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(opts.headers || {}),
-      },
-    });
+    try {
+      const res = await fetch(path, {
+        credentials: 'include',
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(opts.headers || {}),
+        },
+      });
 
-    const data = await res.json().catch(() => null);
-    return { res, data };
+      const contentType = String(res.headers.get('content-type') || '');
+      const data = contentType.includes('application/json')
+        ? await res.json().catch(() => null)
+        : { ok: false, error: 'Service temporarily unavailable. Please try again.' };
+
+      return { res, data };
+    } catch (err) {
+      return {
+        res: { ok: false, status: 0 },
+        data: { ok: false, error: 'Unable to reach the server. Please check your connection and try again.' },
+      };
+    }
   }
 
   // -----------------------------
@@ -214,7 +225,7 @@
   async function initAdminLogin() {
     if (!isAdminLoginPage()) return;
 
-    const form = qs('#loginForm');
+    const form = qs('#loginForm') || qs('[data-form="login"]');
     const errorBox = qs('[data-ui="error"]');
     const setError = (msg) => {
       if (!errorBox) return;
@@ -227,13 +238,24 @@
       }
     };
 
+
+    const pwToggle = qs('[data-action="toggle-password"]');
+    const pwScope = form || document;
+    const pwInput = qs('#password', pwScope) || qs('[name="password"]', pwScope);
+    pwToggle?.addEventListener('click', () => {
+      if (!pwInput) return;
+      const nextType = pwInput.type === 'password' ? 'text' : 'password';
+      pwInput.type = nextType;
+      pwToggle.textContent = nextType === 'password' ? 'Show' : 'Hide';
+    });
+
     if (form) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         setError('');
 
-        const email = String(qs('#email')?.value || '').trim().toLowerCase();
-        const password = String(qs('#password')?.value || '');
+        const email = String((qs('#email', form) || qs('[name="email"]', form))?.value || '').trim().toLowerCase();
+        const password = String((qs('#password', form) || qs('[name="password"]', form))?.value || '');
 
         const { res, data } = await apiJSON('/api/auth/login', {
           method: 'POST',
@@ -936,24 +958,36 @@
     if (!pathIsAdminPage('settings')) return;
 
     const errBox = qs('[data-ui="settingsError"]');
-    const headline = qs('#homeHeadline');
-    const subheadline = qs('#homeSubheadline');
+    const homeFlash = qs('[data-ui="settingsFlash"]');
+    const configFlash = qs('[data-ui="configFlash"]');
+    const heroTitleInput = qs('#homeHeroTitle');
+    const heroSubtitleInput = qs('#homeHeroSubtitle');
     const slideshowInput = qs('#homeSlideshow');
     const featuredInput = qs('#homeFeatured');
     const searchInput = qs('#settingsProductSearch');
     const uploadInput = qs('#homeUploadImages');
+    const promoUploadInput = qs('#promoUploadImage');
     const slideshowPool = qs('#slideshowPool');
     const slideshowSelected = qs('#slideshowSelected');
     const featuredPool = qs('#featuredPool');
     const featuredSelected = qs('#featuredSelected');
+    const promoSelected = qs('#promoSelected');
     const slideshowCount = qs('#slideshowCount');
     const featuredCount = qs('#featuredCountInline');
     const lowStock = qs('#lowStockThreshold');
     const saveNote = qs('#settingsSaveNote');
+    const promoEnabledInput = qs('#promoEnabled');
+    const promoTitleInput = qs('#promoTitle');
+    const promoSubtitleInput = qs('#promoSubtitle');
+    const promoCtaTextInput = qs('#promoCtaText');
+    const promoCtaLinkInput = qs('#promoCtaLink');
 
     let products = [];
     let slideshowUrls = [];
     let featuredIds = [];
+    let promoImageUrl = '';
+    let homeFlashTimer = null;
+    let configFlashTimer = null;
 
     const setError = (msg) => {
       if (!errBox) return;
@@ -963,6 +997,27 @@
 
     const setStatus = (msg) => {
       if (saveNote) saveNote.textContent = msg || '';
+    };
+
+    const showFlash = (node, timerName, kind, message) => {
+      if (!node) return;
+      node.hidden = false;
+      node.classList.remove('is-success', 'is-error');
+      node.classList.add(kind === 'error' ? 'is-error' : 'is-success');
+      node.textContent = message;
+      if (timerName === 'home') {
+        if (homeFlashTimer) clearTimeout(homeFlashTimer);
+        homeFlashTimer = setTimeout(() => {
+          node.hidden = true;
+          node.textContent = '';
+        }, 3500);
+      } else {
+        if (configFlashTimer) clearTimeout(configFlashTimer);
+        configFlashTimer = setTimeout(() => {
+          node.hidden = true;
+          node.textContent = '';
+        }, 3500);
+      }
     };
 
     const normalizeImages = (product) => {
@@ -992,6 +1047,21 @@
       ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" loading="lazy" />`
       : '<div class="picker-thumb picker-thumb-empty">No image</div>';
 
+    const normalizeHomeImageUrl = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      if (/^https?:\/\//i.test(raw) || raw.startsWith('data:image/')) return raw;
+
+      const cleaned = raw.replace(/\\/g, '/').replace(/\s+\./g, '.').replace(/\.\s+/g, '.');
+      if (cleaned.startsWith('/uploads/home/')) return cleaned;
+      if (cleaned.startsWith('uploads/home/')) return `/${cleaned}`;
+      if (cleaned.startsWith('/uploads/') || cleaned.startsWith('uploads/')) {
+        return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      }
+      if (cleaned.includes('/')) return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      return `/uploads/home/${cleaned}`;
+    };
+
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
       if (slideshowSelected) {
@@ -1018,7 +1088,7 @@
         }).join('') : '<div class="muted">No featured products selected yet.</div>';
       }
       if (featuredPool) {
-        const pool = products.filter(matchesSearch);
+        const pool = products.filter((p) => !!p?.isPublished).filter(matchesSearch);
         featuredPool.innerHTML = pool.length ? pool.map((p) => {
           const active = featuredIds.includes(p.id);
           const cover = p?.images?.[0]?.url || '';
@@ -1027,10 +1097,20 @@
       }
     }
 
+    function renderPromo() {
+      if (!promoSelected) return;
+      if (!promoImageUrl) {
+        promoSelected.innerHTML = '<div class="muted">No banner image selected yet.</div>';
+        return;
+      }
+      promoSelected.innerHTML = `<button type="button" class="selection-card is-selected" data-remove-promo-image="1">${thumb(promoImageUrl, 'Promo banner image')}<div class="selection-card-body"><strong>Banner image</strong><span class="muted">Remove</span></div></button>`;
+    }
+
     function renderAll() {
       syncInputs();
       renderSlideshow();
       renderFeatured();
+      renderPromo();
     }
 
     async function loadProducts() {
@@ -1039,25 +1119,45 @@
       products = Array.isArray(data.products) ? data.products : [];
     }
 
+    function applyHomeState(home) {
+      const next = home || {};
+      if (heroTitleInput) heroTitleInput.value = next.heroTitle || '';
+      if (heroSubtitleInput) heroSubtitleInput.value = next.heroSubtitle || '';
+      if (promoTitleInput) promoTitleInput.value = next.promoTitle || '';
+      if (promoSubtitleInput) promoSubtitleInput.value = next.promoSubtitle || '';
+      if (promoCtaTextInput) promoCtaTextInput.value = next.promoCtaText || '';
+      if (promoCtaLinkInput) promoCtaLinkInput.value = next.promoCtaLink || '';
+      if (promoEnabledInput) promoEnabledInput.checked = !!next.promoEnabled;
+      promoImageUrl = normalizeHomeImageUrl(next.promoImageUrl);
+      slideshowUrls = Array.isArray(next.slideshowUrls)
+        ? next.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
+        : [];
+      featuredIds = Array.isArray(next.featuredProductIds) ? next.featuredProductIds.filter(Boolean).slice(0, 3) : [];
+    }
+
     async function loadHome() {
       const { res, data } = await apiJSON('/api/admin/site/home');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
-      const home = data.home || {};
-      if (headline) headline.value = home.headline || '';
-      if (subheadline) subheadline.value = home.subheadline || '';
-      slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 6) : [];
-      featuredIds = Array.isArray(home.featuredProductIds) ? home.featuredProductIds.filter(Boolean).slice(0, 3) : [];
+      applyHomeState(data.home || {});
     }
 
     async function saveHome() {
       const payload = {
-        headline: headline?.value?.trim() || '',
-        subheadline: subheadline?.value?.trim() || '',
+        heroTitle: heroTitleInput?.value?.trim() || '',
+        heroSubtitle: heroSubtitleInput?.value?.trim() || '',
         slideshowUrls: slideshowUrls.slice(0, 6),
-        featuredProductIds: featuredIds.slice(0, 3),
+        featuredProductIds: featuredIds.filter((id) => products.some((p) => p.id === id && p.isPublished)).slice(0, 3),
+        promoEnabled: !!promoEnabledInput?.checked,
+        promoImageUrl: promoImageUrl || '',
+        promoTitle: promoTitleInput?.value?.trim() || '',
+        promoSubtitle: promoSubtitleInput?.value?.trim() || '',
+        promoCtaText: promoCtaTextInput?.value?.trim() || '',
+        promoCtaLink: promoCtaLinkInput?.value?.trim() || '',
       };
       const { res, data } = await apiJSON('/api/admin/site/home', { method: 'PUT', body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
+      applyHomeState(data.home || payload);
+      renderAll();
     }
 
     async function loadConfig() {
@@ -1072,11 +1172,11 @@
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save config');
     }
 
-    async function uploadSlideImage(file) {
+    async function uploadHomeImage(file) {
       if (!file) throw new Error('No file selected.');
       const allowed = new Set(['image/png', 'image/jpeg', 'image/webp']);
       if (!allowed.has(file.type)) throw new Error('Only PNG, JPG, and WEBP files are allowed.');
-      if (file.size > 2 * 1024 * 1024) throw new Error('Image must be 2MB or smaller.');
+      if (file.size > 5 * 1024 * 1024) throw new Error('Image must be 5MB or smaller.');
 
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1091,7 +1191,7 @@
       });
 
       if (!res.ok || !data?.ok || !data?.url) throw new Error(data?.error || 'Failed to upload image.');
-      return String(data.url);
+      return normalizeHomeImageUrl(data.url);
     }
 
     searchInput?.addEventListener('input', renderAll);
@@ -1100,10 +1200,10 @@
       const file = e.target?.files?.[0];
       if (!file) return;
       setError('');
-      setStatus('Uploading image…');
+      setStatus('Uploading slideshow image…');
       try {
         if (slideshowUrls.length >= 6) throw new Error('Limit: 6 slideshow images.');
-        const url = await uploadSlideImage(file);
+        const url = await uploadHomeImage(file);
         if (!slideshowUrls.includes(url)) slideshowUrls = [...slideshowUrls, url];
         renderAll();
         setStatus('Image uploaded. Save homepage settings to publish it.');
@@ -1113,6 +1213,30 @@
       } finally {
         if (uploadInput) uploadInput.value = '';
       }
+    });
+
+    promoUploadInput?.addEventListener('change', async (e) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+      setError('');
+      setStatus('Uploading promo banner image…');
+      try {
+        promoImageUrl = await uploadHomeImage(file);
+        renderAll();
+        setStatus('Banner uploaded. Save homepage settings to publish it.');
+      } catch (e) {
+        setError(String(e?.message || 'Failed to upload banner image.'));
+        setStatus('');
+      } finally {
+        if (promoUploadInput) promoUploadInput.value = '';
+      }
+    });
+
+    promoSelected?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-promo-image]');
+      if (!btn) return;
+      promoImageUrl = '';
+      renderAll();
     });
 
     slideshowPool?.addEventListener('click', (e) => {
@@ -1187,8 +1311,10 @@
       setStatus('Saving homepage settings…');
       try {
         await saveHome();
+        showFlash(homeFlash, 'home', 'success', 'Settings saved successfully.');
         setStatus('Homepage settings saved. Refresh the homepage to confirm the changes.');
       } catch (e) {
+        showFlash(homeFlash, 'home', 'error', 'Failed to save settings.');
         setError(String(e?.message || 'Failed to save home settings'));
         setStatus('');
       }
@@ -1199,8 +1325,10 @@
       setStatus('Saving admin config…');
       try {
         await saveConfig();
+        showFlash(configFlash, 'config', 'success', 'Settings saved successfully.');
         setStatus('Admin config saved.');
       } catch (e) {
+        showFlash(configFlash, 'config', 'error', 'Failed to save settings.');
         setError(String(e?.message || 'Failed to save config'));
         setStatus('');
       }
@@ -1224,6 +1352,7 @@
       setStatus('');
     }
   }
+
 
   // -----------------------------
   // Boot
