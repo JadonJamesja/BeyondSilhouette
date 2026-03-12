@@ -23,7 +23,7 @@ html[data-theme="dark"] {
   --panel: 225 22% 12%;
   --panel2: 225 22% 14%;
   --text: 220 18% 92%;
-  --muted: 220 14% 78%;
+  --muted: 220 18% 92%;
   --border: 225 18% 20%;
   --ring: 212 75% 54%;
 
@@ -116,6 +116,35 @@ code {
 
 .muted {
   color: hsl(var(--muted));
+}
+
+html[data-theme="dark"] .admin,
+html[data-theme="dark"] .admin h1,
+html[data-theme="dark"] .admin h2,
+html[data-theme="dark"] .admin h3,
+html[data-theme="dark"] .admin h4,
+html[data-theme="dark"] .admin h5,
+html[data-theme="dark"] .admin h6,
+html[data-theme="dark"] .admin p,
+html[data-theme="dark"] .admin label,
+html[data-theme="dark"] .admin span,
+html[data-theme="dark"] .admin a,
+html[data-theme="dark"] .admin th,
+html[data-theme="dark"] .admin td,
+html[data-theme="dark"] .admin strong,
+html[data-theme="dark"] .admin small,
+html[data-theme="dark"] .admin .muted,
+html[data-theme="dark"] .admin .hint,
+html[data-theme="dark"] .admin .label,
+html[data-theme="dark"] .admin .section-title,
+html[data-theme="dark"] .admin .page-indicator,
+html[data-theme="dark"] .admin .picker-thumb-empty {
+  color: hsl(var(--text));
+}
+
+html[data-theme="dark"] .admin input::placeholder,
+html[data-theme="dark"] .admin textarea::placeholder {
+  color: hsla(var(--text), .88);
 }
 
 .right {
