@@ -983,7 +983,8 @@
       const titleEl = document.getElementById('homeHeroTitle');
       const subtitleEl = document.getElementById('homeHeroSubtitle');
       const featuredGrid = document.getElementById('homeFeaturedGrid');
-      const slides = Array.from(document.querySelectorAll('#hero .slide'));
+      const hero = document.getElementById('hero');
+      let slides = Array.from(document.querySelectorAll('#hero .slide'));
       const promoSection = document.getElementById('promoBanner');
       const promoMedia = document.getElementById('promoBannerMedia');
       const promoTitle = document.getElementById('promoBannerTitle');
@@ -1008,20 +1009,54 @@
         node.textContent = fallback;
       };
 
+      const ensureSlideCount = (count) => {
+        if (!hero) return;
+        slides = Array.from(hero.querySelectorAll('.slide'));
+        const desired = Math.max(1, Math.min(6, Number(count) || 1));
+
+        while (slides.length < desired) {
+          const next = document.createElement('div');
+          next.className = 'slide';
+          hero.insertBefore(next, hero.firstChild);
+          slides = Array.from(hero.querySelectorAll('.slide'));
+        }
+
+        if (slides.length > desired) {
+          slides.slice(desired).forEach((node) => node.remove());
+          slides = Array.from(hero.querySelectorAll('.slide'));
+        }
+      };
+
       const setSlides = (urls, hasSettings) => {
+        if (!hero) return;
+
+        const desiredCount = hasSettings
+          ? (urls.length ? urls.length : 1)
+          : 4;
+        ensureSlideCount(desiredCount);
+
         if (!slides.length) return;
-        if (urls.length) {
-          slides.forEach((slide, index) => {
-            const url = urls[index % urls.length];
-            slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
+
+        if (!hasSettings) {
+          slides.forEach((slide) => {
+            slide.style.backgroundImage = '';
+            slide.style.animationDelay = '';
+            slide.style.animationDuration = '';
           });
           return;
         }
-        if (hasSettings) {
-          slides.forEach((slide) => {
-            slide.style.backgroundImage = '';
-          });
-        }
+
+        const total = Math.max(1, urls.length);
+        const durationSeconds = total * 4;
+
+        slides.forEach((slide, index) => {
+          const rawUrl = urls[index] || '';
+          slide.style.backgroundImage = rawUrl
+            ? 'url("' + String(rawUrl).replace(/"/g, '\\"') + '")'
+            : 'none';
+          slide.style.animationDelay = `${index * 4}s`;
+          slide.style.animationDuration = `${durationSeconds}s`;
+        });
       };
 
       const setPromo = (home, hasSettings) => {
@@ -1029,12 +1064,12 @@
 
         const enabled = !!home?.promoEnabled;
         const imageUrl = String(home?.promoImageUrl || '').trim();
-        const visible = enabled && !!imageUrl;
+        const visible = enabled;
 
         promoSection.hidden = !visible;
 
         if (promoMedia) {
-          promoMedia.style.backgroundImage = visible
+          promoMedia.style.backgroundImage = imageUrl
             ? 'url("' + imageUrl.replace(/"/g, '\"') + '")'
             : '';
         }
@@ -1063,7 +1098,7 @@
 
         const home = data.home || {};
         const featured = Array.isArray(data.featured) ? data.featured : [];
-        const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
+        const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 6) : [];
         const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
         setText(titleEl, home.heroTitle, defaults.heroTitle, hasSettings);
