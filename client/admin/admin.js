@@ -1056,9 +1056,6 @@
       if (cleaned.startsWith('/uploads/home/')) return cleaned;
       if (cleaned.startsWith('uploads/home/')) return `/${cleaned}`;
       if (cleaned.startsWith('/uploads/') || cleaned.startsWith('uploads/')) {
-        const parts = cleaned.split('/').filter(Boolean);
-        const maybeFile = parts[parts.length - 1] || '';
-        if (parts[1] !== 'home' && maybeFile) return `/uploads/home/${maybeFile}`;
         return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
       }
       if (cleaned.includes('/')) return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
@@ -1122,22 +1119,26 @@
       products = Array.isArray(data.products) ? data.products : [];
     }
 
+    function applyHomeState(home) {
+      const next = home || {};
+      if (heroTitleInput) heroTitleInput.value = next.heroTitle || '';
+      if (heroSubtitleInput) heroSubtitleInput.value = next.heroSubtitle || '';
+      if (promoTitleInput) promoTitleInput.value = next.promoTitle || '';
+      if (promoSubtitleInput) promoSubtitleInput.value = next.promoSubtitle || '';
+      if (promoCtaTextInput) promoCtaTextInput.value = next.promoCtaText || '';
+      if (promoCtaLinkInput) promoCtaLinkInput.value = next.promoCtaLink || '';
+      if (promoEnabledInput) promoEnabledInput.checked = !!next.promoEnabled;
+      promoImageUrl = normalizeHomeImageUrl(next.promoImageUrl);
+      slideshowUrls = Array.isArray(next.slideshowUrls)
+        ? next.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
+        : [];
+      featuredIds = Array.isArray(next.featuredProductIds) ? next.featuredProductIds.filter(Boolean).slice(0, 3) : [];
+    }
+
     async function loadHome() {
       const { res, data } = await apiJSON('/api/admin/site/home');
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load home settings');
-      const home = data.home || {};
-      if (heroTitleInput) heroTitleInput.value = home.heroTitle || '';
-      if (heroSubtitleInput) heroSubtitleInput.value = home.heroSubtitle || '';
-      if (promoTitleInput) promoTitleInput.value = home.promoTitle || '';
-      if (promoSubtitleInput) promoSubtitleInput.value = home.promoSubtitle || '';
-      if (promoCtaTextInput) promoCtaTextInput.value = home.promoCtaText || '';
-      if (promoCtaLinkInput) promoCtaLinkInput.value = home.promoCtaLink || '';
-      if (promoEnabledInput) promoEnabledInput.checked = !!home.promoEnabled;
-      promoImageUrl = normalizeHomeImageUrl(home.promoImageUrl);
-      slideshowUrls = Array.isArray(home.slideshowUrls)
-        ? home.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
-        : [];
-      featuredIds = Array.isArray(home.featuredProductIds) ? home.featuredProductIds.filter(Boolean).slice(0, 3) : [];
+      applyHomeState(data.home || {});
     }
 
     async function saveHome() {
@@ -1155,6 +1156,8 @@
       };
       const { res, data } = await apiJSON('/api/admin/site/home', { method: 'PUT', body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
+      applyHomeState(data.home || payload);
+      renderAll();
     }
 
     async function loadConfig() {
