@@ -860,19 +860,19 @@ html[data-theme="dark"] .btn-secondary {
 /* ==============================
    AUTH SUBMIT BUTTON FIX
 ============================== */
-.auth-submit-btn,
+form button[type="submit"],
 .auth-form button[type="submit"],
-form button[type="submit"].btn-primary {
+.auth-submit-btn {
   display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
+  align-items: center !important;
+  justify-content: center !important;
   width: 100% !important;
-  min-height: 52px;
-  margin-top: 18px;
-  margin-bottom: 18px;
+  min-height: 52px !important;
   padding: 14px 20px !important;
+  margin-top: 18px !important;
+  margin-bottom: 18px !important;
 
-  background: hsl(var(--text)) !important;
+  background: #000 !important;
   color: #fff !important;
   border: none !important;
   border-radius: 10px !important;
@@ -881,22 +881,24 @@ form button[type="submit"].btn-primary {
   font-weight: 800 !important;
   line-height: 1 !important;
   text-decoration: none !important;
-  cursor: pointer !important;
+
   opacity: 1 !important;
   visibility: visible !important;
-  appearance: none;
-  -webkit-appearance: none;
+  cursor: pointer !important;
+
+  appearance: none !important;
+  -webkit-appearance: none !important;
 }
 
-.auth-submit-btn:hover,
+form button[type="submit"]:hover,
 .auth-form button[type="submit"]:hover,
-form button[type="submit"].btn-primary:hover {
-  background: hsl(18 22% 10%) !important;
+.auth-submit-btn:hover {
+  background: #111 !important;
 }
 
-.auth-submit-btn:disabled,
+form button[type="submit"]:disabled,
 .auth-form button[type="submit"]:disabled,
-form button[type="submit"].btn-primary:disabled {
+.auth-submit-btn:disabled {
   opacity: 0.65 !important;
   cursor: not-allowed !important;
 }
