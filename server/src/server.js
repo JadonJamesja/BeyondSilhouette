@@ -31,14 +31,14 @@ const app = express();
 
 // Security / logging
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(morgan("dev"));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'tiny' : 'dev'));
 
 // Body parsing
 app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 // Cookies (auth uses signed httpOnly cookie)
-app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "dev_change_me"));
+app.use(cookieParser(process.env.AUTH_COOKIE_SECRET || "change_me"));
 
 // -----------------------------
 // API HELPER FUNCTIONS
@@ -60,6 +60,30 @@ function requireAdmin(req, res) {
     return null;
   }
   return sess;
+}
+
+function sendServerError(res, fallback = "Something went wrong. Please try again.") {
+  return res.status(500).json({ ok: false, error: fallback });
+}
+
+function sendUnavailable(res, fallback = "This feature is temporarily unavailable.", status = 503) {
+  return res.status(status).json({ ok: false, error: fallback });
+}
+
+function isProduction() {
+  return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+}
+
+function safeLogError(...args) {
+  if (!isProduction()) safeLogError(...args);
+}
+
+function safeLogWarn(...args) {
+  if (!isProduction()) safeLogWarn(...args);
+}
+
+function safeLogInfo(...args) {
+  if (!isProduction()) safeLogInfo(...args);
 }
 
 
@@ -254,7 +278,7 @@ app.get("/api/db/health", async (req, res) => {
     return res.status(500).json({
       ok: false,
       db: "error",
-      error: err?.message || "Database connection failed",
+      error: "Database connection failed",
     });
   }
 });
@@ -325,7 +349,7 @@ app.get("/api/products", async (req, res) => {
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err?.message || "Failed to load products",
+      error: "Failed to load products",
     });
   }
 });
@@ -342,7 +366,7 @@ app.get("/api/site/home", async (req, res) => {
     if (!hasPrismaModel("siteHomeSettings")) {
       return res.status(503).json({
         ok: false,
-        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before using this endpoint.",
+        error: "Homepage settings are temporarily unavailable.",
       });
     }
 
@@ -424,7 +448,7 @@ app.get("/api/site/home", async (req, res) => {
       featured: orderedFeatured,
     });
   } catch (err) {
-    console.error("GET /api/site/home failed:", err);
+    safeLogError("GET /api/site/home failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load home settings" });
   }
 });
@@ -438,7 +462,7 @@ app.get("/api/admin/site/home", async (req, res) => {
     if (!hasPrismaModel("siteHomeSettings")) {
       return res.status(503).json({
         ok: false,
-        error: "Homepage settings model is unavailable. Run Prisma generate/migrations before using this endpoint.",
+        error: "Homepage settings are temporarily unavailable.",
       });
     }
 
@@ -491,7 +515,7 @@ app.get("/api/admin/site/home", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("GET /api/admin/site/home failed:", err);
+    safeLogError("GET /api/admin/site/home failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load home settings" });
   }
 });
@@ -532,7 +556,7 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
     }
 
     // Return the validated data URL directly so homepage CMS images do not depend
-    // on Railway local disk persistence.
+    // on local disk persistence.
     return res.json({
       ok: true,
       url: dataUrl,
@@ -540,7 +564,7 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
       filename,
     });
   } catch (err) {
-    console.error("POST /api/admin/site/home/upload failed:", err);
+    safeLogError("POST /api/admin/site/home/upload failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to upload image" });
   }
 });
@@ -575,7 +599,7 @@ app.put("/api/admin/site/home", async (req, res) => {
     if (!hasPrismaModel("siteHomeSettings")) {
       return res.status(500).json({
         ok: false,
-        error: "siteHomeSettings model unavailable. Run prisma generate + migrate deploy.",
+        error: "Homepage settings are temporarily unavailable.",
       });
     }
 
@@ -611,7 +635,7 @@ app.put("/api/admin/site/home", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("PUT /api/admin/site/home failed:", err);
+    safeLogError("PUT /api/admin/site/home failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to save home settings" });
   }
 });
@@ -628,7 +652,7 @@ app.get("/api/admin/config", async (req, res) => {
     if (!hasPrismaModel("adminConfig")) {
       return res.status(500).json({
         ok: false,
-        error: "adminConfig model unavailable. Run prisma generate + migrate deploy.",
+        error: "Admin settings are temporarily unavailable.",
       });
     }
     const cfg = await prisma.adminConfig.findUnique({
@@ -637,7 +661,7 @@ app.get("/api/admin/config", async (req, res) => {
     });
     return res.json({ ok: true, config: cfg || { id: "singleton", lowStockThreshold: 3, updatedAt: null } });
   } catch (err) {
-    console.error("GET /api/admin/config failed:", err);
+    safeLogError("GET /api/admin/config failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load admin config" });
   }
 });
@@ -653,7 +677,7 @@ app.put("/api/admin/config", async (req, res) => {
     if (!hasPrismaModel("adminConfig")) {
       return res.status(500).json({
         ok: false,
-        error: "adminConfig model unavailable. Run prisma generate + migrate deploy.",
+        error: "Admin settings are temporarily unavailable.",
       });
     }
     const cfg = await prisma.adminConfig.upsert({
@@ -664,7 +688,7 @@ app.put("/api/admin/config", async (req, res) => {
     });
     return res.json({ ok: true, config: cfg });
   } catch (err) {
-    console.error("PUT /api/admin/config failed:", err);
+    safeLogError("PUT /api/admin/config failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to save admin config" });
   }
 });
@@ -688,7 +712,7 @@ app.get("/api/me", async (req, res) => {
     setSession(res, { userId: user.id, email: user.email, role: user.role });
     return res.json({ ok: true, user });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to load user" });
+    return sendServerError(res, "We couldn't load your account right now.");
   }
 });
 
@@ -723,7 +747,7 @@ app.patch("/api/me/profile", async (req, res) => {
     setSession(res, { userId: updated.id, email: updated.email, role: updated.role });
     return res.json({ ok: true, user: updated });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to update profile" });
+    return sendServerError(res, "Your profile could not be updated right now.");
   }
 });
 
@@ -754,7 +778,7 @@ app.post("/api/auth/register", async (req, res) => {
     setSession(res, { userId: user.id, email: user.email, role: user.role });
     return res.status(201).json({ ok: true, user });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Registration failed" });
+    return sendServerError(res, "Registration could not be completed right now.");
   }
 });
 
@@ -782,7 +806,7 @@ app.post("/api/auth/login", async (req, res) => {
       user: { id: user.id, email: user.email, name: user.name, role: user.role, createdAt: user.createdAt },
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Login failed" });
+    return sendServerError(res, "Login could not be completed right now.");
   }
 });
 
@@ -840,20 +864,23 @@ app.post("/api/auth/google", async (req, res) => {
     setSession(res, { userId: user.id, email: user.email, role: user.role });
     return res.json({ ok: true, user });
   } catch (err) {
-    return res.status(401).json({ ok: false, error: err?.message || "Invalid Google token" });
+    return res.status(401).json({ ok: false, error: "Google sign-in could not be completed." });
   }
 });
 
 // -----------------------------
-// DEV ONLY: Promote user to admin (remove after use)
-// Protect with DEV_ADMIN_SECRET (Railway env var)
+// Restricted admin bootstrap utility
 // -----------------------------
 app.post("/api/dev/make-admin", async (req, res) => {
+  if (isProduction()) {
+    return res.status(404).json({ ok: false, error: "Not found" });
+  }
+
   const secret = String(req.body?.secret || "");
   const email = String(req.body?.email || "").trim().toLowerCase();
 
   if (!process.env.DEV_ADMIN_SECRET) {
-    return res.status(500).json({ ok: false, error: "DEV_ADMIN_SECRET is not set" });
+    return sendUnavailable(res, "Admin bootstrap is temporarily unavailable.");
   }
   if (secret !== String(process.env.DEV_ADMIN_SECRET)) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -869,16 +896,14 @@ app.post("/api/dev/make-admin", async (req, res) => {
       select: { id: true, email: true, role: true },
     });
 
-    // Update session too (useful if you're logged in as this user)
     setSession(res, { userId: user.id, email: user.email, role: user.role });
 
     return res.json({ ok: true, user });
   } catch (err) {
-    // Prisma "Record to update not found" => P2025
     if (err?.code === "P2025" || String(err?.message || "").includes("Record to update not found")) {
-      return res.status(404).json({ ok: false, error: "User not found. Create the account first, then promote." });
+      return res.status(404).json({ ok: false, error: "User not found." });
     }
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to promote user" });
+    return sendServerError(res, "User role could not be updated.");
   }
 });
 
@@ -897,7 +922,7 @@ app.get("/api/cart", async (req, res) => {
     const payload = await buildCartResponse(prisma, sess.userId);
     return res.json(payload);
   } catch (err) {
-    console.error("GET /api/cart failed:", err);
+    safeLogError("GET /api/cart failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load cart" });
   }
 });
@@ -965,7 +990,7 @@ app.post("/api/cart/add", async (req, res) => {
     if (err?.code === 'OUT_OF_STOCK') {
       return res.status(409).json({ ok: false, error: 'Not enough stock available', available: Number(err.available || 0) });
     }
-    console.error("POST /api/cart/add failed:", err);
+    safeLogError("POST /api/cart/add failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to add to cart" });
   }
 });
@@ -1031,7 +1056,7 @@ app.patch("/api/cart/item", async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    console.error('PATCH /api/cart/item failed:', err);
+    safeLogError('PATCH /api/cart/item failed:', err);
     return res.status(500).json({ ok: false, error: 'Failed to update cart' });
   }
 });
@@ -1056,7 +1081,7 @@ app.delete("/api/cart/item", async (req, res) => {
 
     return res.json(payload);
   } catch (err) {
-    console.error('DELETE /api/cart/item failed:', err);
+    safeLogError('DELETE /api/cart/item failed:', err);
     return res.status(500).json({ ok: false, error: 'Failed to remove item' });
   }
 });
@@ -1073,7 +1098,7 @@ app.post("/api/cart/clear", async (req, res) => {
 
     return res.json({ ok: true, items: [], totalQty: 0, totalPrice: 0 });
   } catch (err) {
-    console.error('POST /api/cart/clear failed:', err);
+    safeLogError('POST /api/cart/clear failed:', err);
     return res.status(500).json({ ok: false, error: 'Failed to clear cart' });
   }
 });
@@ -1093,7 +1118,7 @@ app.get("/api/admin/users", async (req, res) => {
 
     return res.json({ ok: true, users });
   } catch (err) {
-    console.error("GET /api/admin/users failed:", err);
+    safeLogError("GET /api/admin/users failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load users" });
   }
 });
@@ -1124,7 +1149,7 @@ app.patch("/api/admin/users/:id/role", async (req, res) => {
 
     return res.json({ ok: true, user });
   } catch (err) {
-    console.error("PATCH /api/admin/users/:id/role failed:", err);
+    safeLogError("PATCH /api/admin/users/:id/role failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to update user role" });
   }
 });
@@ -1158,7 +1183,7 @@ app.post("/api/admin/users/promote", async (req, res) => {
     if (err?.code === "P2025" || String(err?.message || "").includes("Record to update not found")) {
       return res.status(404).json({ ok: false, error: "User not found." });
     }
-    console.error("POST /api/admin/users/promote failed:", err);
+    safeLogError("POST /api/admin/users/promote failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to update user role" });
   }
 });
@@ -1196,7 +1221,7 @@ app.get("/api/admin/stats", async (req, res) => {
       stats: { usersCount, ordersCount, lowStockCount, revenueJMD, lowStockThreshold: threshold },
     });
   } catch (err) {
-    console.error("GET /api/admin/stats failed:", err);
+    safeLogError("GET /api/admin/stats failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load stats" });
   }
 });
@@ -1233,7 +1258,7 @@ app.get("/api/admin/orders", async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error("GET /api/admin/orders failed:", err);
+    safeLogError("GET /api/admin/orders failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to list orders" });
   }
 });
@@ -1263,7 +1288,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
         },
       });
     } catch (detailErr) {
-      console.warn("GET /api/admin/orders/:id history fallback:", detailErr?.message || detailErr);
+      safeLogWarn("GET /api/admin/orders/:id history fallback:", detailErr?.message || detailErr);
       order = await prisma.order.findUnique({
         where: { id },
         include: {
@@ -1302,7 +1327,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("GET /api/admin/orders/:id failed:", err);
+    safeLogError("GET /api/admin/orders/:id failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to load order" });
   }
 });
@@ -1351,12 +1376,12 @@ app.patch("/api/admin/orders/:id/status", async (req, res) => {
         });
       }
     } catch (historyErr) {
-      console.warn("Order status history write skipped:", historyErr?.message || historyErr);
+      safeLogWarn("Order status history write skipped:", historyErr?.message || historyErr);
     }
 
     return res.json({ ok: true, order: updated });
   } catch (err) {
-    console.error("PATCH /api/admin/orders/:id/status failed:", err);
+    safeLogError("PATCH /api/admin/orders/:id/status failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to update status" });
   }
 });
@@ -1484,7 +1509,7 @@ app.post("/api/orders", async (req, res) => {
     if (err?.code === 'OUT_OF_STOCK') {
       return res.status(409).json({ ok: false, code: 'OUT_OF_STOCK', items: err.details || [] });
     }
-    return res.status(500).json({ ok: false, error: err?.message || 'Failed to create order' });
+    return sendServerError(res, "Your order could not be created right now.");
   }
 });
 
@@ -1525,7 +1550,7 @@ app.get("/api/orders/my", async (req, res) => {
 
     return res.json({ ok: true, orders });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
+    return sendServerError(res, "Orders could not be loaded right now.");
   }
 });
 
@@ -1558,7 +1583,7 @@ app.get("/api/orders/me", async (req, res) => {
 
     return res.json({ ok: true, orders });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to load orders" });
+    return sendServerError(res, "Orders could not be loaded right now.");
   }
 });
 
@@ -1611,7 +1636,7 @@ app.get("/api/orders/:id", async (req, res) => {
 
     return res.json({ ok: true, order });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to load order" });
+    return sendServerError(res, "Order details could not be loaded right now.");
   }
 });
 
@@ -1664,7 +1689,7 @@ app.get("/api/admin/products", async (req, res) => {
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err?.message || "Failed to load admin products",
+      error: "Failed to load admin products",
     });
   }
 });
@@ -1760,7 +1785,7 @@ app.post("/api/admin/products", async (req, res) => {
     if (msg.includes("Unique constraint") || msg.includes("unique") || err?.code === "P2002") {
       return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/email/etc)" });
     }
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to create product" });
+    return sendServerError(res, "Product could not be created right now.");
   }
 });
 
@@ -1881,7 +1906,7 @@ app.patch("/api/admin/products/:id", async (req, res) => {
     if (msg.includes("Unique constraint") || msg.includes("unique") || err?.code === "P2002") {
       return res.status(409).json({ ok: false, error: "Duplicate unique field (slug/etc)" });
     }
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to update product" });
+    return sendServerError(res, "Product could not be updated right now.");
   }
 });
 
@@ -1897,7 +1922,7 @@ app.delete("/api/admin/products/:id", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     if (err?.code === 'P2025') return res.status(404).json({ ok: false, error: 'Product not found' });
-    return res.status(500).json({ ok: false, error: err?.message || 'Failed to delete product' });
+    return sendServerError(res, 'Product could not be deleted right now.');
   }
 });
 
@@ -1938,7 +1963,7 @@ app.patch("/api/admin/inventory", async (req, res) => {
 
     return res.json({ ok: true, items: updated });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Failed to update inventory" });
+    return sendServerError(res, "Inventory could not be updated right now.");
   }
 });
 
@@ -1988,7 +2013,7 @@ const projectRoot = path.resolve(__dirname, "..", "..");
 app.use((err, req, res, next) => {
   try {
     if (req && typeof req.path === "string" && req.path.startsWith("/api/")) {
-      console.error("API error:", err);
+      safeLogError("API error:", err);
       if (res.headersSent) return next(err);
       return res.status(500).json({ ok: false, error: "Server error. Please try again." });
     }
@@ -2105,21 +2130,5 @@ app.get('/reset-password', (req, res) => res.sendFile(path.join(clientDir, 'rese
 app.get("/", (req, res) => res.sendFile(path.join(clientDir, "index.html")));
 
 app.listen(PORT, () => {
-  console.log(`Beyond Silhouette server running on http://localhost:${PORT}`);
-});
-// -----------------------------
-// API 404 + Error handling (JSON only)
-// -----------------------------
-app.use('/api', (req, res, next) => {
-  // If we reach here, no /api route matched.
-  res.status(404).json({ ok: false, error: 'Not found' });
-});
-
-app.use((err, req, res, next) => {
-  // Ensure API never returns HTML/platform pages.
-  if (req.path && req.path.startsWith('/api')) {
-    console.error('API error:', err);
-    return res.status(500).json({ ok: false, error: 'Server error' });
-  }
-  next(err);
+  safeLogInfo(`Beyond Silhouette server is running on port ${PORT}`);
 });

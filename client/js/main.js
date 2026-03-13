@@ -150,11 +150,8 @@
   function toast(msg, { important = false } = {}) {
     ensureToastStyles();
 
-    if (important) {
-      try { alert(msg); } catch (_) {}
-    }
-
     const el = document.createElement('div');
+    if (important) el.setAttribute('role', 'alert');
     el.className = 'bs-toast';
     el.textContent = msg;
     document.body.appendChild(el);
@@ -842,7 +839,6 @@
     const { ok, data } = await apiJson('/api/public/config');
     const clientId = String(data?.googleClientId || '').trim();
     if (!ok || !clientId) {
-      console.warn('Google client id not configured on server.');
       return;
     }
 
@@ -859,7 +855,6 @@
 
     const gis = await waitForGIS();
     if (!gis) {
-      console.warn('Google Identity Services script did not load in time.');
       return;
     }
 
@@ -880,8 +875,8 @@
         gis.renderButton(btnHost, { type: 'standard', size: 'large', width: 260, theme: 'outline', text: 'continue_with' });
       });
       gis.prompt();
-    } catch (e) {
-      console.error('Google init failed:', e);
+    } catch (_) {
+      return;
     }
   }
 
@@ -964,8 +959,7 @@
       Products.setAll(data.products);
       renderProducts(container, Products.listPublished());
       return;
-    } catch (err) {
-      console.warn('Products fetch failed.', err);
+    } catch (_) {
       container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
       return;
     }
@@ -1149,8 +1143,10 @@
           featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
         }
       }
-    } catch (err) {
-      console.warn('Home settings fetch failed.', err);
+    } catch (_) {
+      if (featuredGrid && !featuredGrid.innerHTML.trim()) {
+        featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
+      }
     }
   }
 
@@ -1174,7 +1170,7 @@
       const size = String(sizeSelect?.value || '').trim().toUpperCase();
 
       if (!size) {
-        toast?.('Please select a size.') || alert('Please select a size.');
+        toast('Please select a size.');
         return;
       }
 
@@ -1187,7 +1183,7 @@
 
       const currentStock = Number(stockBySize?.[size] ?? 0);
       if (!Number.isFinite(currentStock) || currentStock <= 0) {
-        toast?.('That size is out of stock.') || alert('That size is out of stock.');
+        toast('That size is out of stock.');
         return;
       }
 
@@ -2108,7 +2104,6 @@
       const order = data?.order ? data.order : data;
       renderOrder(order);
     } catch (err) {
-      console.error(err);
       renderOrder(null);
       toast(err?.message || 'Could not load receipt. Please try again.', { important: true });
       return;
@@ -2122,7 +2117,7 @@
   }
 
   // -----------------------------
-  // DEV-ONLY: PROMOTE USER TO ADMIN
+  // ADMIN UTILITIES
   // -----------------------------
   async function promoteToAdmin({ email, secret }) {
     const em = String(email || '').trim().toLowerCase();
@@ -2202,22 +2197,16 @@
   document.addEventListener('DOMContentLoaded', async () => {
     try {
       await init();
-    } catch (e) {
-      console.error(e);
+    } catch (_) {
       try {
         toast('Something went wrong loading the site. Please refresh.', { important: true });
       } catch (_) {}
     }
   });
 
-  // Expose tiny API (debug / future admin)
   BS.Auth = Auth;
   BS.Cart = Cart;
   BS.Products = Products;
   BS.Orders = Orders;
-
-  // Expose DEV-only admin promotion
-  BS.makeAdmin = makeAdmin;
-  BS.promoteToAdmin = promoteToAdmin;
 
 })();

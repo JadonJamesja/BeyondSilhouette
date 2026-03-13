@@ -1,5 +1,5 @@
 /* Beyond Silhouette — Admin (DB-backed, no localStorage)
-   - Uses same-domain /api/* endpoints (Railway)
+   - Uses same-domain /api/* endpoints (same-domain API)
    - Customers + Orders + Dashboard + Settings now pull from DB
    - Admin Settings = Home Page CMS + Admin Config
 */
@@ -58,6 +58,74 @@
     const raw = String(status || '').trim().toLowerCase() || 'placed';
     return `<span class="chip chip-status chip-${escapeHtml(raw)}">${escapeHtml(prettyStatus(raw))}</span>`;
   };
+
+
+  function ensureToastStyles() {
+    if (document.getElementById('bs-admin-toast-style')) return;
+    const style = document.createElement('style');
+    style.id = 'bs-admin-toast-style';
+    style.textContent = `
+      .bs-admin-toast-stack {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 99999;
+        pointer-events: none;
+      }
+      .bs-admin-toast {
+        min-width: 220px;
+        max-width: min(92vw, 360px);
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(17, 24, 39, 0.12);
+        background: #ffffff;
+        color: #111827;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity .2s ease, transform .2s ease;
+      }
+      .bs-admin-toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .bs-admin-toast.is-success {
+        border-color: rgba(16, 185, 129, 0.25);
+      }
+      .bs-admin-toast.is-error {
+        border-color: rgba(220, 38, 38, 0.25);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function adminToast(message, kind = 'success') {
+    const msg = String(message || '').trim();
+    if (!msg) return;
+    ensureToastStyles();
+
+    let stack = document.querySelector('.bs-admin-toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'bs-admin-toast-stack';
+      document.body.appendChild(stack);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `bs-admin-toast ${kind === 'error' ? 'is-error' : 'is-success'}`;
+    toast.textContent = msg;
+    toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    stack.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 220);
+    }, 2600);
+  }
 
   // -----------------------------
   // API helper
@@ -229,12 +297,11 @@
     });
   }
 
-  // Toast helper (uses existing data-action="toast" buttons)
   function bindToasts() {
     qsa('[data-action="toast"]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const msg = btn.getAttribute('data-toast') || 'Done.';
-        alert(msg);
+        adminToast(msg);
       });
     });
   }
@@ -511,7 +578,7 @@
     async function openOrder(id) {
       const { res, data } = await apiJSON(`/api/admin/orders/${encodeURIComponent(id)}`);
       if (!res.ok || !data?.ok) {
-        alert(data?.error || 'Could not load order.');
+        adminToast(data?.error || 'Could not load order details right now.', 'error');
         return;
       }
 
@@ -581,7 +648,7 @@
           await load();
           await openOrder(o.id);
         } catch (err) {
-          alert(err?.message || 'Failed to update status.');
+          adminToast(err?.message || 'Order status could not be updated.', 'error');
         }
       });
 
@@ -749,13 +816,12 @@
           });
 
           if (!res.ok || !data?.ok) {
-            alert(data?.error || 'Failed to update role.');
+            adminToast(data?.error || 'Customer role could not be updated.', 'error');
             return;
           }
 
-          // Update local cache and rerender
           users = users.map((u) => (u.id === user.id ? data.user : u));
-          alert('Role updated.');
+          adminToast('Customer role updated.');
           setModalOpen(false);
           render();
         },
@@ -926,19 +992,19 @@
         images,
       };
       if (!payload.name) {
-        alert('Product name is required.');
+        adminToast('Product name is required.', 'error');
         return;
       }
       const endpoint = editingId ? `/api/admin/products/${encodeURIComponent(editingId)}` : '/api/admin/products';
       const method = editingId ? 'PATCH' : 'POST';
       const { res, data } = await apiJSON(endpoint, { method, body: JSON.stringify(payload) });
       if (!res.ok || !data?.ok) {
-        alert(data?.error || 'Failed to save product.');
+        adminToast(data?.error || 'Product could not be saved.', 'error');
         return;
       }
       await loadProducts();
       if (data.product) fillForm(data.product);
-      alert(isPublished ? 'Product published.' : 'Draft saved.');
+      adminToast(isPublished ? 'Product published.' : 'Draft saved.');
     }
 
     async function deleteProduct() {
@@ -947,12 +1013,12 @@
       if (!ok) return;
       const { res, data } = await apiJSON(`/api/admin/products/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
       if (!res.ok || !data?.ok) {
-        alert(data?.error || 'Failed to delete product.');
+        adminToast(data?.error || 'Product could not be deleted.', 'error');
         return;
       }
       await loadProducts();
       resetForm();
-      alert('Product deleted.');
+      adminToast('Product deleted.');
     }
 
     form.addEventListener('input', updatePreview);
@@ -1460,6 +1526,8 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    init().catch((e) => console.error(e));
+    init().catch(() => {
+      adminToast('The admin panel could not finish loading. Please refresh and try again.', 'error');
+    });
   });
 })();
