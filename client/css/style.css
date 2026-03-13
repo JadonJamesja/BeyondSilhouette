@@ -856,3 +856,33 @@ html[data-theme="dark"] .btn-secondary {
 .promo-popup-close:hover {
   background: rgba(0, 0, 0, 0.75);
 }
+
+/* ==============================
+AUTH FORM BUTTON FIX
+============================== */
+
+.auth-form button,
+.auth-form .btn,
+.auth-form .btn-primary {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  margin-top: 12px;
+
+  background: #000;
+  color: #fff;
+
+  border: none;
+  border-radius: 8px;
+
+  font-size: 15px;
+  font-weight: 600;
+
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.auth-form button:hover,
+.auth-form .btn-primary:hover {
+  opacity: 0.85;
+}
