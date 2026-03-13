@@ -1128,45 +1128,6 @@
         }
       }
 
-      if (promoSection) {
-        const enabled = !!home.promoEnabled;
-        const promoImage = normalizePublicImageUrl(home.promoImageUrl);
-        const hasImage = isRenderableImageUrl(promoImage);
-
-        promoSection.hidden = !(enabled && hasImage);
-
-        if (promoMedia) {
-          promoMedia.style.backgroundImage = enabled && hasImage
-            ? `url("${String(promoImage).replace(/"/g, '\\"')}")`
-            : '';
-        }
-
-        if (promoTitle) {
-          promoTitle.textContent = home.promoTitle == null
-            ? defaults.promoTitle
-            : String(home.promoTitle);
-        }
-
-        if (promoSubtitle) {
-          promoSubtitle.textContent = home.promoSubtitle == null
-            ? defaults.promoSubtitle
-            : String(home.promoSubtitle);
-        }
-
-        if (promoCta) {
-          promoCta.textContent = home.promoCtaText == null || String(home.promoCtaText).trim() === ''
-            ? defaults.promoCtaText
-            : String(home.promoCtaText);
-
-          promoCta.setAttribute(
-            'href',
-            home.promoCtaLink == null || String(home.promoCtaLink).trim() === ''
-              ? defaults.promoCtaLink
-              : String(home.promoCtaLink)
-          );
-        }
-      }
-
       if (featuredGrid) {
         if (featured.length) {
           featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {

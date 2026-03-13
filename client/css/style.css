@@ -14,17 +14,26 @@
   --font: "Bricolage Grotesque", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
   /* Premium feminine palette (light only) */
-  --bg: 28 38% 96%;          /* warm ivory */
-  --surface: 0 0% 100%;      /* white */
-  --surface2: 26 28% 94%;    /* soft sand */
-  --text: 18 22% 14%;        /* espresso */
-  --muted: 20 10% 38%;       /* warm gray */
-  --border: 24 20% 86%;      /* champagne border */
+  --bg: 28 38% 96%;
+  /* warm ivory */
+  --surface: 0 0% 100%;
+  /* white */
+  --surface2: 26 28% 94%;
+  /* soft sand */
+  --text: 18 22% 14%;
+  /* espresso */
+  --muted: 20 10% 38%;
+  /* warm gray */
+  --border: 24 20% 86%;
+  /* champagne border */
 
   /* Accents */
-  --accent: 215 55% 38%;     /* deep ink navy */
-  --accent2: 338 42% 58%;    /* dusty rose */
-  --accent3: 35 55% 62%;     /* champagne gold */
+  --accent: 215 55% 38%;
+  /* deep ink navy */
+  --accent2: 338 42% 58%;
+  /* dusty rose */
+  --accent3: 35 55% 62%;
+  /* champagne gold */
 
   /* Effects */
   --header-glass: rgba(255, 252, 249, 0.86);
@@ -124,7 +133,7 @@ body {
   letter-spacing: 1px;
 }
 
-#logo > a {
+#logo>a {
   text-decoration: none;
   color: hsl(var(--text));
   white-space: nowrap;
@@ -171,7 +180,7 @@ body {
   margin-left: 6px;
 }
 
-.loginIcon > img {
+.loginIcon>img {
   width: 1.7rem;
   height: auto;
   vertical-align: middle;
@@ -686,7 +695,7 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
     margin: 0;
   }
 
-  #logo > a {
+  #logo>a {
     white-space: nowrap;
   }
 
@@ -790,11 +799,22 @@ html[data-theme="dark"] .btn-secondary {
   z-index: 2;
 }
 
+.promo-popup-content {
+  position: relative;
+  background: hsl(var(--surface));
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: 560px;
+  width: min(90vw, 560px);
+  box-shadow: var(--shadow-med);
+  z-index: 2;
+}
+
 .promo-popup-media {
   display: block;
   width: 100%;
-  height: 280px;
-  min-height: 280px;
+  height: 220px;
+  min-height: 220px;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -802,19 +822,20 @@ html[data-theme="dark"] .btn-secondary {
 }
 
 .promo-popup-text {
-  padding: 28px;
+  padding: 22px;
   text-align: center;
 }
 
 .promo-popup-text h2 {
-  font-size: 1.9rem;
-  margin-bottom: 10px;
+  font-size: 1.6rem;
+  margin-bottom: 8px;
   color: hsl(var(--text));
 }
 
 .promo-popup-text p {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   color: hsl(var(--text));
+  font-size: 0.98rem;
 }
 
 .promo-popup-close {
