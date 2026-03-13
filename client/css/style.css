@@ -70,7 +70,6 @@ html[data-theme="dark"] {
   --btn-bg-hover: hsl(220 18% 84%);
 }
 
-
 /* Utility container */
 .container {
   max-width: 1200px;
@@ -121,11 +120,11 @@ body {
 
 #logo {
   margin-right: auto;
-    font-weight: 400;
+  font-weight: 400;
   letter-spacing: 1px;
 }
 
-#logo>a {
+#logo > a {
   text-decoration: none;
   color: hsl(var(--text));
   white-space: nowrap;
@@ -172,7 +171,7 @@ body {
   margin-left: 6px;
 }
 
-.loginIcon>img {
+.loginIcon > img {
   width: 1.7rem;
   height: auto;
   vertical-align: middle;
@@ -233,6 +232,7 @@ body {
   height: 100vh;
   width: 100%;
   overflow: hidden;
+  margin-bottom: 0;
 }
 
 /* Slides */
@@ -422,15 +422,21 @@ body {
   color: #fff;
 }
 
-
-
 .promo-banner {
   position: relative;
   min-height: 360px;
   margin: 0;
+  top: auto;
+  transform: none;
+  z-index: 1;
+}
+
+#promoBanner {
+  margin-top: 24px;
 }
 
 .promo-banner-media {
+  position: relative;
   min-height: 360px;
   background-size: cover;
   background-position: center;
@@ -465,7 +471,7 @@ body {
    4. FEATURED SECTION
 ------------------------------ */
 #featured {
-  padding: 80px 20px;
+  padding: 64px 20px 80px;
   background-color: var(--section-alt);
 }
 
@@ -621,7 +627,7 @@ body {
   position: absolute;
   top: -8px;
   right: -10px;
-  background: hsl(214 78% 34%); /* deeper + softer than before */
+  background: hsl(214 78% 34%);
   color: #fff;
   font-size: 0.78rem;
   padding: 2px 7px;
@@ -680,15 +686,18 @@ body:not(#home-page) #main-nav .nav-list a.nav-link[href="About.html"] {
     margin: 0;
   }
 
-  #logo>a {
+  #logo > a {
     white-space: nowrap;
   }
 
   .hero-title {
     letter-spacing: 0.01em;
   }
-}
 
+  #promoBanner {
+    margin-top: 18px;
+  }
+}
 
 /* ==============================
    INDEX ONLY: FIX TIGHT FEEL ON TABLET/MOBILE
