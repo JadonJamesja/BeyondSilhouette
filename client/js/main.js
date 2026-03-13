@@ -43,6 +43,13 @@
   const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
   const page = () => {
     const p = (location.pathname || '/').toLowerCase().replace(/\/+$/, '');
+    if (
+      p === '' ||
+      p === '/' ||
+      p === '/home' ||
+      p === '/index' ||
+      p.endsWith('/index.html')
+    ) return 'home';
     if (p === '' || p === '/' || p === '/home' || p.endsWith('/index.html')) return 'home';
     if (p === '/shop' || p.endsWith('/shop-page.html')) return 'shop';
     if (p.endsWith('/cart.html') || p === '/cart') return 'cart';
@@ -66,7 +73,7 @@
     // Keep storefront permanently light and prevent legacy storefront keys from re-enabling dark mode.
     try {
       localStorage.removeItem('bs_theme');
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function escapeHtml(s) {
@@ -622,172 +629,172 @@
       clear,
       remove,
     };
-    })();
-    // -----------------------------
-    // PRODUCTS STORE (API-backed)
-    // -----------------------------
-    const Products = (() => {
-      let _cache = [];
+  })();
+  // -----------------------------
+  // PRODUCTS STORE (API-backed)
+  // -----------------------------
+  const Products = (() => {
+    let _cache = [];
 
-      function buildStockBySize(p) {
-        // Prefer existing stockBySize if present
-        if (p && p.stockBySize && typeof p.stockBySize === 'object') return p.stockBySize;
+    function buildStockBySize(p) {
+      // Prefer existing stockBySize if present
+      if (p && p.stockBySize && typeof p.stockBySize === 'object') return p.stockBySize;
 
-        // API-backed: inventory is [{ size, stock }]
-        const inv = Array.isArray(p?.inventory) ? p.inventory : [];
-        const map = {};
-        inv.forEach((row) => {
-          const size = String(row?.size || '').trim();
-          const stock = Number(row?.stock ?? 0);
-          if (!size) return;
-          map[size] = Number.isFinite(stock) ? stock : 0;
-        });
-        return map;
+      // API-backed: inventory is [{ size, stock }]
+      const inv = Array.isArray(p?.inventory) ? p.inventory : [];
+      const map = {};
+      inv.forEach((row) => {
+        const size = String(row?.size || '').trim();
+        const stock = Number(row?.stock ?? 0);
+        if (!size) return;
+        map[size] = Number.isFinite(stock) ? stock : 0;
+      });
+      return map;
+    }
+
+    function pickCoverUrl(p) {
+      // API-backed: images is [{ url, alt, sortOrder }]
+      if (Array.isArray(p?.images) && p.images.length) {
+        const first = p.images
+          .slice()
+          .sort((a, b) => Number(a?.sortOrder ?? 0) - Number(b?.sortOrder ?? 0))[0];
+        if (first?.url) return String(first.url);
       }
 
-      function pickCoverUrl(p) {
-        // API-backed: images is [{ url, alt, sortOrder }]
-        if (Array.isArray(p?.images) && p.images.length) {
-          const first = p.images
-            .slice()
-            .sort((a, b) => Number(a?.sortOrder ?? 0) - Number(b?.sortOrder ?? 0))[0];
-          if (first?.url) return String(first.url);
-        }
+      // Older shapes
+      if (p?.media?.coverUrl) return String(p.media.coverUrl);
+      if (p?.coverUrl) return String(p.coverUrl);
 
-        // Older shapes
-        if (p?.media?.coverUrl) return String(p.media.coverUrl);
-        if (p?.coverUrl) return String(p.coverUrl);
+      return '';
+    }
 
-        return '';
-      }
+    function normalize(p) {
+      const name = String(p?.title || p?.name || '').trim();
+      const coverUrl = pickCoverUrl(p);
+      const stockBySize = buildStockBySize(p);
 
-      function normalize(p) {
-        const name = String(p?.title || p?.name || '').trim();
-        const coverUrl = pickCoverUrl(p);
-        const stockBySize = buildStockBySize(p);
-
-        // Make a consistent “published” signal across old/new shapes
-        const isPublished = (p?.isPublished === true) || (p?.status === 'published');
-
-        return {
-          ...p,
-          name: name || p?.name || p?.title || '',
-          title: p?.title || name || '',
-          isPublished,
-          status: isPublished ? 'published' : (p?.status || 'draft'),
-          media: p?.media || { coverUrl },
-          stockBySize
-        };
-      }
+      // Make a consistent “published” signal across old/new shapes
+      const isPublished = (p?.isPublished === true) || (p?.status === 'published');
 
       return {
-        setAll(products) {
-          _cache = (Array.isArray(products) ? products : []).map(normalize);
-        },
-
-        readAll() {
-          return _cache;
-        },
-
-        listPublished() {
-          // API uses isPublished, old demo used status
-          return _cache.filter(p => p?.isPublished === true || p?.status === 'published');
-        },
-
-        findById(id) {
-          const pid = String(id || "");
-          return _cache.find(p => String(p?.id) === pid) || null;
-        },
-
-        async ensureLoaded() {
-          if (Array.isArray(_cache) && _cache.length) return _cache;
-
-          const res = await fetch("/api/products", { credentials: "omit" }).catch(() => null);
-          if (!res || !res.ok) return _cache;
-
-          const ct = String(res.headers.get("content-type") || "");
-          if (!ct.includes("application/json")) return _cache;
-
-          const data = await res.json().catch(() => null);
-          if (!data || data.ok !== true || !Array.isArray(data.products)) return _cache;
-
-          _cache = data.products.map(normalize);
-          return _cache;
-        }
+        ...p,
+        name: name || p?.name || p?.title || '',
+        title: p?.title || name || '',
+        isPublished,
+        status: isPublished ? 'published' : (p?.status || 'draft'),
+        media: p?.media || { coverUrl },
+        stockBySize
       };
-    })();
-    // -----------------------------
-    // ORDERS (LOCAL DEMO)
-    // -----------------------------
-    const Orders = {
-      listFor(email) {
-        const st = readState();
-        const arr = st.ordersByUser[email] || [];
-        return Array.isArray(arr) ? arr : [];
+    }
+
+    return {
+      setAll(products) {
+        _cache = (Array.isArray(products) ? products : []).map(normalize);
       },
 
-      addFor(email, order) {
-        const st = readState();
-        st.ordersByUser[email] = st.ordersByUser[email] || [];
-        st.ordersByUser[email].unshift(order);
-        writeState(st);
+      readAll() {
+        return _cache;
+      },
+
+      listPublished() {
+        // API uses isPublished, old demo used status
+        return _cache.filter(p => p?.isPublished === true || p?.status === 'published');
+      },
+
+      findById(id) {
+        const pid = String(id || "");
+        return _cache.find(p => String(p?.id) === pid) || null;
+      },
+
+      async ensureLoaded() {
+        if (Array.isArray(_cache) && _cache.length) return _cache;
+
+        const res = await fetch("/api/products", { credentials: "omit" }).catch(() => null);
+        if (!res || !res.ok) return _cache;
+
+        const ct = String(res.headers.get("content-type") || "");
+        if (!ct.includes("application/json")) return _cache;
+
+        const data = await res.json().catch(() => null);
+        if (!data || data.ok !== true || !Array.isArray(data.products)) return _cache;
+
+        _cache = data.products.map(normalize);
+        return _cache;
       }
     };
+  })();
+  // -----------------------------
+  // ORDERS (LOCAL DEMO)
+  // -----------------------------
+  const Orders = {
+    listFor(email) {
+      const st = readState();
+      const arr = st.ordersByUser[email] || [];
+      return Array.isArray(arr) ? arr : [];
+    },
 
-    // -----------------------------
-    // UI
-    // -----------------------------
-    const UI = {
-      updateCartBadges() {
-        const total = Cart.count();
-        $$('.cart-count').forEach(el => {
-          el.textContent = String(total);
-        });
-      },
+    addFor(email, order) {
+      const st = readState();
+      st.ordersByUser[email] = st.ordersByUser[email] || [];
+      st.ordersByUser[email].unshift(order);
+      writeState(st);
+    }
+  };
 
-      updateNavAuthState() {
-        const user = Auth.currentUser();
-        const allLoginLinks = $$('a[href="login.html"]');
-        const allRegisterLinks = $$('a[href="register.html"]');
-        const allAccountLinks = $$('a[href="account.html"]');
-        const allOrdersLinks = $$('a[href="orders.html"]');
-        const allLogoutLinks = $$('a[href="logout.html"]');
+  // -----------------------------
+  // UI
+  // -----------------------------
+  const UI = {
+    updateCartBadges() {
+      const total = Cart.count();
+      $$('.cart-count').forEach(el => {
+        el.textContent = String(total);
+      });
+    },
 
-        allLoginLinks.forEach(a => a.style.display = user ? 'none' : '');
-        allRegisterLinks.forEach(a => a.style.display = user ? 'none' : '');
-        allAccountLinks.forEach(a => a.style.display = user ? '' : 'none');
-        allOrdersLinks.forEach(a => a.style.display = user ? '' : 'none');
-        allLogoutLinks.forEach(a => a.style.display = user ? '' : 'none');
+    updateNavAuthState() {
+      const user = Auth.currentUser();
+      const allLoginLinks = $$('a[href="login.html"]');
+      const allRegisterLinks = $$('a[href="register.html"]');
+      const allAccountLinks = $$('a[href="account.html"]');
+      const allOrdersLinks = $$('a[href="orders.html"]');
+      const allLogoutLinks = $$('a[href="logout.html"]');
 
-        const adminLinks = $$('.admin-link');
-        const isAdmin = !!(user && String(user.role || '').toLowerCase() === 'admin');
-        adminLinks.forEach(a => a.style.display = isAdmin ? '' : 'none');
-      },
+      allLoginLinks.forEach(a => a.style.display = user ? 'none' : '');
+      allRegisterLinks.forEach(a => a.style.display = user ? 'none' : '');
+      allAccountLinks.forEach(a => a.style.display = user ? '' : 'none');
+      allOrdersLinks.forEach(a => a.style.display = user ? '' : 'none');
+      allLogoutLinks.forEach(a => a.style.display = user ? '' : 'none');
 
-      ensureHeaderFooter() {
-        // Non-negotiable: do not inject full HTML layouts from JS.
-        // Each page must include its own real header/footer markup.
-        return;
-      },
+      const adminLinks = $$('.admin-link');
+      const isAdmin = !!(user && String(user.role || '').toLowerCase() === 'admin');
+      adminLinks.forEach(a => a.style.display = isAdmin ? '' : 'none');
+    },
 
-      bindLoginDropdown() {
-        const icon = $('.loginIcon');
-        const menu = $('.login-menu');
-        if (!icon || !menu) return;
+    ensureHeaderFooter() {
+      // Non-negotiable: do not inject full HTML layouts from JS.
+      // Each page must include its own real header/footer markup.
+      return;
+    },
 
-        icon.addEventListener('click', (e) => {
-          e.preventDefault();
-          menu.classList.toggle('show');
-        });
+    bindLoginDropdown() {
+      const icon = $('.loginIcon');
+      const menu = $('.login-menu');
+      if (!icon || !menu) return;
 
-        document.addEventListener('click', (e) => {
-          if (!menu.contains(e.target) && !icon.contains(e.target)) {
-            menu.classList.remove('show');
-          }
-        });
-      },
+      icon.addEventListener('click', (e) => {
+        e.preventDefault();
+        menu.classList.toggle('show');
+      });
 
-      bindNavActive() {
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !icon.contains(e.target)) {
+          menu.classList.remove('show');
+        }
+      });
+    },
+
+    bindNavActive() {
       const current = page();
       $$('#main-nav .nav-link').forEach(link => {
         const href = String(link.getAttribute('href') || '').toLowerCase().trim();
@@ -808,118 +815,118 @@
 
   // -----------------------------
   // GOOGLE SIGN-IN (client-side hook)
-    // -----------------------------
-    async function handleGoogleCredential(credential) {
-      if (!credential) return;
+  // -----------------------------
+  async function handleGoogleCredential(credential) {
+    if (!credential) return;
 
-      try {
-        const { ok, data } = await apiJson('/api/auth/google', {
-          method: 'POST',
-          body: { credential }
-        });
-
-        if (!ok) {
-          toast(data?.error || 'Google sign-in is not configured on the server yet.', { important: true });
-          return;
-        }
-
-        // cookie session should be set by server
-        await Auth.bootstrap();
-
-        const returnTo = getReturnTo();
-        location.href = returnTo || 'account.html';
-      } catch (err) {
-        toast('Google sign-in is not available yet (server endpoint missing).', { important: true });
-      }
-    }
-
-
-    async function bindGoogleSignInIfPresent() {
-      const p = page();
-      if (p !== 'login' && p !== 'register') return;
-
-      const btnHosts = Array.from(document.querySelectorAll('.g_id_signin'));
-      if (!btnHosts.length) return;
-
-      // Get client_id from server (no hardcoding in HTML)
-      const { ok, data } = await apiJson('/api/public/config');
-      const clientId = String(data?.googleClientId || '').trim();
-      if (!ok || !clientId) {
-        console.warn('Google client id not configured on server.');
-        return;
-      }
-
-      const waitForGIS = () => new Promise((resolve) => {
-        const started = Date.now();
-        const tick = () => {
-          const gis = window.google?.accounts?.id;
-          if (gis) return resolve(gis);
-          if (Date.now() - started > 8000) return resolve(null);
-          setTimeout(tick, 120);
-        };
-        tick();
+    try {
+      const { ok, data } = await apiJson('/api/auth/google', {
+        method: 'POST',
+        body: { credential }
       });
 
-      const gis = await waitForGIS();
-      if (!gis) {
-        console.warn('Google Identity Services script did not load in time.');
+      if (!ok) {
+        toast(data?.error || 'Google sign-in is not configured on the server yet.', { important: true });
         return;
       }
 
-      window.BSGoogleLoginCallback = async (response) => {
-        const credential = response?.credential;
-        await handleGoogleCredential(credential);
-      };
+      // cookie session should be set by server
+      await Auth.bootstrap();
 
-      try {
-        gis.initialize({
-          client_id: clientId,
-          callback: window.BSGoogleLoginCallback,
-          auto_select: false,
-        });
+      const returnTo = getReturnTo();
+      location.href = returnTo || 'account.html';
+    } catch (err) {
+      toast('Google sign-in is not available yet (server endpoint missing).', { important: true });
+    }
+  }
 
-        btnHosts.forEach((btnHost) => {
-          btnHost.innerHTML = '';
-          gis.renderButton(btnHost, { type: 'standard', size: 'large', width: 260, theme: 'outline', text: 'continue_with' });
-        });
-        gis.prompt();
-      } catch (e) {
-        console.error('Google init failed:', e);
-      }
+
+  async function bindGoogleSignInIfPresent() {
+    const p = page();
+    if (p !== 'login' && p !== 'register') return;
+
+    const btnHosts = Array.from(document.querySelectorAll('.g_id_signin'));
+    if (!btnHosts.length) return;
+
+    // Get client_id from server (no hardcoding in HTML)
+    const { ok, data } = await apiJson('/api/public/config');
+    const clientId = String(data?.googleClientId || '').trim();
+    if (!ok || !clientId) {
+      console.warn('Google client id not configured on server.');
+      return;
     }
 
-    // -----------------------------
-    // SHOP: RENDER FROM STORE
-    // -----------------------------
-    function renderProducts(container, products) {
-      if (!container) return;
+    const waitForGIS = () => new Promise((resolve) => {
+      const started = Date.now();
+      const tick = () => {
+        const gis = window.google?.accounts?.id;
+        if (gis) return resolve(gis);
+        if (Date.now() - started > 8000) return resolve(null);
+        setTimeout(tick, 120);
+      };
+      tick();
+    });
 
-      const list = Array.isArray(products) ? products : [];
-      if (!list.length) {
-        container.innerHTML = `<div class="muted">No products available.</div>`;
-        return;
-      }
+    const gis = await waitForGIS();
+    if (!gis) {
+      console.warn('Google Identity Services script did not load in time.');
+      return;
+    }
 
-      const SIZES = ["S", "M", "L", "XL"];
+    window.BSGoogleLoginCallback = async (response) => {
+      const credential = response?.credential;
+      await handleGoogleCredential(credential);
+    };
 
-      container.innerHTML = list.map((p) => {
-        const id = String(p?.id || "");
-        const cover = String(p?.media?.coverUrl || "");
-        const name = String(p?.title || p?.name || "").trim();
-        const priceNum = Number(p?.priceJMD ?? 0);
-        const price = Number.isFinite(priceNum) ? priceNum.toLocaleString("en-JM") : "0";
+    try {
+      gis.initialize({
+        client_id: clientId,
+        callback: window.BSGoogleLoginCallback,
+        auto_select: false,
+      });
 
-        const sb = (p && p.stockBySize && typeof p.stockBySize === "object") ? p.stockBySize : {};
-        const options = SIZES
-          .filter(sz => Number(sb?.[sz] ?? 0) > 0)
-          .map(sz => `<option value="${sz}">${sz}</option>`)
-          .join("");
+      btnHosts.forEach((btnHost) => {
+        btnHost.innerHTML = '';
+        gis.renderButton(btnHost, { type: 'standard', size: 'large', width: 260, theme: 'outline', text: 'continue_with' });
+      });
+      gis.prompt();
+    } catch (e) {
+      console.error('Google init failed:', e);
+    }
+  }
 
-        const soldOut = !options;
+  // -----------------------------
+  // SHOP: RENDER FROM STORE
+  // -----------------------------
+  function renderProducts(container, products) {
+    if (!container) return;
 
-        const stockJson = escapeHtml(JSON.stringify(sb || {}));
+    const list = Array.isArray(products) ? products : [];
+    if (!list.length) {
+      container.innerHTML = `<div class="muted">No products available.</div>`;
+      return;
+    }
 
-        return `
+    const SIZES = ["S", "M", "L", "XL"];
+
+    container.innerHTML = list.map((p) => {
+      const id = String(p?.id || "");
+      const cover = String(p?.media?.coverUrl || "");
+      const name = String(p?.title || p?.name || "").trim();
+      const priceNum = Number(p?.priceJMD ?? 0);
+      const price = Number.isFinite(priceNum) ? priceNum.toLocaleString("en-JM") : "0";
+
+      const sb = (p && p.stockBySize && typeof p.stockBySize === "object") ? p.stockBySize : {};
+      const options = SIZES
+        .filter(sz => Number(sb?.[sz] ?? 0) > 0)
+        .map(sz => `<option value="${sz}">${sz}</option>`)
+        .join("");
+
+      const soldOut = !options;
+
+      const stockJson = escapeHtml(JSON.stringify(sb || {}));
+
+      return `
   <div
     class="product-card"
     data-product-id="${escapeHtml(id)}"
@@ -944,181 +951,188 @@
     </div>
   </div>
 `;
-      }).join("");
-    }
-    async function renderShopFromStore() {
-      // Support BOTH older markup and your current shop page (#productsGrid)
-      const container =
-        document.getElementById('productsGrid') ||
-        document.querySelector('[data-products]');
+    }).join("");
+  }
+  async function renderShopFromStore() {
+    // Support BOTH older markup and your current shop page (#productsGrid)
+    const container =
+      document.getElementById('productsGrid') ||
+      document.querySelector('[data-products]');
 
-      if (!container) return;
+    if (!container) return;
 
-      container.innerHTML = `<div class="muted">Loading products…</div>`;
+    container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-      // Products are served from the same origin in production.
-      // We intentionally avoid hardcoded fallback hosts to prevent “platform” error pages.
-      try {
-        const res = await fetch("/api/products", { credentials: "omit" });
+    // Products are served from the same origin in production.
+    // We intentionally avoid hardcoded fallback hosts to prevent “platform” error pages.
+    try {
+      const res = await fetch("/api/products", { credentials: "omit" });
 
-        const ct = String(res.headers.get("content-type") || "");
-        if (!res.ok || !ct.includes("application/json")) throw new Error("Products fetch failed");
+      const ct = String(res.headers.get("content-type") || "");
+      if (!res.ok || !ct.includes("application/json")) throw new Error("Products fetch failed");
 
-        const data = await res.json();
-        if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error("Bad products response");
+      const data = await res.json();
+      if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error("Bad products response");
 
-        Products.setAll(data.products);
-        renderProducts(container, Products.listPublished());
-        return;
-      } catch (err) {
-        console.warn("Products fetch failed.", err);
-        container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
-        return;
-      }
-    }
-
- async function renderHomeIfOnHomePage() {
-  if (page() !== 'home') return;
-
-  const titleEl = document.getElementById('homeHeroTitle');
-  const subtitleEl = document.getElementById('homeHeroSubtitle');
-  const featuredGrid = document.getElementById('homeFeaturedGrid');
-  const slides = Array.from(document.querySelectorAll('#hero .slide'));
-  const promoSection = document.getElementById('promoBanner');
-  const promoMedia = document.getElementById('promoBannerMedia');
-  const promoTitle = document.getElementById('promoBannerTitle');
-  const promoSubtitle = document.getElementById('promoBannerSubtitle');
-  const promoCta = document.getElementById('promoBannerCta');
-
-  const defaults = {
-    heroTitle: titleEl?.textContent || '',
-    heroSubtitle: subtitleEl?.textContent || '',
-    promoTitle: promoTitle?.textContent || 'Limited Time Collection',
-    promoSubtitle: promoSubtitle?.textContent || 'Discover the latest swimwear styles.',
-    promoCtaText: promoCta?.textContent || 'Shop now',
-    promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
-  };
-
-  const normalizePublicImageUrl = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-    if (raw.startsWith('data:image/')) return raw;
-    if (/^https?:\/\//i.test(raw)) return raw;
-    if (raw.startsWith('/uploads/')) return raw;
-    if (raw.startsWith('uploads/')) return `/${raw}`;
-    if (raw.startsWith('/')) return raw;
-    return raw;
-  };
-
-  const isRenderableImageUrl = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return false;
-    return (
-      raw.startsWith('data:image/') ||
-      raw.startsWith('/uploads/') ||
-      /^https?:\/\//i.test(raw)
-    );
-  };
-
-  try {
-    const { ok, data } = await apiJson('/api/site/home');
-    if (!ok || !data?.ok) {
-      if (featuredGrid) {
-        featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
-      }
+      Products.setAll(data.products);
+      renderProducts(container, Products.listPublished());
+      return;
+    } catch (err) {
+      console.warn("Products fetch failed.", err);
+      container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
       return;
     }
+  }
 
-    const home = data.home || {};
-    const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
+  async function renderHomeIfOnHomePage() {
+    if (page() !== 'home') return;
 
-    const slideshowUrls = Array.isArray(home.slideshowUrls)
-      ? home.slideshowUrls
+    const titleEl = document.getElementById('homeHeroTitle');
+    const subtitleEl = document.getElementById('homeHeroSubtitle');
+    const featuredGrid = document.getElementById('homeFeaturedGrid');
+    const slides = Array.from(document.querySelectorAll('#hero .slide'));
+    const promoSection = document.getElementById('promoBanner');
+    const promoMedia = document.getElementById('promoBannerMedia');
+    const promoTitle = document.getElementById('promoBannerTitle');
+    const promoSubtitle = document.getElementById('promoBannerSubtitle');
+    const promoCta = document.getElementById('promoBannerCta');
+
+    const defaults = {
+      heroTitle: titleEl?.textContent || '',
+      heroSubtitle: subtitleEl?.textContent || '',
+      promoTitle: promoTitle?.textContent || 'Limited Time Collection',
+      promoSubtitle: promoSubtitle?.textContent || 'Discover the latest swimwear styles.',
+      promoCtaText: promoCta?.textContent || 'Shop now',
+      promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
+    };
+
+    const normalizePublicImageUrl = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      if (raw.startsWith('data:image/')) return raw;
+      if (/^https?:\/\//i.test(raw)) return raw;
+      if (raw.startsWith('/uploads/')) return raw;
+      if (raw.startsWith('uploads/')) return `/${raw}`;
+      if (raw.startsWith('/')) return raw;
+      return raw;
+    };
+
+    const isRenderableImageUrl = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return false;
+      return (
+        raw.startsWith('data:image/') ||
+        raw.startsWith('/uploads/') ||
+        /^https?:\/\//i.test(raw)
+      );
+    };
+
+    try {
+      const { ok, data } = await apiJson('/api/site/home');
+      if (!ok || !data?.ok) {
+        if (featuredGrid) {
+          featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
+        }
+        return;
+      }
+
+      const home = data.home || {};
+      const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
+
+      const slideshowUrls = Array.isArray(home.slideshowUrls)
+        ? home.slideshowUrls
           .map(normalizePublicImageUrl)
           .filter((url) => isRenderableImageUrl(url))
           .slice(0, 4)
-      : [];
+        : [];
 
-    const featuredIds = Array.isArray(home.featuredProductIds)
-      ? home.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean)
-      : [];
+      const featuredIds = Array.isArray(home.featuredProductIds)
+        ? home.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : [];
 
-    let featured = Array.isArray(data.featured) ? data.featured : [];
-    if (!featured.length && featuredIds.length) {
-      await Products.ensureLoaded();
-      featured = featuredIds
-        .map((id) => Products.findById(id))
-        .filter(Boolean);
-    }
-
-    if (titleEl) {
-      titleEl.textContent = hasSettings ? String(home.heroTitle ?? '') : defaults.heroTitle;
-    }
-
-    if (subtitleEl) {
-      subtitleEl.textContent = hasSettings ? String(home.heroSubtitle ?? '') : defaults.heroSubtitle;
-    }
-
-    if (slides.length) {
-      if (slideshowUrls.length) {
-        slides.forEach((slide, index) => {
-          const url = slideshowUrls[index % slideshowUrls.length];
-          slide.style.backgroundImage = url ? `url("${String(url).replace(/"/g, '\\"')}")` : '';
-        });
-      } else if (hasSettings) {
-        slides.forEach((slide) => {
-          slide.style.backgroundImage = '';
-        });
-      }
-    }
-
-    if (promoSection) {
-      const enabled = !!home.promoEnabled;
-      const promoImage = normalizePublicImageUrl(home.promoImageUrl);
-      const hasImage = isRenderableImageUrl(promoImage);
-
-      promoSection.hidden = !(enabled && hasImage);
-
-      if (promoMedia) {
-        promoMedia.style.backgroundImage = enabled && hasImage
-          ? `url("${String(promoImage).replace(/"/g, '\\"')}")`
-          : '';
+      let featured = Array.isArray(data.featured) ? data.featured : [];
+      if (!featured.length && featuredIds.length) {
+        await Products.ensureLoaded();
+        featured = featuredIds
+          .map((id) => Products.findById(id))
+          .filter(Boolean);
       }
 
-      if (promoTitle) {
-        promoTitle.textContent = home.promoTitle == null
-          ? defaults.promoTitle
-          : String(home.promoTitle);
+      if (titleEl) {
+        titleEl.textContent =
+          home.heroTitle == null || String(home.heroTitle).trim() === ''
+            ? defaults.heroTitle
+            : String(home.heroTitle);
       }
 
-      if (promoSubtitle) {
-        promoSubtitle.textContent = home.promoSubtitle == null
-          ? defaults.promoSubtitle
-          : String(home.promoSubtitle);
+      if (subtitleEl) {
+        subtitleEl.textContent =
+          home.heroSubtitle == null || String(home.heroSubtitle).trim() === ''
+            ? defaults.heroSubtitle
+            : String(home.heroSubtitle);
       }
 
-      if (promoCta) {
-        promoCta.textContent = home.promoCtaText == null || String(home.promoCtaText).trim() === ''
-          ? defaults.promoCtaText
-          : String(home.promoCtaText);
 
-        promoCta.setAttribute(
-          'href',
-          home.promoCtaLink == null || String(home.promoCtaLink).trim() === ''
-            ? defaults.promoCtaLink
-            : String(home.promoCtaLink)
-        );
+      if (slides.length) {
+        if (slideshowUrls.length) {
+          slides.forEach((slide, index) => {
+            const url = slideshowUrls[index % slideshowUrls.length];
+            slide.style.backgroundImage = url ? `url("${String(url).replace(/"/g, '\\"')}")` : '';
+          });
+        } else if (hasSettings) {
+          slides.forEach((slide) => {
+            slide.style.backgroundImage = '';
+          });
+        }
       }
-    }
 
-    if (featuredGrid) {
-      if (featured.length) {
-        featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
-          const cover = String(p?.media?.coverUrl || '');
-          const name = String(p?.title || p?.name || 'Product');
-          const price = Number(p?.priceJMD || 0).toLocaleString('en-JM');
+      if (promoSection) {
+        const enabled = !!home.promoEnabled;
+        const promoImage = normalizePublicImageUrl(home.promoImageUrl);
+        const hasImage = isRenderableImageUrl(promoImage);
 
-          return `
+        promoSection.hidden = !(enabled && hasImage);
+
+        if (promoMedia) {
+          promoMedia.style.backgroundImage = enabled && hasImage
+            ? `url("${String(promoImage).replace(/"/g, '\\"')}")`
+            : '';
+        }
+
+        if (promoTitle) {
+          promoTitle.textContent = home.promoTitle == null
+            ? defaults.promoTitle
+            : String(home.promoTitle);
+        }
+
+        if (promoSubtitle) {
+          promoSubtitle.textContent = home.promoSubtitle == null
+            ? defaults.promoSubtitle
+            : String(home.promoSubtitle);
+        }
+
+        if (promoCta) {
+          promoCta.textContent = home.promoCtaText == null || String(home.promoCtaText).trim() === ''
+            ? defaults.promoCtaText
+            : String(home.promoCtaText);
+
+          promoCta.setAttribute(
+            'href',
+            home.promoCtaLink == null || String(home.promoCtaLink).trim() === ''
+              ? defaults.promoCtaLink
+              : String(home.promoCtaLink)
+          );
+        }
+      }
+
+      if (featuredGrid) {
+        if (featured.length) {
+          featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
+            const cover = String(p?.media?.coverUrl || '');
+            const name = String(p?.title || p?.name || 'Product');
+            const price = Number(p?.priceJMD || 0).toLocaleString('en-JM');
+
+            return `
             <div class="product-card">
               <a href="shop-page.html">
                 <img src="${escapeHtml(cover)}" alt="${escapeHtml(name)}" class="product-image" />
@@ -1127,210 +1141,210 @@
               </a>
             </div>
           `;
-        }).join('');
-      } else if (hasSettings) {
-        featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
+          }).join('');
+        } else if (hasSettings) {
+          featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
+        }
       }
+    } catch (err) {
+      console.warn('Home settings fetch failed.', err);
     }
-  } catch (err) {
-    console.warn('Home settings fetch failed.', err);
   }
-}
 
 
 
-    function bindAddToCart() {
-      document.addEventListener("click", async (e) => {
-        const btn = e.target.closest(".add-to-cart");
-        if (!btn) return;
+  function bindAddToCart() {
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".add-to-cart");
+      if (!btn) return;
 
-        const card = btn.closest(".product-card");
-        if (!card) return;
+      const card = btn.closest(".product-card");
+      if (!card) return;
 
-        const productId = String(card.getAttribute("data-product-id") || "");
-        const title = String(card.getAttribute("data-title") || "Product");
-        const coverUrl = String(card.getAttribute("data-cover") || "");
-        const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
+      const productId = String(card.getAttribute("data-product-id") || "");
+      const title = String(card.getAttribute("data-title") || "Product");
+      const coverUrl = String(card.getAttribute("data-cover") || "");
+      const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
 
-        const sizeSelect = card.querySelector(".product-size-select");
-        const size = String(sizeSelect?.value || "").trim().toUpperCase();
+      const sizeSelect = card.querySelector(".product-size-select");
+      const size = String(sizeSelect?.value || "").trim().toUpperCase();
 
-        if (!size) {
-          toast?.("Please select a size.") || alert("Please select a size.");
-          return;
-        }
+      if (!size) {
+        toast?.("Please select a size.") || alert("Please select a size.");
+        return;
+      }
 
-        let stockBySize = {};
-        try {
-          stockBySize = JSON.parse(card.getAttribute("data-stock") || "{}");
-        } catch {
-          stockBySize = {};
-        }
+      let stockBySize = {};
+      try {
+        stockBySize = JSON.parse(card.getAttribute("data-stock") || "{}");
+      } catch {
+        stockBySize = {};
+      }
 
-        const currentStock = Number(stockBySize?.[size] ?? 0);
-        if (!Number.isFinite(currentStock) || currentStock <= 0) {
-          toast?.("That size is out of stock.") || alert("That size is out of stock.");
-          return;
-        }
+      const currentStock = Number(stockBySize?.[size] ?? 0);
+      if (!Number.isFinite(currentStock) || currentStock <= 0) {
+        toast?.("That size is out of stock.") || alert("That size is out of stock.");
+        return;
+      }
 
-        // ✅ Create cart item with fields your cart UI expects (prevents "undefined")
-        const item = {
-          productId,      // keep compatibility with existing cart schema
-          id: productId,  // extra safety in case another renderer uses `id`
-          title,
-          name: title,
-          coverUrl,
-          priceJMD: Number.isFinite(priceJMD) ? priceJMD : 0,
-          size,
-          qty: 1
+      // ✅ Create cart item with fields your cart UI expects (prevents "undefined")
+      const item = {
+        productId,      // keep compatibility with existing cart schema
+        id: productId,  // extra safety in case another renderer uses `id`
+        title,
+        name: title,
+        coverUrl,
+        priceJMD: Number.isFinite(priceJMD) ? priceJMD : 0,
+        size,
+        qty: 1
+      };
+
+      // ✅ Always use the real Cart (bs_state_v1) so cart.html sees the items
+      await Cart.add(productId, size, 1);
+
+      // ✅ Save product meta so cart/checkout can render name/image/price even after refresh
+      try {
+        const st = readState();
+        st.productCache = st.productCache || {};
+        st.productCache[String(productId)] = {
+          name: title || 'Item',
+          image: coverUrl || '',
+          price: Number.isFinite(priceJMD) ? priceJMD : 0
         };
+        writeState(st);
+      } catch (_) { }
 
-        // ✅ Always use the real Cart (bs_state_v1) so cart.html sees the items
-        await Cart.add(productId, size, 1);
+      // Decrement for UI-only stock display
+      stockBySize[size] = Math.max(0, currentStock - 1);
+      card.setAttribute("data-stock", JSON.stringify(stockBySize));
 
-        // ✅ Save product meta so cart/checkout can render name/image/price even after refresh
-        try {
-          const st = readState();
-          st.productCache = st.productCache || {};
-          st.productCache[String(productId)] = {
-            name: title || 'Item',
-            image: coverUrl || '',
-            price: Number.isFinite(priceJMD) ? priceJMD : 0
-          };
-          writeState(st);
-        } catch (_) { }
+      // If size hit 0, remove option
+      if (Number(stockBySize[size]) <= 0 && sizeSelect) {
+        const opt = sizeSelect.querySelector(`option[value="${size}"]`);
+        if (opt) opt.remove();
+        sizeSelect.value = "";
+      }
 
-        // Decrement for UI-only stock display
-        stockBySize[size] = Math.max(0, currentStock - 1);
-        card.setAttribute("data-stock", JSON.stringify(stockBySize));
+      // If no sizes left, disable
+      const sizes = ["S", "M", "L", "XL"];
+      const total = sizes.reduce((sum, s) => sum + Number(stockBySize[s] || 0), 0);
+      if (total <= 0) {
+        btn.disabled = true;
+        btn.textContent = "Sold Out";
+        if (sizeSelect) sizeSelect.disabled = true;
+      }
 
-        // If size hit 0, remove option
-        if (Number(stockBySize[size]) <= 0 && sizeSelect) {
-          const opt = sizeSelect.querySelector(`option[value="${size}"]`);
-          if (opt) opt.remove();
-          sizeSelect.value = "";
-        }
+      if (typeof updateCartCount === "function") updateCartCount();
 
-        // If no sizes left, disable
-        const sizes = ["S", "M", "L", "XL"];
-        const total = sizes.reduce((sum, s) => sum + Number(stockBySize[s] || 0), 0);
-        if (total <= 0) {
-          btn.disabled = true;
-          btn.textContent = "Sold Out";
-          if (sizeSelect) sizeSelect.disabled = true;
-        }
+      toast(`Added to cart: ${title || 'Item'}.`);
+      UI.updateCartBadges();
+    });
+  }
 
-        if (typeof updateCartCount === "function") updateCartCount();
+  // -----------------------------
+  // CART PAGE
+  // -----------------------------
+  async function renderCartIfOnCartPage() {
+    // Render cart when cart DOM is present (works for clean URLs like /cart too)
+    if (!$('#cartItems')) return;
 
-        toast(`Added to cart: ${title || 'Item'}.`);
-        UI.updateCartBadges();
-      });
+    await Products.ensureLoaded();
+
+    const itemsEl = $('#cartItems');
+    const emptyEl = $('#cartEmpty');
+    const subtotalEl = $('#cartSubtotal');
+    const totalEl = $('#cartTotal');
+
+    const legacyContainer = $('.cart-container');
+
+    const items = Cart.items();
+
+    const st = readState();
+    const cache = st.productCache || {};
+
+    function resolveProduct(it) {
+      const pid = String(it.productId || '');
+      const p = Products.findById(pid);
+
+      if (p) {
+        return {
+          name: p.title || p.name || it.name || 'Item',
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
+          price: Number(p.priceJMD || it.price || 0)
+        };
+      }
+
+      const c = cache[pid];
+      if (c) {
+        return {
+          name: c.name || it.name || 'Item',
+          image: c.image || it.image || '',
+          price: Number(c.price || it.price || 0)
+        };
+      }
+
+      return {
+        name: it.name || 'Item',
+        image: it.image || '',
+        price: Number(it.price || 0)
+      };
     }
 
-    // -----------------------------
-    // CART PAGE
-    // -----------------------------
-    async function renderCartIfOnCartPage() {
-      // Render cart when cart DOM is present (works for clean URLs like /cart too)
-      if (!$('#cartItems')) return;
+    function maxAllowedForItem(it) {
+      const pid = String(it.productId || '');
+      const sz = String(it.size || '');
+      if (!sz) return null;
 
-      await Products.ensureLoaded();
+      const p = Products.findById(pid);
+      if (!p || !p.stockBySize || typeof p.stockBySize !== 'object') return null;
 
-      const itemsEl = $('#cartItems');
-      const emptyEl = $('#cartEmpty');
-      const subtotalEl = $('#cartSubtotal');
-      const totalEl = $('#cartTotal');
+      const base = Number(p.stockBySize?.[sz] ?? 0);
+      if (!Number.isFinite(base)) return null;
 
-      const legacyContainer = $('.cart-container');
-
-      const items = Cart.items();
-
-      const st = readState();
-      const cache = st.productCache || {};
-
-      function resolveProduct(it) {
-        const pid = String(it.productId || '');
-        const p = Products.findById(pid);
-
-        if (p) {
-          return {
-            name: p.title || p.name || it.name || 'Item',
-            image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
-            price: Number(p.priceJMD || it.price || 0)
-          };
+      const otherQty = items.reduce((sum, row) => {
+        if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
+          return sum + Number(row.qty || 0);
         }
+        return sum;
+      }, 0);
 
-        const c = cache[pid];
-        if (c) {
-          return {
-            name: c.name || it.name || 'Item',
-            image: c.image || it.image || '',
-            price: Number(c.price || it.price || 0)
-          };
+      return Math.max(0, base - otherQty);
+    }
+
+    if (itemsEl && emptyEl && subtotalEl && totalEl) {
+      const isEmpty = items.length === 0;
+      emptyEl.hidden = !isEmpty;
+
+      const clearBtn = document.getElementById('clearCartBtn');
+      if (clearBtn) {
+        clearBtn.hidden = isEmpty;
+
+        if (!clearBtn.dataset.bound) {
+          clearBtn.dataset.bound = '1';
+          clearBtn.addEventListener('click', async () => {
+            await Cart.clear();
+            UI.updateCartBadges();
+            await renderCartIfOnCartPage();
+            toast('Cart cleared.');
+          });
         }
-
-        return {
-          name: it.name || 'Item',
-          image: it.image || '',
-          price: Number(it.price || 0)
-        };
       }
 
-      function maxAllowedForItem(it) {
-        const pid = String(it.productId || '');
-        const sz = String(it.size || '');
-        if (!sz) return null;
-
-        const p = Products.findById(pid);
-        if (!p || !p.stockBySize || typeof p.stockBySize !== 'object') return null;
-
-        const base = Number(p.stockBySize?.[sz] ?? 0);
-        if (!Number.isFinite(base)) return null;
-
-        const otherQty = items.reduce((sum, row) => {
-          if (row !== it && String(row.productId) === pid && String(row.size || '') === sz) {
-            return sum + Number(row.qty || 0);
-          }
-          return sum;
-        }, 0);
-
-        return Math.max(0, base - otherQty);
+      if (isEmpty) {
+        itemsEl.innerHTML = '';
+        subtotalEl.textContent = money(0);
+        totalEl.textContent = money(0);
+        return;
       }
 
-      if (itemsEl && emptyEl && subtotalEl && totalEl) {
-        const isEmpty = items.length === 0;
-        emptyEl.hidden = !isEmpty;
+      const filled = items.map((it) => {
+        const meta = resolveProduct(it);
+        return { ...it, ...meta };
+      });
 
-        const clearBtn = document.getElementById('clearCartBtn');
-        if (clearBtn) {
-          clearBtn.hidden = isEmpty;
+      const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
 
-          if (!clearBtn.dataset.bound) {
-            clearBtn.dataset.bound = '1';
-            clearBtn.addEventListener('click', async () => {
-              await Cart.clear();
-              UI.updateCartBadges();
-              await renderCartIfOnCartPage();
-              toast('Cart cleared.');
-            });
-          }
-        }
-
-        if (isEmpty) {
-          itemsEl.innerHTML = '';
-          subtotalEl.textContent = money(0);
-          totalEl.textContent = money(0);
-          return;
-        }
-
-        const filled = items.map((it) => {
-          const meta = resolveProduct(it);
-          return { ...it, ...meta };
-        });
-
-        const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
-
-        itemsEl.innerHTML = filled.map((it) => `
+      itemsEl.innerHTML = filled.map((it) => `
         <div class="cart-item" data-id="${escapeHtml(it.productId)}" data-size="${escapeHtml(it.size || '')}">
           <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
           <div class="cart-item-info">
@@ -1346,94 +1360,94 @@
         </div>
       `).join('');
 
-        subtotalEl.textContent = money(subtotal);
-        totalEl.textContent = money(subtotal);
+      subtotalEl.textContent = money(subtotal);
+      totalEl.textContent = money(subtotal);
 
-        itemsEl.addEventListener('input', async (e) => {
-          const input = e.target.closest('input[type="number"]');
-          if (!input) return;
-          // Mirror change handler so stepper arrows clamp immediately
-          const row = input.closest('.cart-item');
-          if (!row) return;
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || null;
-          const q = Math.max(1, Number(input.value || 1));
-          const applied = await Cart.setQty(pid, size, q);
-          if (applied === 0) {
-            toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-          } else if (typeof applied === 'number' && applied < q) {
-            input.value = String(applied);
-            toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-          }
-          UI.updateCartBadges();
-          await renderCartIfOnCartPage();
-        });
+      itemsEl.addEventListener('input', async (e) => {
+        const input = e.target.closest('input[type="number"]');
+        if (!input) return;
+        // Mirror change handler so stepper arrows clamp immediately
+        const row = input.closest('.cart-item');
+        if (!row) return;
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
+        const applied = await Cart.setQty(pid, size, q);
+        if (applied === 0) {
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          input.value = String(applied);
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+        }
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
+      });
 
-        itemsEl.addEventListener('change', async (e) => {
-          const input = e.target.closest('input[type="number"]');
-          if (!input) return;
+      itemsEl.addEventListener('change', async (e) => {
+        const input = e.target.closest('input[type="number"]');
+        if (!input) return;
 
-          const row = input.closest('.cart-item');
-          if (!row) return;
+        const row = input.closest('.cart-item');
+        if (!row) return;
 
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || null;
-          const q = Math.max(1, Number(input.value || 1));
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
+        const q = Math.max(1, Number(input.value || 1));
 
-          const applied = await Cart.setQty(pid, size, q);
+        const applied = await Cart.setQty(pid, size, q);
 
-          if (applied === 0) {
-            toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-          } else if (typeof applied === 'number' && applied < q) {
-            input.value = String(applied);
-            toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-          }
+        if (applied === 0) {
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          input.value = String(applied);
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+        }
 
-          UI.updateCartBadges();
-          await renderCartIfOnCartPage();
-        });
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
+      });
 
-        itemsEl.addEventListener('click', async (e) => {
-          const btn = e.target.closest('.remove-from-cart');
-          if (!btn) return;
+      itemsEl.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.remove-from-cart');
+        if (!btn) return;
 
-          const row = btn.closest('.cart-item');
-          if (!row) return;
+        const row = btn.closest('.cart-item');
+        if (!row) return;
 
-          const pid = row.getAttribute('data-id');
-          const size = row.getAttribute('data-size') || null;
+        const pid = row.getAttribute('data-id');
+        const size = row.getAttribute('data-size') || null;
 
-          await Cart.remove(pid, size);
-          UI.updateCartBadges();
-          await renderCartIfOnCartPage();
-        });
+        await Cart.remove(pid, size);
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
+      });
 
-        return;
-      }
+      return;
+    }
 
-      if (!legacyContainer) return;
+    if (!legacyContainer) return;
 
-      legacyContainer.innerHTML = '';
+    legacyContainer.innerHTML = '';
 
-      if (items.length === 0) {
-        legacyContainer.innerHTML = `
+    if (items.length === 0) {
+      legacyContainer.innerHTML = `
         <div class="empty-cart">
           Your cart is empty. <a href="shop-page.html">Shop Now</a>
         </div>
       `;
-        return;
-      }
+      return;
+    }
 
-      let subtotal = 0;
+    let subtotal = 0;
 
-      items.forEach((it) => {
-        const meta = resolveProduct(it);
-        const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
-        subtotal += lineTotal;
+    items.forEach((it) => {
+      const meta = resolveProduct(it);
+      const lineTotal = Number(meta.price || 0) * Number(it.qty || 0);
+      subtotal += lineTotal;
 
-        const row = document.createElement('div');
-        row.className = 'cart-item';
-        row.innerHTML = `
+      const row = document.createElement('div');
+      row.className = 'cart-item';
+      row.innerHTML = `
         <img src="${escapeHtml(meta.image || '')}" alt="${escapeHtml(meta.name || 'Product')}" class="cart-item-img" />
         <div class="cart-item-info">
           <h4>${escapeHtml(meta.name || 'Item')}</h4>
@@ -1446,346 +1460,346 @@
         </div>
       `;
 
-        const qtyInput = row.querySelector('input[type="number"]');
-        const removeBtn = row.querySelector('.remove-from-cart');
+      const qtyInput = row.querySelector('input[type="number"]');
+      const removeBtn = row.querySelector('.remove-from-cart');
 
-        qtyInput.addEventListener('input', async () => {
-          const q = Math.max(1, Number(qtyInput.value || 1));
-          const applied = await Cart.setQty(it.productId, it.size || null, q);
+      qtyInput.addEventListener('input', async () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        const applied = await Cart.setQty(it.productId, it.size || null, q);
 
-          if (applied === 0) {
-            toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-          } else if (typeof applied === 'number' && applied < q) {
-            qtyInput.value = String(applied);
-            toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-          }
+        if (applied === 0) {
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          qtyInput.value = String(applied);
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+        }
 
-          UI.updateCartBadges();
-          await renderCartIfOnCartPage();
-        });
-
-        qtyInput.addEventListener('change', async () => {
-          const q = Math.max(1, Number(qtyInput.value || 1));
-          const applied = await Cart.setQty(it.productId, it.size || null, q);
-
-          if (applied === 0) {
-            toast('That size is now out of stock, so we removed it from your cart.', { important: true });
-          } else if (typeof applied === 'number' && applied < q) {
-            qtyInput.value = String(applied);
-            toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
-          }
-
-          UI.updateCartBadges();
-          await renderCartIfOnCartPage();
-        });
-
-        removeBtn.addEventListener('click', async () => {
-          await Cart.remove(it.productId, it.size || null);
-          UI.updateCartBadges();
-          await renderCartIfOnCartPage();
-        });
-
-        legacyContainer.appendChild(row);
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
       });
 
-      const summary = document.createElement('div');
-      summary.className = 'cart-summary';
-      summary.innerHTML = `
+      qtyInput.addEventListener('change', async () => {
+        const q = Math.max(1, Number(qtyInput.value || 1));
+        const applied = await Cart.setQty(it.productId, it.size || null, q);
+
+        if (applied === 0) {
+          toast('That size is now out of stock, so we removed it from your cart.', { important: true });
+        } else if (typeof applied === 'number' && applied < q) {
+          qtyInput.value = String(applied);
+          toast(`We updated your quantity to ${applied} because only ${applied} left in stock for that size.`, { important: true });
+        }
+
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
+      });
+
+      removeBtn.addEventListener('click', async () => {
+        await Cart.remove(it.productId, it.size || null);
+        UI.updateCartBadges();
+        await renderCartIfOnCartPage();
+      });
+
+      legacyContainer.appendChild(row);
+    });
+
+    const summary = document.createElement('div');
+    summary.className = 'cart-summary';
+    summary.innerHTML = `
       <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
       <p><strong>Total:</strong> ${money(subtotal)}</p>
       <a href="shop-page.html" class="btn continue-shopping-btn">Continue Shopping</a>
       <a href="checkout.html" class="btn checkout-btn proceed-checkout-btn">Proceed to Checkout</a>
     `;
 
-      legacyContainer.appendChild(summary);
+    legacyContainer.appendChild(summary);
+  }
+
+  // -----------------------------
+  // AUTH GATE (uses Auth.currentUser() which now prefers server session)
+  // -----------------------------
+  function gateCheckoutAndOrders() {
+    const p = page();
+    const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
+    if (!needsAuth) return;
+
+    const user = Auth.currentUser();
+    if (user) return;
+
+    /* returnTo stored in URL */
+    toast('Please log in to continue.', { important: true });
+    location.href = 'login.html';
+  }
+
+  // -----------------------------
+  // LOGIN / REGISTER FORMS
+  // -----------------------------
+  function bindLoginForm() {
+    if (page() !== 'login.html' && page() !== 'login') return;
+
+    const form = document.querySelector('form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+      const password = (form.querySelector('input[type="password"]')?.value || '').trim();
+
+      try {
+        await Auth.login({ email, password });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+
+        const returnTo = getReturnTo();
+        location.href = returnTo || 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Login failed.', { important: true });
+      }
+    });
+  }
+
+  function bindRegisterForm() {
+    if (page() !== 'register.html' && page() !== 'register') return;
+
+    const form = document.querySelector('form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
+      const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+
+      const password =
+        (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
+
+      const confirmPassword =
+        (form.querySelector(
+          'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm-password"], input[name="confirm"], input#confirmPassword, input#confirm_password, input#confirm-password'
+        )?.value || '').trim();
+
+      try {
+        await Auth.register({ fullname, email, password, confirmPassword });
+        UI.updateNavAuthState();
+        UI.updateCartBadges();
+        toast('Account created.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Registration failed.', { important: true });
+      }
+    });
+  }
+
+  // -----------------------------
+  // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
+  // -----------------------------
+  function bindForgotPasswordForm() {
+    if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
+
+    const form = document.getElementById('forgotPasswordForm');
+    if (!form) return;
+
+    const emailInput = document.getElementById('fpEmail');
+    const codeWrap = document.getElementById('fpCodeWrap');
+    const codeEl = document.getElementById('fpResetCode');
+    const copyBtn = document.getElementById('fpCopyCodeBtn');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const email = String(emailInput?.value || '').trim();
+
+      try {
+        const { code } = Auth.requestPasswordReset(email);
+
+        if (codeEl) codeEl.textContent = String(code);
+        if (codeWrap) codeWrap.hidden = false;
+
+        toast('Reset code generated (demo).');
+      } catch (err) {
+        toast(err?.message || 'Could not generate reset code.', { important: true });
+      }
+    });
+
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = '1';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          const txt = String(codeEl?.textContent || '').trim();
+          if (!txt) throw new Error('No code to copy.');
+          await navigator.clipboard.writeText(txt);
+          toast('Code copied.');
+        } catch (err) {
+          toast('Could not copy code.', { important: true });
+        }
+      });
     }
+  }
 
-    // -----------------------------
-    // AUTH GATE (uses Auth.currentUser() which now prefers server session)
-    // -----------------------------
-    function gateCheckoutAndOrders() {
-      const p = page();
-      const needsAuth = (p === 'checkout.html' || p === 'orders.html' || p === 'account.html' || p === 'edit-profile.html');
-      if (!needsAuth) return;
+  function bindResetPasswordForm() {
+    if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
 
-      const user = Auth.currentUser();
-      if (user) return;
+    const form = document.getElementById('resetPasswordForm');
+    if (!form) return;
 
+    const emailInput = document.getElementById('rpEmail');
+    const codeInput = document.getElementById('rpCode');
+    const newPwInput = document.getElementById('rpNewPassword');
+    const confirmPwInput = document.getElementById('rpConfirmNewPassword');
+
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      try {
+        const email = String(emailInput?.value || '').trim();
+        const code = String(codeInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirm = String(confirmPwInput?.value || '').trim();
+
+        if (!email) throw new Error('Please enter your email.');
+        if (!code) throw new Error('Please enter your reset code.');
+        if (!newPassword) throw new Error('Please enter a new password.');
+        if (newPassword !== confirm) throw new Error('New passwords do not match.');
+
+        Auth.resetPassword({ email, code, newPassword });
+
+        toast('Password reset successfully. Please log in.');
+        location.href = 'login.html';
+      } catch (err) {
+        toast(err?.message || 'Could not reset password.', { important: true });
+      }
+    });
+  }
+
+  function bindEditProfileForm() {
+    if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
+
+    const user = Auth.currentUser();
+    if (!user) {
       /* returnTo stored in URL */
       toast('Please log in to continue.', { important: true });
       location.href = 'login.html';
+      return;
     }
 
-    // -----------------------------
-    // LOGIN / REGISTER FORMS
-    // -----------------------------
-    function bindLoginForm() {
-      if (page() !== 'login.html' && page() !== 'login') return;
+    const form = document.getElementById('editProfileForm');
+    if (!form) return;
 
-      const form = document.querySelector('form');
-      if (!form) return;
+    const nameInput = document.getElementById('epName');
+    const emailInput = document.getElementById('epEmail');
+    const currentPwInput = document.getElementById('epCurrentPassword');
+    const newPwInput = document.getElementById('epNewPassword');
+    const confirmPwInput = document.getElementById('epConfirmNewPassword');
+    const cancelBtn = document.getElementById('epCancelBtn');
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    if (emailInput) emailInput.value = user.email || '';
+    if (nameInput) nameInput.value = user.name || '';
 
-        const email = (form.querySelector('input[type="email"]')?.value || '').trim();
-        const password = (form.querySelector('input[type="password"]')?.value || '').trim();
-
-        try {
-          await Auth.login({ email, password });
-          UI.updateNavAuthState();
-          UI.updateCartBadges();
-
-          const returnTo = getReturnTo();
-        location.href = returnTo || 'account.html';
-        } catch (err) {
-          toast(err?.message || 'Login failed.', { important: true });
-        }
+    if (cancelBtn && !cancelBtn.dataset.bound) {
+      cancelBtn.dataset.bound = '1';
+      cancelBtn.addEventListener('click', () => {
+        location.href = 'account.html';
       });
     }
 
-    function bindRegisterForm() {
-      if (page() !== 'register.html' && page() !== 'register') return;
+    if (form.dataset.bound) return;
+    form.dataset.bound = '1';
 
-      const form = document.querySelector('form');
-      if (!form) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+      try {
+        const name = String(nameInput?.value || '').trim();
+        const currentPassword = String(currentPwInput?.value || '').trim();
+        const newPassword = String(newPwInput?.value || '').trim();
+        const confirmNewPassword = String(confirmPwInput?.value || '').trim();
 
-        const fullname = (form.querySelector('input[name="fullname"]')?.value || '').trim();
-        const email = (form.querySelector('input[type="email"]')?.value || '').trim();
+        if (!name) throw new Error('Please enter your display name.');
+        if (!currentPassword) throw new Error('Please enter your current password.');
 
-        const password =
-          (form.querySelector('input[name="password"], input#password, input[type="password"]')?.value || '').trim();
-
-        const confirmPassword =
-          (form.querySelector(
-            'input[name="confirmPassword"], input[name="confirm_password"], input[name="confirm-password"], input[name="confirm"], input#confirmPassword, input#confirm_password, input#confirm-password'
-          )?.value || '').trim();
-
-        try {
-          await Auth.register({ fullname, email, password, confirmPassword });
-          UI.updateNavAuthState();
-          UI.updateCartBadges();
-          toast('Account created.');
-          location.href = 'account.html';
-        } catch (err) {
-          toast(err?.message || 'Registration failed.', { important: true });
-        }
-      });
-    }
-
-    // -----------------------------
-    // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
-    // -----------------------------
-    function bindForgotPasswordForm() {
-      if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
-
-      const form = document.getElementById('forgotPasswordForm');
-      if (!form) return;
-
-      const emailInput = document.getElementById('fpEmail');
-      const codeWrap = document.getElementById('fpCodeWrap');
-      const codeEl = document.getElementById('fpResetCode');
-      const copyBtn = document.getElementById('fpCopyCodeBtn');
-
-      if (form.dataset.bound) return;
-      form.dataset.bound = '1';
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const email = String(emailInput?.value || '').trim();
-
-        try {
-          const { code } = Auth.requestPasswordReset(email);
-
-          if (codeEl) codeEl.textContent = String(code);
-          if (codeWrap) codeWrap.hidden = false;
-
-          toast('Reset code generated (demo).');
-        } catch (err) {
-          toast(err?.message || 'Could not generate reset code.', { important: true });
-        }
-      });
-
-      if (copyBtn && !copyBtn.dataset.bound) {
-        copyBtn.dataset.bound = '1';
-        copyBtn.addEventListener('click', async () => {
-          try {
-            const txt = String(codeEl?.textContent || '').trim();
-            if (!txt) throw new Error('No code to copy.');
-            await navigator.clipboard.writeText(txt);
-            toast('Code copied.');
-          } catch (err) {
-            toast('Could not copy code.', { important: true });
-          }
-        });
-      }
-    }
-
-    function bindResetPasswordForm() {
-      if (page() !== 'reset-password.html' && page() !== 'reset-password') return;
-
-      const form = document.getElementById('resetPasswordForm');
-      if (!form) return;
-
-      const emailInput = document.getElementById('rpEmail');
-      const codeInput = document.getElementById('rpCode');
-      const newPwInput = document.getElementById('rpNewPassword');
-      const confirmPwInput = document.getElementById('rpConfirmNewPassword');
-
-      if (form.dataset.bound) return;
-      form.dataset.bound = '1';
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        try {
-          const email = String(emailInput?.value || '').trim();
-          const code = String(codeInput?.value || '').trim();
-          const newPassword = String(newPwInput?.value || '').trim();
-          const confirm = String(confirmPwInput?.value || '').trim();
-
-          if (!email) throw new Error('Please enter your email.');
-          if (!code) throw new Error('Please enter your reset code.');
+        const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
+        if (wantsPwChange) {
           if (!newPassword) throw new Error('Please enter a new password.');
-          if (newPassword !== confirm) throw new Error('New passwords do not match.');
-
-          Auth.resetPassword({ email, code, newPassword });
-
-          toast('Password reset successfully. Please log in.');
-          location.href = 'login.html';
-        } catch (err) {
-          toast(err?.message || 'Could not reset password.', { important: true });
+          if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
         }
-      });
-    }
 
-    function bindEditProfileForm() {
-      if (page() !== 'edit-profile.html' && page() !== 'edit-profile') return;
-
-      const user = Auth.currentUser();
-      if (!user) {
-        /* returnTo stored in URL */
-        toast('Please log in to continue.', { important: true });
-        location.href = 'login.html';
-        return;
-      }
-
-      const form = document.getElementById('editProfileForm');
-      if (!form) return;
-
-      const nameInput = document.getElementById('epName');
-      const emailInput = document.getElementById('epEmail');
-      const currentPwInput = document.getElementById('epCurrentPassword');
-      const newPwInput = document.getElementById('epNewPassword');
-      const confirmPwInput = document.getElementById('epConfirmNewPassword');
-      const cancelBtn = document.getElementById('epCancelBtn');
-
-      if (emailInput) emailInput.value = user.email || '';
-      if (nameInput) nameInput.value = user.name || '';
-
-      if (cancelBtn && !cancelBtn.dataset.bound) {
-        cancelBtn.dataset.bound = '1';
-        cancelBtn.addEventListener('click', () => {
-          location.href = 'account.html';
+        await Auth.updateProfile({
+          name,
+          currentPassword,
+          newPassword: wantsPwChange ? newPassword : null
         });
-      }
 
-      if (form.dataset.bound) return;
-      form.dataset.bound = '1';
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        try {
-          const name = String(nameInput?.value || '').trim();
-          const currentPassword = String(currentPwInput?.value || '').trim();
-          const newPassword = String(newPwInput?.value || '').trim();
-          const confirmNewPassword = String(confirmPwInput?.value || '').trim();
-
-          if (!name) throw new Error('Please enter your display name.');
-          if (!currentPassword) throw new Error('Please enter your current password.');
-
-          const wantsPwChange = (newPassword !== '' || confirmNewPassword !== '');
-          if (wantsPwChange) {
-            if (!newPassword) throw new Error('Please enter a new password.');
-            if (newPassword !== confirmNewPassword) throw new Error('New passwords do not match.');
-          }
-
-          await Auth.updateProfile({
-            name,
-            currentPassword,
-            newPassword: wantsPwChange ? newPassword : null
-          });
-
-          UI.updateNavAuthState();
-          toast('Profile updated successfully.');
-          location.href = 'account.html';
-        } catch (err) {
-          toast(err?.message || 'Could not update profile.', { important: true });
-        }
-      });
-    }
-
-    // -----------------------------
-    // LOGOUT + ACCOUNT
-    // -----------------------------
-    function bindLogoutLinks() {
-      document.addEventListener('click', async (e) => {
-        const a = e.target.closest('a[href="logout.html"]');
-        if (!a) return;
-        e.preventDefault();
-
-        await Auth.logout();
         UI.updateNavAuthState();
-        UI.updateCartBadges();
-        toast('Logged out.');
-        location.href = 'index.html';
-      });
-    }
-
-    function renderAccountIfOnAccountPage() {
-      if (page() !== 'account.html' && page() !== 'account') return;
-
-      const user = Auth.currentUser();
-      const nameEl = $('#accountName');
-      const emailEl = $('#accountEmail');
-      const sinceEl = $('#accountSince');
-
-      if (nameEl) nameEl.textContent = user?.name || '';
-      if (emailEl) emailEl.textContent = user?.email || '';
-      if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
-    }
-
-    // -----------------------------
-    // ORDERS PAGE
-    // -----------------------------
-    async function renderOrdersIfOnOrdersPage() {
-      if (page() !== 'orders.html' && page() !== 'orders') return;
-
-      const user = Auth.currentUser();
-      const listEl = $('#ordersList');
-      if (!listEl) return;
-
-      if (!user || !user.email) {
-        listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
-        return;
+        toast('Profile updated successfully.');
+        location.href = 'account.html';
+      } catch (err) {
+        toast(err?.message || 'Could not update profile.', { important: true });
       }
+    });
+  }
 
-      const fmtDate = (iso) => {
-        const d = iso ? new Date(iso) : null;
-        if (!d || !Number.isFinite(d.getTime())) return '—';
-        return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-      };
+  // -----------------------------
+  // LOGOUT + ACCOUNT
+  // -----------------------------
+  function bindLogoutLinks() {
+    document.addEventListener('click', async (e) => {
+      const a = e.target.closest('a[href="logout.html"]');
+      if (!a) return;
+      e.preventDefault();
 
-      const safe = (s) => escapeHtml(String(s || ''));
+      await Auth.logout();
+      UI.updateNavAuthState();
+      UI.updateCartBadges();
+      toast('Logged out.');
+      location.href = 'index.html';
+    });
+  }
 
-      const renderList = (orders) => {
-        if (!Array.isArray(orders) || !orders.length) {
-          listEl.innerHTML = `
+  function renderAccountIfOnAccountPage() {
+    if (page() !== 'account.html' && page() !== 'account') return;
+
+    const user = Auth.currentUser();
+    const nameEl = $('#accountName');
+    const emailEl = $('#accountEmail');
+    const sinceEl = $('#accountSince');
+
+    if (nameEl) nameEl.textContent = user?.name || '';
+    if (emailEl) emailEl.textContent = user?.email || '';
+    if (sinceEl) sinceEl.textContent = formatMemberSince(user?.createdAt);
+  }
+
+  // -----------------------------
+  // ORDERS PAGE
+  // -----------------------------
+  async function renderOrdersIfOnOrdersPage() {
+    if (page() !== 'orders.html' && page() !== 'orders') return;
+
+    const user = Auth.currentUser();
+    const listEl = $('#ordersList');
+    if (!listEl) return;
+
+    if (!user || !user.email) {
+      listEl.innerHTML = `<p class="muted">Please log in to view your orders.</p>`;
+      return;
+    }
+
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
+
+    const safe = (s) => escapeHtml(String(s || ''));
+
+    const renderList = (orders) => {
+      if (!Array.isArray(orders) || !orders.length) {
+        listEl.innerHTML = `
           <div class="order-card">
             <div class="order-row">
               <strong>No orders yet</strong>
@@ -1796,22 +1810,22 @@
             </div>
           </div>
         `;
-          return;
-        }
+        return;
+      }
 
-        const sorted = orders.slice().sort((a, b) => {
-          const ta = new Date(a?.createdAt || 0).getTime();
-          const tb = new Date(b?.createdAt || 0).getTime();
-          return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-        });
+      const sorted = orders.slice().sort((a, b) => {
+        const ta = new Date(a?.createdAt || 0).getTime();
+        const tb = new Date(b?.createdAt || 0).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
 
-        listEl.innerHTML = sorted.map(o => {
-          const id = safe(o.id);
-          const status = safe(o.status || 'Placed');
-          const total = money(o.totalJMD || 0);
-          const date = safe(fmtDate(o.createdAt));
+      listEl.innerHTML = sorted.map(o => {
+        const id = safe(o.id);
+        const status = safe(o.status || 'Placed');
+        const total = money(o.totalJMD || 0);
+        const date = safe(fmtDate(o.createdAt));
 
-          return `
+        return `
           <div class="order-card">
             <div class="order-row">
               <strong>Order #</strong> <span>${id}</span>
@@ -1830,101 +1844,101 @@
             </div>
           </div>
         `;
-        }).join('');
-      };
+      }).join('');
+    };
 
-      // --- PRODUCTION: try backend first ---
-      try {
-        const res = await fetch('/api/orders/me', { credentials: 'include' });
-        const data = await res.json().catch(() => null);
+    // --- PRODUCTION: try backend first ---
+    try {
+      const res = await fetch('/api/orders/me', { credentials: 'include' });
+      const data = await res.json().catch(() => null);
 
-        if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
+      if (!res.ok) throw new Error(data?.error || 'Could not load orders.');
 
-        const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
-        renderList(orders);
-        return;
-      } catch (err) {
-        const msg = String(err?.message || '').toLowerCase();
-        const canFallback =
-          msg.includes('failed to fetch') ||
-          msg.includes('networkerror') ||
-          msg.includes('not found') ||
-          msg.includes('unexpected token');
-
-        if (!canFallback) {
-          listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
-          return;
-        }
-      }
-
-      // --- DEMO FALLBACK ---
-      const st = readState();
-      const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+      const orders = Array.isArray(data) ? data : (Array.isArray(data?.orders) ? data.orders : []);
       renderList(orders);
+      return;
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const canFallback =
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('not found') ||
+        msg.includes('unexpected token');
+
+      if (!canFallback) {
+        listEl.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load orders.')}</p>`;
+        return;
+      }
     }
 
-    // -----------------------------
-    // CHECKOUT PAGE (DEMO + server order create)
-    // -----------------------------
-    async function renderCheckoutIfOnCheckoutPage() {
-      if (page() !== 'checkout.html' && page() !== 'checkout') return;
+    // --- DEMO FALLBACK ---
+    const st = readState();
+    const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
+    renderList(orders);
+  }
 
-      const main = document.querySelector('main');
-      if (!main) return;
+  // -----------------------------
+  // CHECKOUT PAGE (DEMO + server order create)
+  // -----------------------------
+  async function renderCheckoutIfOnCheckoutPage() {
+    if (page() !== 'checkout.html' && page() !== 'checkout') return;
 
-      await Products.ensureLoaded();
+    const main = document.querySelector('main');
+    if (!main) return;
 
-      const items = Cart.items();
-      const st = readState();
-      const cache = st.productCache || {};
+    await Products.ensureLoaded();
 
-      function resolveProduct(it) {
-        const pid = String(it.productId || '');
-        const p = Products.findById(pid);
-        if (p) {
-          return {
-            name: p.title || p.name || it.name || 'Item',
-            image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
-            price: Number(p.priceJMD || it.price || 0)
-          };
-        }
-        const c = cache[pid];
-        if (c) {
-          return {
-            name: c.name || it.name || 'Item',
-            image: c.image || it.image || '',
-            price: Number(c.price || it.price || 0)
-          };
-        }
+    const items = Cart.items();
+    const st = readState();
+    const cache = st.productCache || {};
+
+    function resolveProduct(it) {
+      const pid = String(it.productId || '');
+      const p = Products.findById(pid);
+      if (p) {
         return {
-          name: it.name || 'Item',
-          image: it.image || '',
-          price: Number(it.price || 0)
+          name: p.title || p.name || it.name || 'Item',
+          image: (p.media && p.media.coverUrl) ? p.media.coverUrl : (it.image || ''),
+          price: Number(p.priceJMD || it.price || 0)
         };
       }
-
-      const emptyWrap = $('#checkoutEmpty');
-      const wrap = $('#checkoutWrap');
-
-      if (!items.length) {
-        if (emptyWrap) emptyWrap.hidden = false;
-        if (wrap) wrap.hidden = true;
-        return;
+      const c = cache[pid];
+      if (c) {
+        return {
+          name: c.name || it.name || 'Item',
+          image: c.image || it.image || '',
+          price: Number(c.price || it.price || 0)
+        };
       }
+      return {
+        name: it.name || 'Item',
+        image: it.image || '',
+        price: Number(it.price || 0)
+      };
+    }
 
-      if (emptyWrap) emptyWrap.hidden = true;
-      if (wrap) wrap.hidden = false;
+    const emptyWrap = $('#checkoutEmpty');
+    const wrap = $('#checkoutWrap');
 
-      const filled = items.map(it => ({ ...it, ...resolveProduct(it) }));
-      const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+    if (!items.length) {
+      if (emptyWrap) emptyWrap.hidden = false;
+      if (wrap) wrap.hidden = true;
+      return;
+    }
 
-      const listEl = $('#checkoutItems');
-      const subtotalEl = $('#checkoutSubtotal');
-      const totalEl = $('#checkoutTotal');
-      const btn = $('#placeOrderBtn');
+    if (emptyWrap) emptyWrap.hidden = true;
+    if (wrap) wrap.hidden = false;
 
-      if (listEl) {
-        listEl.innerHTML = filled.map(it => `
+    const filled = items.map(it => ({ ...it, ...resolveProduct(it) }));
+    const subtotal = filled.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 0)), 0);
+
+    const listEl = $('#checkoutItems');
+    const subtotalEl = $('#checkoutSubtotal');
+    const totalEl = $('#checkoutTotal');
+    const btn = $('#placeOrderBtn');
+
+    if (listEl) {
+      listEl.innerHTML = filled.map(it => `
         <div class="checkout-item">
           <img src="${escapeHtml(it.image || '')}" alt="${escapeHtml(it.name || 'Product')}" />
           <div class="checkout-item-info">
@@ -1934,158 +1948,158 @@
           <div class="checkout-item-price">${money(Number(it.price || 0) * Number(it.qty || 0))}</div>
         </div>
       `).join('');
-      }
-
-      if (subtotalEl) subtotalEl.textContent = money(subtotal);
-      if (totalEl) totalEl.textContent = money(subtotal);
-
-      if (btn) {
-        btn.onclick = async () => {
-          const user = Auth.currentUser();
-          if (!user) {
-            toast('Please log in to continue.', { important: true });
-            /* returnTo stored in URL */
-            location.href = 'login.html';
-            return;
-          }
-
-          const orderItemsResolved = filled.map(it => ({
-            productId: String(it.productId),
-            size: String(it.size || ''),
-            qty: Number(it.qty || 0),
-            name: String(it.name || 'Item'),
-            price: Number(it.price || 0),
-            image: String(it.image || '')
-          }));
-
-          try {
-            const payload = {
-              items: orderItemsResolved.map(it => ({
-                productId: it.productId,
-                size: it.size,
-                qty: it.qty
-              }))
-            };
-
-            const res = await fetch('/api/orders', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-              credentials: 'include'
-            });
-
-            const data = await res.json().catch(() => null);
-
-            if (!res.ok) {
-              throw new Error(data?.error || 'Could not place order.');
-            }
-
-            const orderId = String(data?.orderId || data?.order?.id || '').trim();
-            if (!orderId) throw new Error('Order placed but missing order id from server.');
-
-            await Cart.clear();
-            UI.updateCartBadges();
-            toast('Order placed.');
-            location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
-            return;
-          } catch (err) {
-            const msg = String(err?.message || '');
-            const canFallback =
-              msg.toLowerCase().includes('failed to fetch') ||
-              msg.toLowerCase().includes('networkerror') ||
-              msg.toLowerCase().includes('not found') ||
-              msg.toLowerCase().includes('unexpected token') ||
-              msg.toLowerCase().includes('load failed');
-
-            if (!canFallback) {
-              toast(msg || 'Could not place order.', { important: true });
-              return;
-            }
-          }
-
-          // --- DEMO FALLBACK ---
-          const now = nowISO();
-          const orderId = uid('ord_');
-          const totalJMD = Number(subtotal || 0);
-
-          const order = {
-            id: orderId,
-            createdAt: now,
-            status: 'Placed',
-            history: [{ at: now, by: 'System', from: '—', to: 'Placed' }],
-            totalJMD,
-            items: orderItemsResolved
-          };
-
-          const st2 = readState();
-          const em = String(user.email || '').trim().toLowerCase();
-          st2.ordersByUser[em] = Array.isArray(st2.ordersByUser[em]) ? st2.ordersByUser[em] : [];
-          st2.ordersByUser[em].unshift(order);
-          writeState(st2);
-
-          await Cart.clear();
-          UI.updateCartBadges();
-          toast('Order placed (demo).');
-          location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
-        };
-      }
     }
 
-    async function renderReceiptIfOnReceiptPage() {
-      if (page() !== 'receipt.html' && page() !== 'receipt') return;
+    if (subtotalEl) subtotalEl.textContent = money(subtotal);
+    if (totalEl) totalEl.textContent = money(subtotal);
 
-      const user = Auth.currentUser();
-      if (!user || !user.email) {
-        location.href = 'login.html';
-        return;
-      }
-
-      const params = new URLSearchParams(location.search);
-      const orderId = String(params.get('order') || '').trim();
-
-      const setText = (id, value) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = String(value == null ? '' : value);
-      };
-
-      const fmtDate = (iso) => {
-        const d = iso ? new Date(iso) : null;
-        if (!d || !Number.isFinite(d.getTime())) return '—';
-        return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
-      };
-
-      const renderOrder = (order) => {
-        if (!order) {
-          setText('rcptOrderId', '—');
-          setText('rcptOrderDate', '—');
-          setText('rcptOrderStatus', '—');
-          const itemsEl = document.getElementById('rcptItems');
-          if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+    if (btn) {
+      btn.onclick = async () => {
+        const user = Auth.currentUser();
+        if (!user) {
+          toast('Please log in to continue.', { important: true });
+          /* returnTo stored in URL */
+          location.href = 'login.html';
           return;
         }
 
-        setText('rcptOrderId', `#${order.id || ''}`);
-        setText('rcptOrderDate', fmtDate(order.createdAt));
-        setText('rcptOrderStatus', order.status || 'Placed');
-        setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+        const orderItemsResolved = filled.map(it => ({
+          productId: String(it.productId),
+          size: String(it.size || ''),
+          qty: Number(it.qty || 0),
+          name: String(it.name || 'Item'),
+          price: Number(it.price || 0),
+          image: String(it.image || '')
+        }));
 
-        const items = Array.isArray(order.items) ? order.items : [];
-        setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
-        setText('rcptTotal', money(order.totalJMD || 0));
+        try {
+          const payload = {
+            items: orderItemsResolved.map(it => ({
+              productId: it.productId,
+              size: it.size,
+              qty: it.qty
+            }))
+          };
 
-        const tbody = document.getElementById('rcptItems');
-        if (tbody) {
-          if (!items.length) {
-            tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
-          } else {
-            tbody.innerHTML = items.map(it => {
-              const nm = escapeHtml(it?.name || 'Item');
-              const sz = escapeHtml(it?.size || '—');
-              const qty = Number(it?.qty || 0);
-              const price = Number(it?.price || 0);
-              const line = price * qty;
+          const res = await fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
 
-              return `
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+            throw new Error(data?.error || 'Could not place order.');
+          }
+
+          const orderId = String(data?.orderId || data?.order?.id || '').trim();
+          if (!orderId) throw new Error('Order placed but missing order id from server.');
+
+          await Cart.clear();
+          UI.updateCartBadges();
+          toast('Order placed.');
+          location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
+          return;
+        } catch (err) {
+          const msg = String(err?.message || '');
+          const canFallback =
+            msg.toLowerCase().includes('failed to fetch') ||
+            msg.toLowerCase().includes('networkerror') ||
+            msg.toLowerCase().includes('not found') ||
+            msg.toLowerCase().includes('unexpected token') ||
+            msg.toLowerCase().includes('load failed');
+
+          if (!canFallback) {
+            toast(msg || 'Could not place order.', { important: true });
+            return;
+          }
+        }
+
+        // --- DEMO FALLBACK ---
+        const now = nowISO();
+        const orderId = uid('ord_');
+        const totalJMD = Number(subtotal || 0);
+
+        const order = {
+          id: orderId,
+          createdAt: now,
+          status: 'Placed',
+          history: [{ at: now, by: 'System', from: '—', to: 'Placed' }],
+          totalJMD,
+          items: orderItemsResolved
+        };
+
+        const st2 = readState();
+        const em = String(user.email || '').trim().toLowerCase();
+        st2.ordersByUser[em] = Array.isArray(st2.ordersByUser[em]) ? st2.ordersByUser[em] : [];
+        st2.ordersByUser[em].unshift(order);
+        writeState(st2);
+
+        await Cart.clear();
+        UI.updateCartBadges();
+        toast('Order placed (demo).');
+        location.href = `receipt.html?order=${encodeURIComponent(orderId)}`;
+      };
+    }
+  }
+
+  async function renderReceiptIfOnReceiptPage() {
+    if (page() !== 'receipt.html' && page() !== 'receipt') return;
+
+    const user = Auth.currentUser();
+    if (!user || !user.email) {
+      location.href = 'login.html';
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const orderId = String(params.get('order') || '').trim();
+
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value == null ? '' : value);
+    };
+
+    const fmtDate = (iso) => {
+      const d = iso ? new Date(iso) : null;
+      if (!d || !Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+    };
+
+    const renderOrder = (order) => {
+      if (!order) {
+        setText('rcptOrderId', '—');
+        setText('rcptOrderDate', '—');
+        setText('rcptOrderStatus', '—');
+        const itemsEl = document.getElementById('rcptItems');
+        if (itemsEl) itemsEl.innerHTML = `<tr><td colspan="5" class="muted">Receipt not found.</td></tr>`;
+        return;
+      }
+
+      setText('rcptOrderId', `#${order.id || ''}`);
+      setText('rcptOrderDate', fmtDate(order.createdAt));
+      setText('rcptOrderStatus', order.status || 'Placed');
+      setText('rcptCustomer', user.name ? `${user.name} (${user.email})` : user.email);
+
+      const items = Array.isArray(order.items) ? order.items : [];
+      setText('rcptItemCount', items.reduce((sum, it) => sum + Number(it?.qty || 0), 0));
+      setText('rcptTotal', money(order.totalJMD || 0));
+
+      const tbody = document.getElementById('rcptItems');
+      if (tbody) {
+        if (!items.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">No items found for this order.</td></tr>`;
+        } else {
+          tbody.innerHTML = items.map(it => {
+            const nm = escapeHtml(it?.name || 'Item');
+            const sz = escapeHtml(it?.size || '—');
+            const qty = Number(it?.qty || 0);
+            const price = Number(it?.price || 0);
+            const line = price * qty;
+
+            return `
               <tr>
                 <td>${nm}</td>
                 <td>${sz}</td>
@@ -2094,133 +2108,133 @@
                 <td class="right">${escapeHtml(money(line))}</td>
               </tr>
             `;
-            }).join('');
-          }
+          }).join('');
         }
-      };
-
-      try {
-        if (!orderId) throw new Error('Missing order id.');
-
-        // Always prefer JSON API helper; never leak HTML/platform pages into UI.
-        const { ok, status, data } = await apiJson(`/api/orders/${encodeURIComponent(orderId)}`);
-        if (!ok) {
-          const msg = (data?.error || data?.message || '').trim();
-          throw new Error(msg || `Could not load receipt (${status}).`);
-        }
-
-        const order = data?.order ? data.order : data;
-        renderOrder(order);
-      } catch (err) {
-        console.error(err);
-        renderOrder(null);
-        toast(err?.message || 'Could not load receipt. Please try again.', { important: true });
-        return;
       }
+    };
 
-      const printBtn = document.getElementById('printReceiptBtn');
-      if (printBtn && !printBtn.dataset.bound) {
-        printBtn.dataset.bound = '1';
-        printBtn.addEventListener('click', () => window.print());
-      }
-    }
+    try {
+      if (!orderId) throw new Error('Missing order id.');
 
-    // -----------------------------
-    // DEV-ONLY: PROMOTE USER TO ADMIN (SERVER + DEMO)
-    // -----------------------------
-    async function promoteToAdmin({ email, secret }) {
-      const em = String(email || '').trim().toLowerCase();
-      const sec = String(secret || '').trim();
-      if (!em) throw new Error('promoteToAdmin: email is required.');
-      if (!sec) throw new Error('promoteToAdmin: secret is required.');
-
-      const { ok, status, data } = await apiJson('/api/dev/make-admin', {
-        method: 'POST',
-        body: { email: em, secret: sec }
-      });
-
+      // Always prefer JSON API helper; never leak HTML/platform pages into UI.
+      const { ok, status, data } = await apiJson(`/api/orders/${encodeURIComponent(orderId)}`);
       if (!ok) {
-        throw new Error(data?.error || `Failed to promote (${status})`);
+        const msg = (data?.error || data?.message || '').trim();
+        throw new Error(msg || `Could not load receipt (${status}).`);
       }
 
-      await Auth.bootstrap();
-      UI.updateNavAuthState();
-      return data;
+      const order = data?.order ? data.order : data;
+      renderOrder(order);
+    } catch (err) {
+      console.error(err);
+      renderOrder(null);
+      toast(err?.message || 'Could not load receipt. Please try again.', { important: true });
+      return;
     }
 
-    // (kept) DEMO local promotion
-    function makeAdmin(email) {
-      const em = String(email || '').trim().toLowerCase();
-      if (!em) throw new Error('makeAdmin(email): email is required.');
-
-      const users = readUsers();
-      const u = users[em];
-      if (!u) throw new Error('makeAdmin(email): no user found with that email.');
-
-      u.email = u.email || em;
-      u.createdAt = u.createdAt || nowISO();
-      u.role = 'admin';
-
-      users[em] = u;
-      writeUsers(users);
-
-      return true;
+    const printBtn = document.getElementById('printReceiptBtn');
+    if (printBtn && !printBtn.dataset.bound) {
+      printBtn.dataset.bound = '1';
+      printBtn.addEventListener('click', () => window.print());
     }
+  }
 
-    // -----------------------------
-    // INIT
-    // -----------------------------
-    async function init() {
-      enforceStorefrontLightTheme();
-      UI.ensureHeaderFooter();
+  // -----------------------------
+  // DEV-ONLY: PROMOTE USER TO ADMIN (SERVER + DEMO)
+  // -----------------------------
+  async function promoteToAdmin({ email, secret }) {
+    const em = String(email || '').trim().toLowerCase();
+    const sec = String(secret || '').trim();
+    if (!em) throw new Error('promoteToAdmin: email is required.');
+    if (!sec) throw new Error('promoteToAdmin: secret is required.');
 
-      // IMPORTANT: hydrate from server cookie session FIRST
-      await Auth.bootstrap();
-
-      UI.updateNavAuthState();
-      UI.updateCartBadges();
-      UI.bindLoginDropdown();
-      UI.bindNavActive();
-
-      gateCheckoutAndOrders();
-
-      await bindGoogleSignInIfPresent();
-
-      await renderHomeIfOnHomePage();
-      await renderShopFromStore();
-      bindAddToCart();
-
-      await renderCartIfOnCartPage();
-      await renderCheckoutIfOnCheckoutPage();
-
-      bindLoginForm();
-      bindRegisterForm();
-      bindForgotPasswordForm();
-      bindResetPasswordForm();
-      bindEditProfileForm();
-      bindLogoutLinks();
-
-      renderAccountIfOnAccountPage();
-      renderOrdersIfOnOrdersPage();
-
-      renderReceiptIfOnReceiptPage();
-    }
-
-    document.addEventListener('DOMContentLoaded', async () => {
-      try { await init(); } catch (e) {
-        console.error(e);
-        try { toast('Something went wrong loading the site. Please refresh.', { important: true }); } catch (_) { }
-      }
+    const { ok, status, data } = await apiJson('/api/dev/make-admin', {
+      method: 'POST',
+      body: { email: em, secret: sec }
     });
 
-    // Expose tiny API (debug / future admin)
-    BS.Auth = Auth;
-    BS.Cart = Cart;
-    BS.Products = Products;
-    BS.Orders = Orders;
+    if (!ok) {
+      throw new Error(data?.error || `Failed to promote (${status})`);
+    }
 
-    // Expose DEV-only admin promotion
-    BS.makeAdmin = makeAdmin;
-    BS.promoteToAdmin = promoteToAdmin;
+    await Auth.bootstrap();
+    UI.updateNavAuthState();
+    return data;
+  }
 
-  })();
+  // (kept) DEMO local promotion
+  function makeAdmin(email) {
+    const em = String(email || '').trim().toLowerCase();
+    if (!em) throw new Error('makeAdmin(email): email is required.');
+
+    const users = readUsers();
+    const u = users[em];
+    if (!u) throw new Error('makeAdmin(email): no user found with that email.');
+
+    u.email = u.email || em;
+    u.createdAt = u.createdAt || nowISO();
+    u.role = 'admin';
+
+    users[em] = u;
+    writeUsers(users);
+
+    return true;
+  }
+
+  // -----------------------------
+  // INIT
+  // -----------------------------
+  async function init() {
+    enforceStorefrontLightTheme();
+    UI.ensureHeaderFooter();
+
+    // IMPORTANT: hydrate from server cookie session FIRST
+    await Auth.bootstrap();
+
+    UI.updateNavAuthState();
+    UI.updateCartBadges();
+    UI.bindLoginDropdown();
+    UI.bindNavActive();
+
+    gateCheckoutAndOrders();
+
+    await bindGoogleSignInIfPresent();
+
+    await renderHomeIfOnHomePage();
+    await renderShopFromStore();
+    bindAddToCart();
+
+    await renderCartIfOnCartPage();
+    await renderCheckoutIfOnCheckoutPage();
+
+    bindLoginForm();
+    bindRegisterForm();
+    bindForgotPasswordForm();
+    bindResetPasswordForm();
+    bindEditProfileForm();
+    bindLogoutLinks();
+
+    renderAccountIfOnAccountPage();
+    renderOrdersIfOnOrdersPage();
+
+    renderReceiptIfOnReceiptPage();
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    try { await init(); } catch (e) {
+      console.error(e);
+      try { toast('Something went wrong loading the site. Please refresh.', { important: true }); } catch (_) { }
+    }
+  });
+
+  // Expose tiny API (debug / future admin)
+  BS.Auth = Auth;
+  BS.Cart = Cart;
+  BS.Products = Products;
+  BS.Orders = Orders;
+
+  // Expose DEV-only admin promotion
+  BS.makeAdmin = makeAdmin;
+  BS.promoteToAdmin = promoteToAdmin;
+
+})();
