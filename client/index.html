@@ -107,22 +107,24 @@
   </footer>
 
   <script src="js/main.js"></script>
+
   <!-- PROMO POPUP -->
   <div id="promoPopup" class="promo-popup" hidden>
-    <div class="promo-popup-backdrop"></div>
+    <div class="promo-popup-backdrop" data-action="close-promo-popup"></div>
 
     <div class="promo-popup-content">
-      <button id="promoPopupClose" class="promo-popup-close">✕</button>
+      <button id="promoPopupClose" class="promo-popup-close" type="button" aria-label="Close promotion">✕</button>
 
       <div id="promoPopupMedia" class="promo-popup-media"></div>
 
       <div class="promo-popup-text">
-        <h2 id="promoPopupTitle"></h2>
+        <h2 id="promoPopupTitle">Special Promotion</h2>
         <p id="promoPopupSubtitle"></p>
-        <a id="promoPopupCta" class="btn-primary" href="#">Shop Now</a>
+        <a id="promoPopupCta" class="btn-primary" href="shop-page.html">Shop Now</a>
       </div>
     </div>
   </div>
+
 
 </body>
 

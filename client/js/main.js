@@ -19,9 +19,6 @@
   const BS = window.BeyondSilhouette;
 
   // -----------------------------
-  // KEYS / STORAGE
-  // -----------------------------
-  // -----------------------------
   // UTILS
   // -----------------------------
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -32,17 +29,23 @@
   const getReturnTo = () => {
     try { return new URLSearchParams(location.search).get('returnTo'); } catch { return null; }
   };
+
   const withReturnTo = (href) => {
     try {
       const u = new URL(location.href);
       u.searchParams.set('returnTo', href);
       return u.search;
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   };
+
   const uid = (p = '') => p + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   const money = (n) => `J$${Number(n || 0).toFixed(2)}`;
+
   const page = () => {
     const p = (location.pathname || '/').toLowerCase().replace(/\/+$/, '');
+
     if (
       p === '' ||
       p === '/' ||
@@ -50,7 +53,7 @@
       p === '/index' ||
       p.endsWith('/index.html')
     ) return 'home';
-    if (p === '' || p === '/' || p === '/home' || p.endsWith('/index.html')) return 'home';
+
     if (p === '/shop' || p.endsWith('/shop-page.html')) return 'shop';
     if (p.endsWith('/cart.html') || p === '/cart') return 'cart';
     if (p.endsWith('/checkout.html') || p === '/checkout') return 'checkout';
@@ -63,17 +66,15 @@
     if (p.endsWith('/forgot-password.html') || p === '/forgot-password') return 'forgot-password';
     if (p.endsWith('/reset-password.html') || p === '/reset-password') return 'reset-password';
     if (p.endsWith('/receipt.html') || p === '/receipt') return 'receipt';
+
     return p.split('/').pop() || 'home';
   };
 
-
   function enforceStorefrontLightTheme() {
     document.documentElement.setAttribute('data-theme', 'light');
-
-    // Keep storefront permanently light and prevent legacy storefront keys from re-enabling dark mode.
     try {
       localStorage.removeItem('bs_theme');
-    } catch (_) { }
+    } catch (_) {}
   }
 
   function escapeHtml(s) {
@@ -88,6 +89,27 @@
   function formatMemberSince(iso) {
     const d = iso ? new Date(iso) : new Date();
     return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  function normalizePublicImageUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('data:image/')) return raw;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('/uploads/')) return raw;
+    if (raw.startsWith('uploads/')) return `/${raw}`;
+    if (raw.startsWith('/')) return raw;
+    return raw;
+  }
+
+  function isRenderableImageUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    return (
+      raw.startsWith('data:image/') ||
+      raw.startsWith('/uploads/') ||
+      /^https?:\/\//i.test(raw)
+    );
   }
 
   // -----------------------------
@@ -129,7 +151,7 @@
     ensureToastStyles();
 
     if (important) {
-      try { alert(msg); } catch (_) { }
+      try { alert(msg); } catch (_) {}
     }
 
     const el = document.createElement('div');
@@ -143,10 +165,6 @@
       setTimeout(() => el.remove(), 220);
     }, 2400);
   }
-
-  // -----------------------------
-  // STATE
-  // -----------------------------
 
   // -----------------------------
   // IN-MEMORY STATE (NO browser storage)
@@ -206,7 +224,6 @@
   }
 
   function generateResetCode6() {
-    // 6-digit numeric code (100000 - 999999)
     const n = Math.floor(100000 + Math.random() * 900000);
     return String(n);
   }
@@ -240,7 +257,6 @@
       const isJson = ct.includes('application/json');
       const data = isJson ? await res.json().catch(() => null) : null;
 
-      // Never leak HTML/platform error pages into UI. Treat non-JSON as a generic failure.
       if (!isJson) {
         return {
           ok: false,
@@ -259,21 +275,18 @@
     }
   }
 
-
   // -----------------------------
   // AUTH (SERVER FIRST, DEMO FALLBACK)
   // -----------------------------
   const Auth = {
-    _serverUser: null, // { id, email, name, role, createdAt, ... } from /api/me
+    _serverUser: null,
 
     async bootstrap() {
-      // Try to hydrate auth from server cookie session
       try {
         const { ok, data } = await apiJson('/api/me');
         if (ok && data?.user?.email) {
           this._serverUser = data.user;
 
-          // Mirror into local users store for UI pages that read from readUsers()
           const em = String(data.user.email).trim().toLowerCase();
           const users = readUsers();
           users[em] = users[em] || {};
@@ -283,30 +296,24 @@
           users[em].role = data.user.role || users[em].role || 'customer';
           writeUsers(users);
 
-          // Mark session provider as server (cookie is source of truth)
           writeSession({ email: em, token: uid('sess_'), createdAt: nowISO(), provider: 'server' });
 
           await Cart.bootstrap();
           return true;
         }
 
-        // Not logged in on server
         this._serverUser = null;
-        // DO NOT clear local demo session automatically; allow fallback
         return false;
       } catch (_) {
-        // If server not reachable or not running API, keep demo behavior
         this._serverUser = null;
         return false;
       }
     },
 
     currentUser() {
-      // Prefer server user if present
       if (this._serverUser?.email) {
         const em = String(this._serverUser.email).trim().toLowerCase();
         const users = readUsers();
-        // prefer locally-stored user fields if they exist, otherwise server fields
         return users[em] || {
           email: em,
           name: this._serverUser.name || em,
@@ -315,7 +322,6 @@
         };
       }
 
-      // Demo fallback
       const sess = readSession();
       if (!sess || !sess.email) return null;
       const users = readUsers();
@@ -337,7 +343,6 @@
         throw new Error(msg);
       }
 
-      // After register, cookie session should be set; bootstrap from /api/me for consistency
       await this.bootstrap();
       return data?.user || null;
     },
@@ -360,7 +365,6 @@
       return data?.user || null;
     },
 
-
     async loginWithGoogleCredential(credential) {
       const token = String(credential || '').trim();
       if (!token) throw new Error('Missing Google credential.');
@@ -377,14 +381,10 @@
     },
 
     async logoutServer() {
-      // Cookie session clear
       await apiJson('/api/auth/logout', { method: 'POST' }).catch(() => null);
       this._serverUser = null;
-      // Also clear demo session so UI resets
       clearSession();
     },
-
-    // Public API used by forms (server-first, demo fallback)
 
     async register({ fullname, email, password, confirmPassword }) {
       const em = String(email || '').trim().toLowerCase();
@@ -408,7 +408,6 @@
       await Cart.bootstrap();
       return data.user;
     },
-
 
     async login({ email, password }) {
       const em = String(email || '').trim().toLowerCase();
@@ -463,7 +462,7 @@
       if (!u) throw new Error('No account found for this email.');
 
       const code = generateResetCode6();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
       const resets = readPwResets();
       resets[em] = { code, expiresAt };
@@ -500,7 +499,6 @@
       }
 
       u.passwordHash = demoHash(np);
-
       u.email = u.email || em;
       u.createdAt = u.createdAt || nowISO();
       u.role = u.role || 'customer';
@@ -515,14 +513,12 @@
     },
 
     async logout() {
-      // Try server logout first if we appear to be server-authenticated
       const sess = readSession();
       if (sess?.provider === 'server' || this._serverUser?.email) {
         await this.logoutServer();
         return;
       }
 
-      // Demo logout
       clearSession();
       this._serverUser = null;
     }
@@ -530,12 +526,9 @@
 
   // -----------------------------
   // CART
-  // - Guest cart: local (existing behavior)
-  // - Logged-in cart: server-backed (/api/cart) using InventoryReservation (DB-backed)
   // -----------------------------
-
   const Cart = (() => {
-    let _items = []; // [{productId,size,qty,product:{id,name,priceJMD,image}}]
+    let _items = [];
     let _bootstrapped = false;
 
     function isLoggedIn() {
@@ -573,12 +566,15 @@
 
     async function add(productId, size, qty = 1) {
       if (!isLoggedIn()) {
-        // Require auth for DB cart
         const rt = encodeURIComponent(location.pathname.replace(/^\//, '') || 'index.html');
         location.href = `login.html?returnTo=${rt}`;
         return;
       }
-      const payload = { productId: String(productId || '').trim(), size: String(size || '').trim(), qty: Math.max(1, Math.floor(Number(qty) || 1)) };
+      const payload = {
+        productId: String(productId || '').trim(),
+        size: String(size || '').trim(),
+        qty: Math.max(1, Math.floor(Number(qty) || 1))
+      };
       const { ok, data } = await apiJson('/api/cart/add', { method: 'POST', body: payload });
       if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to add to cart');
       _items = Array.isArray(data.items) ? data.items : _items;
@@ -588,7 +584,11 @@
     async function setQty(productId, size, qty) {
       if (!isLoggedIn()) return;
       const q = Math.max(0, Math.floor(Number(qty) || 0));
-      const payload = { productId: String(productId || '').trim(), size: String(size || '').trim(), qty: q };
+      const payload = {
+        productId: String(productId || '').trim(),
+        size: String(size || '').trim(),
+        qty: q
+      };
       const { ok, data } = await apiJson('/api/cart/item', { method: 'PATCH', body: payload });
       if (!ok || !data?.ok) throw new Error(data?.error || 'Failed to update cart');
       _items = Array.isArray(data.items) ? data.items : _items;
@@ -630,6 +630,7 @@
       remove,
     };
   })();
+
   // -----------------------------
   // PRODUCTS STORE (API-backed)
   // -----------------------------
@@ -637,10 +638,8 @@
     let _cache = [];
 
     function buildStockBySize(p) {
-      // Prefer existing stockBySize if present
       if (p && p.stockBySize && typeof p.stockBySize === 'object') return p.stockBySize;
 
-      // API-backed: inventory is [{ size, stock }]
       const inv = Array.isArray(p?.inventory) ? p.inventory : [];
       const map = {};
       inv.forEach((row) => {
@@ -653,7 +652,6 @@
     }
 
     function pickCoverUrl(p) {
-      // API-backed: images is [{ url, alt, sortOrder }]
       if (Array.isArray(p?.images) && p.images.length) {
         const first = p.images
           .slice()
@@ -661,7 +659,6 @@
         if (first?.url) return String(first.url);
       }
 
-      // Older shapes
       if (p?.media?.coverUrl) return String(p.media.coverUrl);
       if (p?.coverUrl) return String(p.coverUrl);
 
@@ -672,8 +669,6 @@
       const name = String(p?.title || p?.name || '').trim();
       const coverUrl = pickCoverUrl(p);
       const stockBySize = buildStockBySize(p);
-
-      // Make a consistent “published” signal across old/new shapes
       const isPublished = (p?.isPublished === true) || (p?.status === 'published');
 
       return {
@@ -697,23 +692,22 @@
       },
 
       listPublished() {
-        // API uses isPublished, old demo used status
         return _cache.filter(p => p?.isPublished === true || p?.status === 'published');
       },
 
       findById(id) {
-        const pid = String(id || "");
+        const pid = String(id || '');
         return _cache.find(p => String(p?.id) === pid) || null;
       },
 
       async ensureLoaded() {
         if (Array.isArray(_cache) && _cache.length) return _cache;
 
-        const res = await fetch("/api/products", { credentials: "omit" }).catch(() => null);
+        const res = await fetch('/api/products', { credentials: 'omit' }).catch(() => null);
         if (!res || !res.ok) return _cache;
 
-        const ct = String(res.headers.get("content-type") || "");
-        if (!ct.includes("application/json")) return _cache;
+        const ct = String(res.headers.get('content-type') || '');
+        if (!ct.includes('application/json')) return _cache;
 
         const data = await res.json().catch(() => null);
         if (!data || data.ok !== true || !Array.isArray(data.products)) return _cache;
@@ -723,6 +717,7 @@
       }
     };
   })();
+
   // -----------------------------
   // ORDERS (LOCAL DEMO)
   // -----------------------------
@@ -772,8 +767,6 @@
     },
 
     ensureHeaderFooter() {
-      // Non-negotiable: do not inject full HTML layouts from JS.
-      // Each page must include its own real header/footer markup.
       return;
     },
 
@@ -830,7 +823,6 @@
         return;
       }
 
-      // cookie session should be set by server
       await Auth.bootstrap();
 
       const returnTo = getReturnTo();
@@ -840,7 +832,6 @@
     }
   }
 
-
   async function bindGoogleSignInIfPresent() {
     const p = page();
     if (p !== 'login' && p !== 'register') return;
@@ -848,7 +839,6 @@
     const btnHosts = Array.from(document.querySelectorAll('.g_id_signin'));
     if (!btnHosts.length) return;
 
-    // Get client_id from server (no hardcoding in HTML)
     const { ok, data } = await apiJson('/api/public/config');
     const clientId = String(data?.googleClientId || '').trim();
     if (!ok || !clientId) {
@@ -907,23 +897,22 @@
       return;
     }
 
-    const SIZES = ["S", "M", "L", "XL"];
+    const SIZES = ['S', 'M', 'L', 'XL'];
 
     container.innerHTML = list.map((p) => {
-      const id = String(p?.id || "");
-      const cover = String(p?.media?.coverUrl || "");
-      const name = String(p?.title || p?.name || "").trim();
+      const id = String(p?.id || '');
+      const cover = String(p?.media?.coverUrl || '');
+      const name = String(p?.title || p?.name || '').trim();
       const priceNum = Number(p?.priceJMD ?? 0);
-      const price = Number.isFinite(priceNum) ? priceNum.toLocaleString("en-JM") : "0";
+      const price = Number.isFinite(priceNum) ? priceNum.toLocaleString('en-JM') : '0';
 
-      const sb = (p && p.stockBySize && typeof p.stockBySize === "object") ? p.stockBySize : {};
+      const sb = (p && p.stockBySize && typeof p.stockBySize === 'object') ? p.stockBySize : {};
       const options = SIZES
         .filter(sz => Number(sb?.[sz] ?? 0) > 0)
         .map(sz => `<option value="${sz}">${sz}</option>`)
-        .join("");
+        .join('');
 
       const soldOut = !options;
-
       const stockJson = escapeHtml(JSON.stringify(sb || {}));
 
       return `
@@ -935,26 +924,26 @@
     data-pricejmd="${escapeHtml(String(priceNum || 0))}"
     data-stock="${stockJson}"
   >
-    <img src="${escapeHtml(cover)}" alt="${escapeHtml(name || "Product")}" />
+    <img src="${escapeHtml(cover)}" alt="${escapeHtml(name || 'Product')}" />
     <h3>${escapeHtml(name)}</h3>
     <p class="price">JMD ${escapeHtml(price)}</p>
 
     <div class="product-actions">
-      <select class="product-size-select" ${soldOut ? "disabled" : ""} aria-label="Select size">
+      <select class="product-size-select" ${soldOut ? 'disabled' : ''} aria-label="Select size">
         <option value="">Select size</option>
         ${options}
       </select>
 
-     <button class="btn btn--primary add-to-cart" type="button" ${soldOut ? "disabled" : ""}>
-        ${soldOut ? "Sold Out" : "Add to cart"}
+      <button class="btn btn--primary add-to-cart" type="button" ${soldOut ? 'disabled' : ''}>
+        ${soldOut ? 'Sold Out' : 'Add to cart'}
       </button>
     </div>
   </div>
 `;
-    }).join("");
+    }).join('');
   }
+
   async function renderShopFromStore() {
-    // Support BOTH older markup and your current shop page (#productsGrid)
     const container =
       document.getElementById('productsGrid') ||
       document.querySelector('[data-products]');
@@ -963,27 +952,100 @@
 
     container.innerHTML = `<div class="muted">Loading products…</div>`;
 
-    // Products are served from the same origin in production.
-    // We intentionally avoid hardcoded fallback hosts to prevent “platform” error pages.
     try {
-      const res = await fetch("/api/products", { credentials: "omit" });
+      const res = await fetch('/api/products', { credentials: 'omit' });
 
-      const ct = String(res.headers.get("content-type") || "");
-      if (!res.ok || !ct.includes("application/json")) throw new Error("Products fetch failed");
+      const ct = String(res.headers.get('content-type') || '');
+      if (!res.ok || !ct.includes('application/json')) throw new Error('Products fetch failed');
 
       const data = await res.json();
-      if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error("Bad products response");
+      if (!data || data.ok !== true || !Array.isArray(data.products)) throw new Error('Bad products response');
 
       Products.setAll(data.products);
       renderProducts(container, Products.listPublished());
       return;
     } catch (err) {
-      console.warn("Products fetch failed.", err);
+      console.warn('Products fetch failed.', err);
       container.innerHTML = `<div class="muted">We couldn't load products right now. Please try again.</div>`;
       return;
     }
   }
 
+  // -----------------------------
+  // HOME PROMO POPUP
+  // -----------------------------
+  function renderPromoPopup(home) {
+    const popup = document.getElementById('promoPopup');
+    const popupMedia = document.getElementById('promoPopupMedia');
+    const popupTitle = document.getElementById('promoPopupTitle');
+    const popupSubtitle = document.getElementById('promoPopupSubtitle');
+    const popupCta = document.getElementById('promoPopupCta');
+    const popupClose = document.getElementById('promoPopupClose');
+    const popupBackdrop = popup?.querySelector('[data-action="close-promo-popup"]');
+
+    if (!popup || !popupMedia || !popupTitle || !popupSubtitle || !popupCta) return;
+
+    const enabled = !!home?.promoEnabled;
+    const imageUrl = normalizePublicImageUrl(home?.promoImageUrl);
+    const hasImage = isRenderableImageUrl(imageUrl);
+
+    if (!(enabled && hasImage)) {
+      popup.hidden = true;
+      return;
+    }
+
+    let dismissed = false;
+    try {
+      dismissed = localStorage.getItem('promoDismissed') === 'true';
+    } catch (_) {}
+
+    popup.hidden = !!dismissed;
+
+    popupMedia.style.backgroundImage = `url("${String(imageUrl).replace(/"/g, '\\"')}")`;
+
+    popupTitle.textContent =
+      home?.promoTitle == null || String(home.promoTitle).trim() === ''
+        ? 'Special Promotion'
+        : String(home.promoTitle);
+
+    popupSubtitle.textContent =
+      home?.promoSubtitle == null
+        ? ''
+        : String(home.promoSubtitle);
+
+    popupCta.textContent =
+      home?.promoCtaText == null || String(home.promoCtaText).trim() === ''
+        ? 'Shop Now'
+        : String(home.promoCtaText);
+
+    popupCta.setAttribute(
+      'href',
+      home?.promoCtaLink == null || String(home.promoCtaLink).trim() === ''
+        ? 'shop-page.html'
+        : String(home.promoCtaLink)
+    );
+
+    const closePopup = () => {
+      popup.hidden = true;
+      try {
+        localStorage.setItem('promoDismissed', 'true');
+      } catch (_) {}
+    };
+
+    if (!popupClose.dataset.bound) {
+      popupClose.dataset.bound = '1';
+      popupClose.addEventListener('click', closePopup);
+    }
+
+    if (popupBackdrop && !popupBackdrop.dataset.bound) {
+      popupBackdrop.dataset.bound = '1';
+      popupBackdrop.addEventListener('click', closePopup);
+    }
+  }
+
+  // -----------------------------
+  // HOME PAGE
+  // -----------------------------
   async function renderHomeIfOnHomePage() {
     if (page() !== 'home') return;
 
@@ -1006,27 +1068,6 @@
       promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
     };
 
-    const normalizePublicImageUrl = (value) => {
-      const raw = String(value || '').trim();
-      if (!raw) return '';
-      if (raw.startsWith('data:image/')) return raw;
-      if (/^https?:\/\//i.test(raw)) return raw;
-      if (raw.startsWith('/uploads/')) return raw;
-      if (raw.startsWith('uploads/')) return `/${raw}`;
-      if (raw.startsWith('/')) return raw;
-      return raw;
-    };
-
-    const isRenderableImageUrl = (value) => {
-      const raw = String(value || '').trim();
-      if (!raw) return false;
-      return (
-        raw.startsWith('data:image/') ||
-        raw.startsWith('/uploads/') ||
-        /^https?:\/\//i.test(raw)
-      );
-    };
-
     try {
       const { ok, data } = await apiJson('/api/site/home');
       if (!ok || !data?.ok) {
@@ -1039,11 +1080,13 @@
       const home = data.home || {};
       const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
+      renderPromoPopup(home);
+
       const slideshowUrls = Array.isArray(home.slideshowUrls)
         ? home.slideshowUrls
-          .map(normalizePublicImageUrl)
-          .filter((url) => isRenderableImageUrl(url))
-          .slice(0, 4)
+            .map(normalizePublicImageUrl)
+            .filter((url) => isRenderableImageUrl(url))
+            .slice(0, 4)
         : [];
 
       const featuredIds = Array.isArray(home.featuredProductIds)
@@ -1071,7 +1114,6 @@
             ? defaults.heroSubtitle
             : String(home.heroSubtitle);
       }
-
 
       if (slides.length) {
         if (slideshowUrls.length) {
@@ -1128,7 +1170,7 @@
       if (featuredGrid) {
         if (featured.length) {
           featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
-            const cover = String(p?.media?.coverUrl || '');
+            const cover = normalizePublicImageUrl(String(p?.media?.coverUrl || ''));
             const name = String(p?.title || p?.name || 'Product');
             const price = Number(p?.priceJMD || 0).toLocaleString('en-JM');
 
@@ -1151,58 +1193,45 @@
     }
   }
 
-
-
+  // -----------------------------
+  // ADD TO CART
+  // -----------------------------
   function bindAddToCart() {
-    document.addEventListener("click", async (e) => {
-      const btn = e.target.closest(".add-to-cart");
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.add-to-cart');
       if (!btn) return;
 
-      const card = btn.closest(".product-card");
+      const card = btn.closest('.product-card');
       if (!card) return;
 
-      const productId = String(card.getAttribute("data-product-id") || "");
-      const title = String(card.getAttribute("data-title") || "Product");
-      const coverUrl = String(card.getAttribute("data-cover") || "");
-      const priceJMD = Number(card.getAttribute("data-pricejmd") || 0);
+      const productId = String(card.getAttribute('data-product-id') || '');
+      const title = String(card.getAttribute('data-title') || 'Product');
+      const coverUrl = String(card.getAttribute('data-cover') || '');
+      const priceJMD = Number(card.getAttribute('data-pricejmd') || 0);
 
-      const sizeSelect = card.querySelector(".product-size-select");
-      const size = String(sizeSelect?.value || "").trim().toUpperCase();
+      const sizeSelect = card.querySelector('.product-size-select');
+      const size = String(sizeSelect?.value || '').trim().toUpperCase();
 
       if (!size) {
-        toast?.("Please select a size.") || alert("Please select a size.");
+        toast?.('Please select a size.') || alert('Please select a size.');
         return;
       }
 
       let stockBySize = {};
       try {
-        stockBySize = JSON.parse(card.getAttribute("data-stock") || "{}");
+        stockBySize = JSON.parse(card.getAttribute('data-stock') || '{}');
       } catch {
         stockBySize = {};
       }
 
       const currentStock = Number(stockBySize?.[size] ?? 0);
       if (!Number.isFinite(currentStock) || currentStock <= 0) {
-        toast?.("That size is out of stock.") || alert("That size is out of stock.");
+        toast?.('That size is out of stock.') || alert('That size is out of stock.');
         return;
       }
 
-      // ✅ Create cart item with fields your cart UI expects (prevents "undefined")
-      const item = {
-        productId,      // keep compatibility with existing cart schema
-        id: productId,  // extra safety in case another renderer uses `id`
-        title,
-        name: title,
-        coverUrl,
-        priceJMD: Number.isFinite(priceJMD) ? priceJMD : 0,
-        size,
-        qty: 1
-      };
-
-      // ✅ Always use the real Cart (bs_state_v1) so cart.html sees the items
       await Cart.add(productId, size, 1);
 
-      // ✅ Save product meta so cart/checkout can render name/image/price even after refresh
       try {
         const st = readState();
         st.productCache = st.productCache || {};
@@ -1212,29 +1241,26 @@
           price: Number.isFinite(priceJMD) ? priceJMD : 0
         };
         writeState(st);
-      } catch (_) { }
+      } catch (_) {}
 
-      // Decrement for UI-only stock display
       stockBySize[size] = Math.max(0, currentStock - 1);
-      card.setAttribute("data-stock", JSON.stringify(stockBySize));
+      card.setAttribute('data-stock', JSON.stringify(stockBySize));
 
-      // If size hit 0, remove option
       if (Number(stockBySize[size]) <= 0 && sizeSelect) {
         const opt = sizeSelect.querySelector(`option[value="${size}"]`);
         if (opt) opt.remove();
-        sizeSelect.value = "";
+        sizeSelect.value = '';
       }
 
-      // If no sizes left, disable
-      const sizes = ["S", "M", "L", "XL"];
+      const sizes = ['S', 'M', 'L', 'XL'];
       const total = sizes.reduce((sum, s) => sum + Number(stockBySize[s] || 0), 0);
       if (total <= 0) {
         btn.disabled = true;
-        btn.textContent = "Sold Out";
+        btn.textContent = 'Sold Out';
         if (sizeSelect) sizeSelect.disabled = true;
       }
 
-      if (typeof updateCartCount === "function") updateCartCount();
+      if (typeof updateCartCount === 'function') updateCartCount();
 
       toast(`Added to cart: ${title || 'Item'}.`);
       UI.updateCartBadges();
@@ -1245,7 +1271,6 @@
   // CART PAGE
   // -----------------------------
   async function renderCartIfOnCartPage() {
-    // Render cart when cart DOM is present (works for clean URLs like /cart too)
     if (!$('#cartItems')) return;
 
     await Products.ensureLoaded();
@@ -1254,11 +1279,9 @@
     const emptyEl = $('#cartEmpty');
     const subtotalEl = $('#cartSubtotal');
     const totalEl = $('#cartTotal');
-
     const legacyContainer = $('.cart-container');
 
     const items = Cart.items();
-
     const st = readState();
     const cache = st.productCache || {};
 
@@ -1354,7 +1377,10 @@
           </div>
 
           <div class="cart-item-qty">
-            <input type="number" min="1" ${(() => { const m = maxAllowedForItem(it); return (typeof m === "number" && Number.isFinite(m)) ? `max="${Number(m || 0)}"` : ""; })()} value="${Number(it.qty || 1)}" />
+            <input type="number" min="1" ${(() => {
+              const m = maxAllowedForItem(it);
+              return (typeof m === 'number' && Number.isFinite(m)) ? `max="${Number(m || 0)}"` : '';
+            })()} value="${Number(it.qty || 1)}" />
             <button class="remove-from-cart" type="button">Remove</button>
           </div>
         </div>
@@ -1366,7 +1392,6 @@
       itemsEl.addEventListener('input', async (e) => {
         const input = e.target.closest('input[type="number"]');
         if (!input) return;
-        // Mirror change handler so stepper arrows clamp immediately
         const row = input.closest('.cart-item');
         if (!row) return;
         const pid = row.getAttribute('data-id');
@@ -1455,7 +1480,10 @@
           <p class="cart-item-price">${money(lineTotal)}</p>
         </div>
         <div class="cart-item-qty">
-          <input type="number" min="1" ${(() => { const m = maxAllowedForItem(it); return (typeof m === "number" && Number.isFinite(m)) ? `max="${Number(m || 0)}"` : ""; })()} value="${Number(it.qty || 1)}" />
+          <input type="number" min="1" ${(() => {
+            const m = maxAllowedForItem(it);
+            return (typeof m === 'number' && Number.isFinite(m)) ? `max="${Number(m || 0)}"` : '';
+          })()} value="${Number(it.qty || 1)}" />
           <button class="remove-from-cart" type="button">Remove</button>
         </div>
       `;
@@ -1515,7 +1543,7 @@
   }
 
   // -----------------------------
-  // AUTH GATE (uses Auth.currentUser() which now prefers server session)
+  // AUTH GATE
   // -----------------------------
   function gateCheckoutAndOrders() {
     const p = page();
@@ -1525,7 +1553,6 @@
     const user = Auth.currentUser();
     if (user) return;
 
-    /* returnTo stored in URL */
     toast('Please log in to continue.', { important: true });
     location.href = 'login.html';
   }
@@ -1591,7 +1618,7 @@
   }
 
   // -----------------------------
-  // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE (unchanged)
+  // FORGOT PASSWORD / RESET PASSWORD / EDIT PROFILE
   // -----------------------------
   function bindForgotPasswordForm() {
     if (page() !== 'forgot-password.html' && page() !== 'forgot-password') return;
@@ -1682,7 +1709,6 @@
 
     const user = Auth.currentUser();
     if (!user) {
-      /* returnTo stored in URL */
       toast('Please log in to continue.', { important: true });
       location.href = 'login.html';
       return;
@@ -1847,7 +1873,6 @@
       }).join('');
     };
 
-    // --- PRODUCTION: try backend first ---
     try {
       const res = await fetch('/api/orders/me', { credentials: 'include' });
       const data = await res.json().catch(() => null);
@@ -1871,7 +1896,6 @@
       }
     }
 
-    // --- DEMO FALLBACK ---
     const st = readState();
     const orders = Array.isArray(st.ordersByUser?.[user.email]) ? st.ordersByUser[user.email] : [];
     renderList(orders);
@@ -1958,7 +1982,6 @@
         const user = Auth.currentUser();
         if (!user) {
           toast('Please log in to continue.', { important: true });
-          /* returnTo stored in URL */
           location.href = 'login.html';
           return;
         }
@@ -2017,7 +2040,6 @@
           }
         }
 
-        // --- DEMO FALLBACK ---
         const now = nowISO();
         const orderId = uid('ord_');
         const totalJMD = Number(subtotal || 0);
@@ -2116,7 +2138,6 @@
     try {
       if (!orderId) throw new Error('Missing order id.');
 
-      // Always prefer JSON API helper; never leak HTML/platform pages into UI.
       const { ok, status, data } = await apiJson(`/api/orders/${encodeURIComponent(orderId)}`);
       if (!ok) {
         const msg = (data?.error || data?.message || '').trim();
@@ -2140,7 +2161,7 @@
   }
 
   // -----------------------------
-  // DEV-ONLY: PROMOTE USER TO ADMIN (SERVER + DEMO)
+  // DEV-ONLY: PROMOTE USER TO ADMIN
   // -----------------------------
   async function promoteToAdmin({ email, secret }) {
     const em = String(email || '').trim().toLowerCase();
@@ -2162,7 +2183,6 @@
     return data;
   }
 
-  // (kept) DEMO local promotion
   function makeAdmin(email) {
     const em = String(email || '').trim().toLowerCase();
     if (!em) throw new Error('makeAdmin(email): email is required.');
@@ -2188,7 +2208,6 @@
     enforceStorefrontLightTheme();
     UI.ensureHeaderFooter();
 
-    // IMPORTANT: hydrate from server cookie session FIRST
     await Auth.bootstrap();
 
     UI.updateNavAuthState();
@@ -2216,14 +2235,17 @@
 
     renderAccountIfOnAccountPage();
     renderOrdersIfOnOrdersPage();
-
     renderReceiptIfOnReceiptPage();
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
-    try { await init(); } catch (e) {
+    try {
+      await init();
+    } catch (e) {
       console.error(e);
-      try { toast('Something went wrong loading the site. Please refresh.', { important: true }); } catch (_) { }
+      try {
+        toast('Something went wrong loading the site. Please refresh.', { important: true });
+      } catch (_) {}
     }
   });
 

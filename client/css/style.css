@@ -758,20 +758,25 @@ html[data-theme="dark"] .btn-secondary {
 /* ==============================
    PROMO POPUP MODAL
 ============================== */
+.promo-popup[hidden] {
+  display: none !important;
+}
 
 .promo-popup {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: 3000;
   display: grid;
   place-items: center;
+  padding: 20px;
 }
 
 .promo-popup-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(3px);
+  z-index: 1;
 }
 
 .promo-popup-content {
@@ -780,15 +785,20 @@ html[data-theme="dark"] .btn-secondary {
   border-radius: 14px;
   overflow: hidden;
   max-width: 640px;
-  width: 92%;
+  width: min(92vw, 640px);
   box-shadow: var(--shadow-med);
   z-index: 2;
 }
 
 .promo-popup-media {
+  display: block;
+  width: 100%;
   height: 280px;
+  min-height: 280px;
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
+  background-color: hsl(var(--surface2));
 }
 
 .promo-popup-text {
@@ -799,22 +809,29 @@ html[data-theme="dark"] .btn-secondary {
 .promo-popup-text h2 {
   font-size: 1.9rem;
   margin-bottom: 10px;
+  color: hsl(var(--text));
 }
 
 .promo-popup-text p {
   margin-bottom: 18px;
+  color: hsl(var(--text));
 }
 
 .promo-popup-close {
   position: absolute;
   top: 12px;
   right: 14px;
-  background: rgba(0,0,0,0.5);
+  z-index: 4;
+  background: rgba(0, 0, 0, 0.55);
   border: none;
-  color: white;
+  color: #fff;
   font-size: 1.2rem;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
   cursor: pointer;
+}
+
+.promo-popup-close:hover {
+  background: rgba(0, 0, 0, 0.75);
 }
