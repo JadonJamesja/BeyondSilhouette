@@ -20,11 +20,11 @@
 
   const escapeHtml = (s) =>
     String(s ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
 
 
   const prettyStatus = (status) => {
@@ -955,14 +955,11 @@
   // Settings (Home CMS + Admin Config)
   // -----------------------------
   async function initSettings() {
-    const isSettingsPage = pathIsAdminPage('settings') || !!qs('#homeSettingsForm') || !!qs('#adminConfigForm');
-    if (!isSettingsPage) return;
+    if (!pathIsAdminPage('settings')) return;
 
     const errBox = qs('[data-ui="settingsError"]');
     const homeFlash = qs('[data-ui="settingsFlash"]');
     const configFlash = qs('[data-ui="configFlash"]');
-    const homeForm = qs('#homeSettingsForm');
-    const adminConfigForm = qs('#adminConfigForm');
     const heroTitleInput = qs('#homeHeroTitle');
     const heroSubtitleInput = qs('#homeHeroSubtitle');
     const slideshowInput = qs('#homeSlideshow');
@@ -1056,19 +1053,12 @@
       if (/^https?:\/\//i.test(raw) || raw.startsWith('data:image/')) return raw;
 
       const cleaned = raw.replace(/\\/g, '/').replace(/\s+\./g, '.').replace(/\.\s+/g, '.');
-      if (cleaned.startsWith('/uploads/home/')) return cleaned;
-      if (cleaned.startsWith('uploads/home/')) return `/${cleaned}`;
-      if (cleaned.startsWith('/uploads/') || cleaned.startsWith('uploads/')) {
-        return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
-      }
-      if (cleaned.includes('/')) return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      if (cleaned.startsWith('/uploads/')) return cleaned;
+      if (cleaned.startsWith('uploads/')) return `/${cleaned}`;
+      if (cleaned.startsWith('/')) return cleaned;
+      if (cleaned.includes('/')) return `/${cleaned.replace(/^\/+/, '')}`;
       return `/uploads/home/${cleaned}`;
     };
-
-    const parseTextareaList = (input) => String(input?.value || '')
-      .split('\n')
-      .map((line) => String(line || '').trim())
-      .filter(Boolean);
 
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
@@ -1128,19 +1118,21 @@
     }
 
     function applyHomeState(home) {
-      const next = home || {};
-      if (heroTitleInput) heroTitleInput.value = next.heroTitle || '';
-      if (heroSubtitleInput) heroSubtitleInput.value = next.heroSubtitle || '';
-      if (promoTitleInput) promoTitleInput.value = next.promoTitle || '';
-      if (promoSubtitleInput) promoSubtitleInput.value = next.promoSubtitle || '';
-      if (promoCtaTextInput) promoCtaTextInput.value = next.promoCtaText || '';
-      if (promoCtaLinkInput) promoCtaLinkInput.value = next.promoCtaLink || '';
-      if (promoEnabledInput) promoEnabledInput.checked = !!next.promoEnabled;
-      promoImageUrl = normalizeHomeImageUrl(next.promoImageUrl);
-      slideshowUrls = Array.isArray(next.slideshowUrls)
-        ? next.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
+      const source = home && typeof home === 'object' ? home : {};
+      if (heroTitleInput) heroTitleInput.value = source.heroTitle || '';
+      if (heroSubtitleInput) heroSubtitleInput.value = source.heroSubtitle || '';
+      if (promoTitleInput) promoTitleInput.value = source.promoTitle || '';
+      if (promoSubtitleInput) promoSubtitleInput.value = source.promoSubtitle || '';
+      if (promoCtaTextInput) promoCtaTextInput.value = source.promoCtaText || '';
+      if (promoCtaLinkInput) promoCtaLinkInput.value = source.promoCtaLink || '';
+      if (promoEnabledInput) promoEnabledInput.checked = !!source.promoEnabled;
+      promoImageUrl = normalizeHomeImageUrl(source.promoImageUrl);
+      slideshowUrls = Array.isArray(source.slideshowUrls)
+        ? source.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
         : [];
-      featuredIds = Array.isArray(next.featuredProductIds) ? next.featuredProductIds.filter(Boolean).slice(0, 3) : [];
+      featuredIds = Array.isArray(source.featuredProductIds)
+        ? source.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 3)
+        : [];
     }
 
     async function loadHome() {
@@ -1150,17 +1142,11 @@
     }
 
     async function saveHome() {
-      const manualSlides = parseTextareaList(slideshowInput).map((url) => normalizeHomeImageUrl(url)).filter(Boolean);
-      if (manualSlides.length) slideshowUrls = manualSlides.slice(0, 6);
-
-      const manualFeatured = parseTextareaList(featuredInput);
-      if (manualFeatured.length) featuredIds = manualFeatured.slice(0, 3);
-
       const payload = {
         heroTitle: heroTitleInput?.value?.trim() || '',
         heroSubtitle: heroSubtitleInput?.value?.trim() || '',
         slideshowUrls: slideshowUrls.slice(0, 6),
-        featuredProductIds: featuredIds.filter((id) => products.some((p) => p.id === id && p.isPublished)).slice(0, 3),
+        featuredProductIds: featuredIds.filter((id) => products.some((p) => p.id === id)).slice(0, 3),
         promoEnabled: !!promoEnabledInput?.checked,
         promoImageUrl: promoImageUrl || '',
         promoTitle: promoTitleInput?.value?.trim() || '',
@@ -1172,6 +1158,7 @@
       if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save home settings');
       applyHomeState(data.home || payload);
       renderAll();
+      return data.home || payload;
     }
 
     async function loadConfig() {
@@ -1320,7 +1307,7 @@
       }
     });
 
-    const runHomeSave = async () => {
+    qs('[data-action="home-save"]')?.addEventListener('click', async () => {
       setError('');
       setStatus('Saving homepage settings…');
       try {
@@ -1332,15 +1319,9 @@
         setError(String(e?.message || 'Failed to save home settings'));
         setStatus('');
       }
-    };
-
-    qs('[data-action="home-save"]')?.addEventListener('click', runHomeSave);
-    homeForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await runHomeSave();
     });
 
-    const runConfigSave = async () => {
+    qs('[data-action="config-save"]')?.addEventListener('click', async () => {
       setError('');
       setStatus('Saving admin config…');
       try {
@@ -1352,12 +1333,6 @@
         setError(String(e?.message || 'Failed to save config'));
         setStatus('');
       }
-    };
-
-    qs('[data-action="config-save"]')?.addEventListener('click', runConfigSave);
-    adminConfigForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await runConfigSave();
     });
 
     try {

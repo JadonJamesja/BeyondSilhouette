@@ -983,14 +983,12 @@
       const titleEl = document.getElementById('homeHeroTitle');
       const subtitleEl = document.getElementById('homeHeroSubtitle');
       const featuredGrid = document.getElementById('homeFeaturedGrid');
-      const hero = document.getElementById('hero');
-      let slides = Array.from(document.querySelectorAll('#hero .slide'));
+      const slides = Array.from(document.querySelectorAll('#hero .slide'));
       const promoSection = document.getElementById('promoBanner');
       const promoMedia = document.getElementById('promoBannerMedia');
       const promoTitle = document.getElementById('promoBannerTitle');
       const promoSubtitle = document.getElementById('promoBannerSubtitle');
       const promoCta = document.getElementById('promoBannerCta');
-
       const defaults = {
         heroTitle: titleEl?.textContent || '',
         heroSubtitle: subtitleEl?.textContent || '',
@@ -998,108 +996,6 @@
         promoSubtitle: promoSubtitle?.textContent || '',
         promoCtaText: promoCta?.textContent || 'Shop now',
         promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
-      };
-
-      const normalizeHomeImageUrl = (value) => {
-        const raw = String(value || '').trim();
-        if (!raw) return '';
-        if (/^https?:\/\//i.test(raw) || raw.startsWith('data:image/')) return raw;
-        const cleaned = raw.replace(/\\/g, '/').trim();
-        if (!cleaned) return '';
-        if (cleaned.startsWith('/')) return cleaned;
-        if (cleaned.startsWith('./')) return `/${cleaned.slice(2)}`;
-        return `/${cleaned.replace(/^\/+/, '')}`;
-      };
-
-      const setText = (node, value, fallback, hasSettings) => {
-        if (!node) return;
-        if (!hasSettings) {
-          node.textContent = fallback;
-          return;
-        }
-        const next = value == null ? '' : String(value).trim();
-        node.textContent = next || fallback;
-      };
-
-      const ensureSlideCount = (count) => {
-        if (!hero) return;
-        slides = Array.from(hero.querySelectorAll('.slide'));
-        const desired = Math.max(1, Math.min(6, Number(count) || 1));
-
-        while (slides.length < desired) {
-          const next = document.createElement('div');
-          next.className = 'slide';
-          hero.insertBefore(next, hero.firstChild);
-          slides = Array.from(hero.querySelectorAll('.slide'));
-        }
-
-        if (slides.length > desired) {
-          slides.slice(desired).forEach((node) => node.remove());
-          slides = Array.from(hero.querySelectorAll('.slide'));
-        }
-      };
-
-      const setSlides = (urls, hasSettings) => {
-        if (!hero) return;
-
-        const normalizedUrls = Array.isArray(urls)
-          ? urls.map((u) => normalizeHomeImageUrl(u)).filter(Boolean).slice(0, 6)
-          : [];
-
-        const useDefaults = !hasSettings || !normalizedUrls.length;
-        const desiredCount = useDefaults ? 4 : normalizedUrls.length;
-        ensureSlideCount(desiredCount);
-
-        if (!slides.length) return;
-
-        if (useDefaults) {
-          slides.forEach((slide) => {
-            slide.style.backgroundImage = '';
-            slide.style.animationDelay = '';
-            slide.style.animationDuration = '';
-          });
-          return;
-        }
-
-        const total = Math.max(1, normalizedUrls.length);
-        const durationSeconds = total * 4;
-
-        slides.forEach((slide, index) => {
-          const rawUrl = normalizedUrls[index] || '';
-          slide.style.backgroundImage = rawUrl
-            ? 'url("' + String(rawUrl).replace(/"/g, '\\"') + '")'
-            : 'none';
-          slide.style.animationDelay = `${index * 4}s`;
-          slide.style.animationDuration = `${durationSeconds}s`;
-        });
-      };
-
-      const setPromo = (home, hasSettings) => {
-        if (!promoSection) return;
-
-        const enabled = !!home?.promoEnabled;
-        const imageUrl = normalizeHomeImageUrl(home?.promoImageUrl);
-        const visible = enabled;
-
-        promoSection.hidden = !visible;
-
-        if (promoMedia) {
-          promoMedia.style.backgroundImage = imageUrl
-            ? 'url("' + String(imageUrl).replace(/"/g, '\\"') + '")'
-            : '';
-        }
-
-        setText(promoTitle, home?.promoTitle, defaults.promoTitle, hasSettings);
-        setText(promoSubtitle, home?.promoSubtitle, defaults.promoSubtitle, hasSettings);
-
-        if (promoCta) {
-          promoCta.textContent = hasSettings
-            ? (home?.promoCtaText == null || home?.promoCtaText === '' ? defaults.promoCtaText : String(home.promoCtaText))
-            : defaults.promoCtaText;
-          promoCta.setAttribute('href', hasSettings
-            ? (home?.promoCtaLink == null || String(home?.promoCtaLink).trim() === '' ? defaults.promoCtaLink : String(home.promoCtaLink))
-            : defaults.promoCtaLink);
-        }
       };
 
       try {
@@ -1113,15 +1009,50 @@
 
         const home = data.home || {};
         const featured = Array.isArray(data.featured) ? data.featured : [];
-        const slideshowUrls = Array.isArray(home.slideshowUrls)
-          ? home.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
-          : [];
+        const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
         const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
-        setText(titleEl, home.heroTitle, defaults.heroTitle, hasSettings);
-        setText(subtitleEl, home.heroSubtitle, defaults.heroSubtitle, hasSettings);
-        setSlides(slideshowUrls, hasSettings);
-        setPromo(home, hasSettings);
+        if (titleEl) {
+          titleEl.textContent = hasSettings ? String(home.heroTitle || '') : defaults.heroTitle;
+        }
+        if (subtitleEl) {
+          subtitleEl.textContent = hasSettings ? String(home.heroSubtitle || '') : defaults.heroSubtitle;
+        }
+
+        if (slides.length) {
+          if (slideshowUrls.length) {
+            slides.forEach((slide, index) => {
+              const url = slideshowUrls[index % slideshowUrls.length];
+              slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
+            });
+          } else if (hasSettings) {
+            slides.forEach((slide) => {
+              slide.style.backgroundImage = '';
+            });
+          }
+        }
+
+        if (promoSection) {
+          const enabled = !!home.promoEnabled;
+          const hasImage = !!home.promoImageUrl;
+          promoSection.hidden = !(enabled && hasImage);
+
+          if (promoMedia) {
+            promoMedia.style.backgroundImage = enabled && hasImage
+              ? 'url("' + String(home.promoImageUrl).replace(/"/g, '\"') + '")'
+              : '';
+          }
+          if (promoTitle) {
+            promoTitle.textContent = hasSettings ? String(home.promoTitle || '') : defaults.promoTitle;
+          }
+          if (promoSubtitle) {
+            promoSubtitle.textContent = hasSettings ? String(home.promoSubtitle || '') : defaults.promoSubtitle;
+          }
+          if (promoCta) {
+            promoCta.textContent = hasSettings ? String(home.promoCtaText || defaults.promoCtaText) : defaults.promoCtaText;
+            promoCta.setAttribute('href', hasSettings ? String(home.promoCtaLink || defaults.promoCtaLink) : defaults.promoCtaLink);
+          }
+        }
 
         if (featuredGrid && featured.length) {
           featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {

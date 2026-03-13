@@ -23,7 +23,7 @@ html[data-theme="dark"] {
   --panel: 225 22% 12%;
   --panel2: 225 22% 14%;
   --text: 220 18% 92%;
-  --muted: 220 18% 92%;
+  --muted: 220 14% 78%;
   --border: 225 18% 20%;
   --ring: 212 75% 54%;
 
@@ -116,72 +116,6 @@ code {
 
 .muted {
   color: hsl(var(--muted));
-}
-
-html[data-theme="dark"] .admin,
-html[data-theme="dark"] .admin h1,
-html[data-theme="dark"] .admin h2,
-html[data-theme="dark"] .admin h3,
-html[data-theme="dark"] .admin h4,
-html[data-theme="dark"] .admin h5,
-html[data-theme="dark"] .admin h6,
-html[data-theme="dark"] .admin p,
-html[data-theme="dark"] .admin label,
-html[data-theme="dark"] .admin span,
-html[data-theme="dark"] .admin a,
-html[data-theme="dark"] .admin th,
-html[data-theme="dark"] .admin td,
-html[data-theme="dark"] .admin strong,
-html[data-theme="dark"] .admin small,
-html[data-theme="dark"] .admin .muted,
-html[data-theme="dark"] .admin .hint,
-html[data-theme="dark"] .admin .label,
-html[data-theme="dark"] .admin .section-title,
-html[data-theme="dark"] .admin .page-indicator,
-html[data-theme="dark"] .admin .picker-thumb-empty,
-html[data-theme="dark"] .admin .page-title,
-html[data-theme="dark"] .admin .card-title,
-html[data-theme="dark"] .admin .brand-subtitle,
-html[data-theme="dark"] .admin .table th,
-html[data-theme="dark"] .admin .table td,
-html[data-theme="dark"] .admin .selection-card,
-html[data-theme="dark"] .admin .selection-card * {
-  color: hsl(var(--text));
-}
-
-html[data-theme="dark"] .admin .muted,
-html[data-theme="dark"] .admin .hint,
-html[data-theme="dark"] .admin .label,
-html[data-theme="dark"] .admin .brand-subtitle,
-html[data-theme="dark"] .admin .section-title {
-  color: hsl(var(--text));
-  opacity: 1;
-}
-
-html[data-theme="dark"] .auth,
-html[data-theme="dark"] .auth h1,
-html[data-theme="dark"] .auth h2,
-html[data-theme="dark"] .auth h3,
-html[data-theme="dark"] .auth h4,
-html[data-theme="dark"] .auth h5,
-html[data-theme="dark"] .auth h6,
-html[data-theme="dark"] .auth p,
-html[data-theme="dark"] .auth label,
-html[data-theme="dark"] .auth span,
-html[data-theme="dark"] .auth a,
-html[data-theme="dark"] .auth strong,
-html[data-theme="dark"] .auth small,
-html[data-theme="dark"] .auth .muted,
-html[data-theme="dark"] .auth .hint,
-html[data-theme="dark"] .auth .label {
-  color: hsl(var(--text));
-}
-
-html[data-theme="dark"] .admin input::placeholder,
-html[data-theme="dark"] .admin textarea::placeholder,
-html[data-theme="dark"] .auth input::placeholder,
-html[data-theme="dark"] .auth textarea::placeholder {
-  color: hsla(var(--text), .88);
 }
 
 .right {
@@ -1744,4 +1678,49 @@ html[data-theme="light"] .btn-danger {
 #promoSelected .selection-card img,
 #promoSelected .picker-thumb {
   aspect-ratio: 16 / 9;
+}
+
+
+html[data-theme="dark"] body.admin,
+html[data-theme="dark"] body.admin .main,
+html[data-theme="dark"] body.admin .sidebar,
+html[data-theme="dark"] body.admin .topbar,
+html[data-theme="dark"] body.admin .card,
+html[data-theme="dark"] body.admin .card * {
+  color: hsl(var(--text));
+}
+
+html[data-theme="dark"] body.admin .muted,
+html[data-theme="dark"] body.admin .hint,
+html[data-theme="dark"] body.admin .label,
+html[data-theme="dark"] body.admin .selection-card-body .muted,
+html[data-theme="dark"] body.admin .selection-card-body .mono,
+html[data-theme="dark"] body.admin .table th,
+html[data-theme="dark"] body.admin .table td,
+html[data-theme="dark"] body.admin .footer.muted,
+html[data-theme="dark"] body.admin .topbar > div > .muted,
+html[data-theme="dark"] body.admin .picker-thumb-empty,
+html[data-theme="dark"] body.admin .empty-state,
+html[data-theme="dark"] body.admin .user-role,
+html[data-theme="dark"] body.admin .nav-item,
+html[data-theme="dark"] body.admin .brand-subtitle {
+  color: hsla(var(--text), .92);
+}
+
+html[data-theme="dark"] body.admin .input,
+html[data-theme="dark"] body.admin .textarea,
+html[data-theme="dark"] body.admin select.input,
+html[data-theme="dark"] body.admin .input::placeholder,
+html[data-theme="dark"] body.admin .textarea::placeholder {
+  color: hsl(var(--text));
+}
+
+html[data-theme="dark"] body.admin .input::placeholder,
+html[data-theme="dark"] body.admin .textarea::placeholder {
+  color: hsla(var(--text), .72);
+}
+
+html[data-theme="dark"] body.admin select.input option {
+  background: hsl(var(--panel));
+  color: hsl(var(--text));
 }
