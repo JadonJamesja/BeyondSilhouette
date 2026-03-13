@@ -977,7 +977,7 @@
       }
     }
 
-    async function renderHomeIfOnHomePage() {
+ async function renderHomeIfOnHomePage() {
   if (page() !== 'home') return;
 
   const titleEl = document.getElementById('homeHeroTitle');
@@ -1043,7 +1043,6 @@
       ? home.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean)
       : [];
 
-    // If backend does not provide featured products inline, fetch products and resolve them here
     let featured = Array.isArray(data.featured) ? data.featured : [];
     if (!featured.length && featuredIds.length) {
       await Products.ensureLoaded();
@@ -1052,20 +1051,14 @@
         .filter(Boolean);
     }
 
-    // Hero text
     if (titleEl) {
-      titleEl.textContent = hasSettings
-        ? String(home.heroTitle ?? '')
-        : defaults.heroTitle;
+      titleEl.textContent = hasSettings ? String(home.heroTitle ?? '') : defaults.heroTitle;
     }
 
     if (subtitleEl) {
-      subtitleEl.textContent = hasSettings
-        ? String(home.heroSubtitle ?? '')
-        : defaults.heroSubtitle;
+      subtitleEl.textContent = hasSettings ? String(home.heroSubtitle ?? '') : defaults.heroSubtitle;
     }
 
-    // Slideshow
     if (slides.length) {
       if (slideshowUrls.length) {
         slides.forEach((slide, index) => {
@@ -1079,7 +1072,6 @@
       }
     }
 
-    // Promo banner
     if (promoSection) {
       const enabled = !!home.promoEnabled;
       const promoImage = normalizePublicImageUrl(home.promoImageUrl);
@@ -1119,7 +1111,6 @@
       }
     }
 
-    // Featured products
     if (featuredGrid) {
       if (featured.length) {
         featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
@@ -1145,6 +1136,7 @@
     console.warn('Home settings fetch failed.', err);
   }
 }
+
 
 
     function bindAddToCart() {
