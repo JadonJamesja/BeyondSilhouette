@@ -978,104 +978,174 @@
     }
 
     async function renderHomeIfOnHomePage() {
-      if (page() !== 'home') return;
+  if (page() !== 'home') return;
 
-      const titleEl = document.getElementById('homeHeroTitle');
-      const subtitleEl = document.getElementById('homeHeroSubtitle');
-      const featuredGrid = document.getElementById('homeFeaturedGrid');
-      const slides = Array.from(document.querySelectorAll('#hero .slide'));
-      const promoSection = document.getElementById('promoBanner');
-      const promoMedia = document.getElementById('promoBannerMedia');
-      const promoTitle = document.getElementById('promoBannerTitle');
-      const promoSubtitle = document.getElementById('promoBannerSubtitle');
-      const promoCta = document.getElementById('promoBannerCta');
-      const defaults = {
-        heroTitle: titleEl?.textContent || '',
-        heroSubtitle: subtitleEl?.textContent || '',
-        promoTitle: promoTitle?.textContent || '',
-        promoSubtitle: promoSubtitle?.textContent || '',
-        promoCtaText: promoCta?.textContent || 'Shop now',
-        promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
-      };
+  const titleEl = document.getElementById('homeHeroTitle');
+  const subtitleEl = document.getElementById('homeHeroSubtitle');
+  const featuredGrid = document.getElementById('homeFeaturedGrid');
+  const slides = Array.from(document.querySelectorAll('#hero .slide'));
+  const promoSection = document.getElementById('promoBanner');
+  const promoMedia = document.getElementById('promoBannerMedia');
+  const promoTitle = document.getElementById('promoBannerTitle');
+  const promoSubtitle = document.getElementById('promoBannerSubtitle');
+  const promoCta = document.getElementById('promoBannerCta');
 
-      try {
-        const { ok, data } = await apiJson('/api/site/home');
-        if (!ok || !data?.ok) {
-          if (featuredGrid) {
-            featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
-          }
-          return;
-        }
+  const defaults = {
+    heroTitle: titleEl?.textContent || '',
+    heroSubtitle: subtitleEl?.textContent || '',
+    promoTitle: promoTitle?.textContent || 'Limited Time Collection',
+    promoSubtitle: promoSubtitle?.textContent || 'Discover the latest swimwear styles.',
+    promoCtaText: promoCta?.textContent || 'Shop now',
+    promoCtaLink: promoCta?.getAttribute('href') || 'shop-page.html',
+  };
 
-        const home = data.home || {};
-        const featured = Array.isArray(data.featured) ? data.featured : [];
-        const slideshowUrls = Array.isArray(home.slideshowUrls) ? home.slideshowUrls.filter(Boolean).slice(0, 4) : [];
-        const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
+  const normalizePublicImageUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('data:image/')) return raw;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('/uploads/')) return raw;
+    if (raw.startsWith('uploads/')) return `/${raw}`;
+    if (raw.startsWith('/')) return raw;
+    return raw;
+  };
 
-        if (titleEl) {
-          titleEl.textContent = hasSettings ? String(home.heroTitle || '') : defaults.heroTitle;
-        }
-        if (subtitleEl) {
-          subtitleEl.textContent = hasSettings ? String(home.heroSubtitle || '') : defaults.heroSubtitle;
-        }
+  const isRenderableImageUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    return (
+      raw.startsWith('data:image/') ||
+      raw.startsWith('/uploads/') ||
+      /^https?:\/\//i.test(raw)
+    );
+  };
 
-        if (slides.length) {
-          if (slideshowUrls.length) {
-            slides.forEach((slide, index) => {
-              const url = slideshowUrls[index % slideshowUrls.length];
-              slide.style.backgroundImage = url ? 'url("' + String(url).replace(/"/g, '\"') + '")' : '';
-            });
-          } else if (hasSettings) {
-            slides.forEach((slide) => {
-              slide.style.backgroundImage = '';
-            });
-          }
-        }
+  try {
+    const { ok, data } = await apiJson('/api/site/home');
+    if (!ok || !data?.ok) {
+      if (featuredGrid) {
+        featuredGrid.innerHTML = '<div class="muted">Homepage content is temporarily unavailable.</div>';
+      }
+      return;
+    }
 
-        if (promoSection) {
-          const enabled = !!home.promoEnabled;
-          const hasImage = !!home.promoImageUrl;
-          promoSection.hidden = !(enabled && hasImage);
+    const home = data.home || {};
+    const hasSettings = !!data?.hasSettings || !!home?.updatedAt;
 
-          if (promoMedia) {
-            promoMedia.style.backgroundImage = enabled && hasImage
-              ? 'url("' + String(home.promoImageUrl).replace(/"/g, '\"') + '")'
-              : '';
-          }
-          if (promoTitle) {
-            promoTitle.textContent = hasSettings ? String(home.promoTitle || '') : defaults.promoTitle;
-          }
-          if (promoSubtitle) {
-            promoSubtitle.textContent = hasSettings ? String(home.promoSubtitle || '') : defaults.promoSubtitle;
-          }
-          if (promoCta) {
-            promoCta.textContent = hasSettings ? String(home.promoCtaText || defaults.promoCtaText) : defaults.promoCtaText;
-            promoCta.setAttribute('href', hasSettings ? String(home.promoCtaLink || defaults.promoCtaLink) : defaults.promoCtaLink);
-          }
-        }
+    const slideshowUrls = Array.isArray(home.slideshowUrls)
+      ? home.slideshowUrls
+          .map(normalizePublicImageUrl)
+          .filter((url) => isRenderableImageUrl(url))
+          .slice(0, 4)
+      : [];
 
-        if (featuredGrid && featured.length) {
-          featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
-            const cover = String(p?.media?.coverUrl || '');
-            const name = String(p?.title || 'Product');
-            const price = Number(p?.priceJMD || 0).toLocaleString('en-JM');
-            return `
-              <div class="product-card">
-                <a href="shop-page.html">
-                  <img src="${escapeHtml(cover)}" alt="${escapeHtml(name)}" class="product-image" />
-                  <h3 class="product-title">${escapeHtml(name)}</h3>
-                  <p class="product-price">J$ ${escapeHtml(price)}</p>
-                </a>
-              </div>
-            `;
-          }).join('');
-        } else if (featuredGrid && hasSettings) {
-          featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
-        }
-      } catch (err) {
-        console.warn('Home settings fetch failed.', err);
+    const featuredIds = Array.isArray(home.featuredProductIds)
+      ? home.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+
+    // If backend does not provide featured products inline, fetch products and resolve them here
+    let featured = Array.isArray(data.featured) ? data.featured : [];
+    if (!featured.length && featuredIds.length) {
+      await Products.ensureLoaded();
+      featured = featuredIds
+        .map((id) => Products.findById(id))
+        .filter(Boolean);
+    }
+
+    // Hero text
+    if (titleEl) {
+      titleEl.textContent = hasSettings
+        ? String(home.heroTitle ?? '')
+        : defaults.heroTitle;
+    }
+
+    if (subtitleEl) {
+      subtitleEl.textContent = hasSettings
+        ? String(home.heroSubtitle ?? '')
+        : defaults.heroSubtitle;
+    }
+
+    // Slideshow
+    if (slides.length) {
+      if (slideshowUrls.length) {
+        slides.forEach((slide, index) => {
+          const url = slideshowUrls[index % slideshowUrls.length];
+          slide.style.backgroundImage = url ? `url("${String(url).replace(/"/g, '\\"')}")` : '';
+        });
+      } else if (hasSettings) {
+        slides.forEach((slide) => {
+          slide.style.backgroundImage = '';
+        });
       }
     }
+
+    // Promo banner
+    if (promoSection) {
+      const enabled = !!home.promoEnabled;
+      const promoImage = normalizePublicImageUrl(home.promoImageUrl);
+      const hasImage = isRenderableImageUrl(promoImage);
+
+      promoSection.hidden = !(enabled && hasImage);
+
+      if (promoMedia) {
+        promoMedia.style.backgroundImage = enabled && hasImage
+          ? `url("${String(promoImage).replace(/"/g, '\\"')}")`
+          : '';
+      }
+
+      if (promoTitle) {
+        promoTitle.textContent = home.promoTitle == null
+          ? defaults.promoTitle
+          : String(home.promoTitle);
+      }
+
+      if (promoSubtitle) {
+        promoSubtitle.textContent = home.promoSubtitle == null
+          ? defaults.promoSubtitle
+          : String(home.promoSubtitle);
+      }
+
+      if (promoCta) {
+        promoCta.textContent = home.promoCtaText == null || String(home.promoCtaText).trim() === ''
+          ? defaults.promoCtaText
+          : String(home.promoCtaText);
+
+        promoCta.setAttribute(
+          'href',
+          home.promoCtaLink == null || String(home.promoCtaLink).trim() === ''
+            ? defaults.promoCtaLink
+            : String(home.promoCtaLink)
+        );
+      }
+    }
+
+    // Featured products
+    if (featuredGrid) {
+      if (featured.length) {
+        featuredGrid.innerHTML = featured.slice(0, 3).map((p) => {
+          const cover = String(p?.media?.coverUrl || '');
+          const name = String(p?.title || p?.name || 'Product');
+          const price = Number(p?.priceJMD || 0).toLocaleString('en-JM');
+
+          return `
+            <div class="product-card">
+              <a href="shop-page.html">
+                <img src="${escapeHtml(cover)}" alt="${escapeHtml(name)}" class="product-image" />
+                <h3 class="product-title">${escapeHtml(name)}</h3>
+                <p class="product-price">J$ ${escapeHtml(price)}</p>
+              </a>
+            </div>
+          `;
+        }).join('');
+      } else if (hasSettings) {
+        featuredGrid.innerHTML = '<div class="muted">No featured products configured yet.</div>';
+      }
+    }
+  } catch (err) {
+    console.warn('Home settings fetch failed.', err);
+  }
+}
+
 
     function bindAddToCart() {
       document.addEventListener("click", async (e) => {
