@@ -26,6 +26,27 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
 
+  const isRenderableImageUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    return (
+      raw.startsWith('data:image/') ||
+      raw.startsWith('/uploads/') ||
+      /^https?:\/\//i.test(raw)
+    );
+  };
+
+  const normalizeRenderableImageUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    if (raw.startsWith('data:image/')) return raw;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('/uploads/')) return raw;
+    if (raw.startsWith('uploads/')) return `/${raw}`;
+
+    return raw;
+  };
 
   const prettyStatus = (status) => {
     const raw = String(status || '').trim().toLowerCase();
@@ -129,7 +150,6 @@
     const display = me && (me.name || me.email) ? String(me.name || me.email) : 'Admin';
     qsa('[data-ui="adminName"]').forEach((n) => (n.textContent = display));
   }
-
 
   function setActiveNav() {
     const path = String(location.pathname || '').replace(/\/$/, '');
@@ -237,7 +257,6 @@
         errorBox.textContent = msg;
       }
     };
-
 
     const pwToggle = qs('[data-action="toggle-password"]');
     const pwScope = form || document;
@@ -757,7 +776,6 @@
     await load();
   }
 
-
   // -----------------------------
   // Products
   // -----------------------------
@@ -810,18 +828,23 @@
 
     function renderImagePreview() {
       if (previewMedia) {
-        const first = images[0]?.url || '';
-        previewMedia.innerHTML = first
+        const first = normalizeRenderableImageUrl(images[0]?.url || '');
+        previewMedia.innerHTML = isRenderableImageUrl(first)
           ? `<img src="${escapeHtml(first)}" alt="Preview" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" />`
           : `<span class="muted">No image</span>`;
       }
       if (imageGrid) {
-        imageGrid.innerHTML = images.map((img, i) => `
-          <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
-            <img src="${escapeHtml(img.url)}" alt="Image ${i+1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />
-            <div class="muted">Image ${i + 1}</div>
-          </div>
-        `).join('');
+        imageGrid.innerHTML = images.map((img, i) => {
+          const safeUrl = normalizeRenderableImageUrl(img.url);
+          return `
+            <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
+              ${isRenderableImageUrl(safeUrl)
+                ? `<img src="${escapeHtml(safeUrl)}" alt="Image ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />`
+                : `<div class="picker-thumb picker-thumb-empty" style="width:72px;height:72px;border-radius:12px;">No image</div>`}
+              <div class="muted">Image ${i + 1}</div>
+            </div>
+          `;
+        }).join('');
       }
     }
 
@@ -845,7 +868,13 @@
       stockM.value = String(bySize.M || 0);
       stockL.value = String(bySize.L || 0);
       stockXL.value = String(bySize.XL || 0);
-      images = Array.isArray(product.images) ? product.images.map((img) => ({ url: img.url, alt: img.alt || '', sortOrder: Number(img.sortOrder || 0) })) : [];
+      images = Array.isArray(product.images)
+        ? product.images.map((img) => ({
+            url: normalizeRenderableImageUrl(img.url),
+            alt: img.alt || '',
+            sortOrder: Number(img.sortOrder || 0),
+          }))
+        : [];
       updatePreview();
     }
 
@@ -931,7 +960,11 @@
       const files = Array.from(e.target.files || []);
       images = await Promise.all(files.map((file, i) => new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve({ url: String(reader.result || ''), alt: file.name || '', sortOrder: i });
+        reader.onload = () => resolve({
+          url: normalizeRenderableImageUrl(String(reader.result || '')),
+          alt: file.name || '',
+          sortOrder: i,
+        });
         reader.readAsDataURL(file);
       })));
       updatePreview();
@@ -1022,12 +1055,14 @@
 
     const normalizeImages = (product) => {
       const imgs = Array.isArray(product?.images) ? product.images : [];
-      return imgs.map((img, idx) => ({
-        url: String(img?.url || '').trim(),
-        alt: String(img?.alt || product?.name || `Image ${idx + 1}`),
-        productId: String(product?.id || ''),
-        productName: String(product?.name || 'Product'),
-      })).filter((img) => img.url);
+      return imgs
+        .map((img, idx) => ({
+          url: normalizeRenderableImageUrl(img?.url),
+          alt: String(img?.alt || product?.name || `Image ${idx + 1}`),
+          productId: String(product?.id || ''),
+          productName: String(product?.name || 'Product'),
+        }))
+        .filter((img) => isRenderableImageUrl(img.url));
     };
 
     const syncInputs = () => {
@@ -1043,65 +1078,96 @@
       return String(product?.name || '').toLowerCase().includes(q) || String(product?.id || '').toLowerCase().includes(q);
     };
 
-    const thumb = (url, alt) => url
-      ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || 'Image')}" loading="lazy" />`
-      : '<div class="picker-thumb picker-thumb-empty">No image</div>';
+    const thumb = (url, alt) => {
+      const safeUrl = normalizeRenderableImageUrl(url);
+      if (!isRenderableImageUrl(safeUrl)) {
+        return '<div class="picker-thumb picker-thumb-empty">No image</div>';
+      }
+      return `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(alt || 'Image')}" loading="lazy" />`;
+    };
 
     const normalizeHomeImageUrl = (value) => {
       const raw = String(value || '').trim();
       if (!raw) return '';
-      if (/^https?:\/\//i.test(raw) || raw.startsWith('data:image/')) return raw;
 
-      const cleaned = raw.replace(/\\/g, '/').replace(/\s+\./g, '.').replace(/\.\s+/g, '.');
-      if (cleaned.startsWith('/uploads/')) return cleaned;
+      if (raw.startsWith('data:image/')) return raw;
+      if (/^https?:\/\//i.test(raw)) return raw;
+      if (raw.startsWith('/uploads/')) return raw;
+      if (raw.startsWith('uploads/')) return `/${raw}`;
+      if (raw.startsWith('/')) return raw;
+
+      const cleaned = raw
+        .replace(/\\/g, '/')
+        .replace(/\s+\./g, '.')
+        .replace(/\.\s+/g, '.')
+        .replace(/^\/+/, '');
+
+      if (!cleaned) return '';
+      if (cleaned.startsWith('data:image/')) return cleaned;
       if (cleaned.startsWith('uploads/')) return `/${cleaned}`;
-      if (cleaned.startsWith('/')) return cleaned;
-      if (cleaned.includes('/')) return `/${cleaned.replace(/^\/+/, '')}`;
-      return `/uploads/home/${cleaned}`;
+      if (cleaned.includes('/')) return `/${cleaned}`;
+
+      return `/uploads/home/${cleaned.split('/').pop()}`;
     };
 
     function renderSlideshow() {
       const allImages = products.flatMap((product) => normalizeImages(product));
+
       if (slideshowSelected) {
-        slideshowSelected.innerHTML = slideshowUrls.length ? slideshowUrls.map((url) => {
-          const hit = allImages.find((img) => img.url === url);
-          return `<button type="button" class="selection-card is-selected" data-remove-slideshow="${escapeHtml(url)}">${thumb(url, hit?.alt)}<div class="selection-card-body"><strong>${escapeHtml(hit?.productName || 'Custom slide')}</strong><span class="muted">Remove</span></div></button>`;
-        }).join('') : '<div class="muted">No slideshow images selected yet.</div>';
+        slideshowSelected.innerHTML = slideshowUrls.length
+          ? slideshowUrls.map((url) => {
+              const safeUrl = normalizeHomeImageUrl(url);
+              const hit = allImages.find((img) => img.url === safeUrl);
+              return `<button type="button" class="selection-card is-selected" data-remove-slideshow="${escapeHtml(safeUrl)}">${thumb(safeUrl, hit?.alt)}<div class="selection-card-body"><strong>${escapeHtml(hit?.productName || 'Custom slide')}</strong><span class="muted">Remove</span></div></button>`;
+            }).join('')
+          : '<div class="muted">No slideshow images selected yet.</div>';
       }
+
       if (slideshowPool) {
-        const pool = products.flatMap((product) => normalizeImages(product)).filter((img) => matchesSearch({ name: img.productName, id: img.productId }));
-        slideshowPool.innerHTML = pool.length ? pool.map((img) => {
-          const active = slideshowUrls.includes(img.url);
-          return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-slideshow="${escapeHtml(img.url)}">${thumb(img.url, img.alt)}<div class="selection-card-body"><strong>${escapeHtml(img.productName)}</strong><span class="muted mono">${escapeHtml(img.productId)}</span></div></button>`;
-        }).join('') : '<div class="muted">No product images available.</div>';
+        const pool = products
+          .flatMap((product) => normalizeImages(product))
+          .filter((img) => matchesSearch({ name: img.productName, id: img.productId }));
+
+        slideshowPool.innerHTML = pool.length
+          ? pool.map((img) => {
+              const active = slideshowUrls.includes(img.url);
+              return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-slideshow="${escapeHtml(img.url)}">${thumb(img.url, img.alt)}<div class="selection-card-body"><strong>${escapeHtml(img.productName)}</strong><span class="muted mono">${escapeHtml(img.productId)}</span></div></button>`;
+            }).join('')
+          : '<div class="muted">No product images available.</div>';
       }
     }
 
     function renderFeatured() {
       if (featuredSelected) {
-        featuredSelected.innerHTML = featuredIds.length ? featuredIds.map((id) => {
-          const p = products.find((row) => row.id === id);
-          const cover = p?.images?.[0]?.url || '';
-          return `<button type="button" class="selection-card is-selected" data-remove-featured="${escapeHtml(id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p?.name || id)}</strong><span class="muted">Remove</span></div></button>`;
-        }).join('') : '<div class="muted">No featured products selected yet.</div>';
+        featuredSelected.innerHTML = featuredIds.length
+          ? featuredIds.map((id) => {
+              const p = products.find((row) => row.id === id);
+              const cover = normalizeRenderableImageUrl(p?.images?.[0]?.url || '');
+              return `<button type="button" class="selection-card is-selected" data-remove-featured="${escapeHtml(id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p?.name || id)}</strong><span class="muted">Remove</span></div></button>`;
+            }).join('')
+          : '<div class="muted">No featured products selected yet.</div>';
       }
+
       if (featuredPool) {
         const pool = products.filter((p) => !!p?.isPublished).filter(matchesSearch);
-        featuredPool.innerHTML = pool.length ? pool.map((p) => {
-          const active = featuredIds.includes(p.id);
-          const cover = p?.images?.[0]?.url || '';
-          return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-featured="${escapeHtml(p.id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p.name || 'Product')}</strong><span class="muted">${escapeHtml(p.isPublished ? 'Published' : 'Draft')}</span></div></button>`;
-        }).join('') : '<div class="muted">No products available.</div>';
+        featuredPool.innerHTML = pool.length
+          ? pool.map((p) => {
+              const active = featuredIds.includes(p.id);
+              const cover = normalizeRenderableImageUrl(p?.images?.[0]?.url || '');
+              return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-featured="${escapeHtml(p.id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p.name || 'Product')}</strong><span class="muted">${escapeHtml(p.isPublished ? 'Published' : 'Draft')}</span></div></button>`;
+            }).join('')
+          : '<div class="muted">No products available.</div>';
       }
     }
 
     function renderPromo() {
       if (!promoSelected) return;
-      if (!promoImageUrl) {
+      if (!promoImageUrl || !isRenderableImageUrl(normalizeHomeImageUrl(promoImageUrl))) {
         promoSelected.innerHTML = '<div class="muted">No banner image selected yet.</div>';
         return;
       }
-      promoSelected.innerHTML = `<button type="button" class="selection-card is-selected" data-remove-promo-image="1">${thumb(promoImageUrl, 'Promo banner image')}<div class="selection-card-body"><strong>Banner image</strong><span class="muted">Remove</span></div></button>`;
+      const safePromoUrl = normalizeHomeImageUrl(promoImageUrl);
+      promoSelected.innerHTML = `<button type="button" class="selection-card is-selected" data-remove-promo-image="1">${thumb(safePromoUrl, 'Promo banner image')}<div class="selection-card-body"><strong>Banner image</strong><span class="muted">Remove</span></div></button>`;
     }
 
     function renderAll() {
@@ -1126,9 +1192,13 @@
       if (promoCtaTextInput) promoCtaTextInput.value = source.promoCtaText || '';
       if (promoCtaLinkInput) promoCtaLinkInput.value = source.promoCtaLink || '';
       if (promoEnabledInput) promoEnabledInput.checked = !!source.promoEnabled;
+
       promoImageUrl = normalizeHomeImageUrl(source.promoImageUrl);
       slideshowUrls = Array.isArray(source.slideshowUrls)
-        ? source.slideshowUrls.map((url) => normalizeHomeImageUrl(url)).filter(Boolean).slice(0, 6)
+        ? source.slideshowUrls
+            .map((url) => normalizeHomeImageUrl(url))
+            .filter((url) => isRenderableImageUrl(url))
+            .slice(0, 6)
         : [];
       featuredIds = Array.isArray(source.featuredProductIds)
         ? source.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 3)
@@ -1145,10 +1215,13 @@
       const payload = {
         heroTitle: heroTitleInput?.value?.trim() || '',
         heroSubtitle: heroSubtitleInput?.value?.trim() || '',
-        slideshowUrls: slideshowUrls.slice(0, 6),
+        slideshowUrls: slideshowUrls
+          .map((url) => normalizeHomeImageUrl(url))
+          .filter((url) => isRenderableImageUrl(url))
+          .slice(0, 6),
         featuredProductIds: featuredIds.filter((id) => products.some((p) => p.id === id)).slice(0, 3),
         promoEnabled: !!promoEnabledInput?.checked,
-        promoImageUrl: promoImageUrl || '',
+        promoImageUrl: isRenderableImageUrl(normalizeHomeImageUrl(promoImageUrl)) ? normalizeHomeImageUrl(promoImageUrl) : '',
         promoTitle: promoTitleInput?.value?.trim() || '',
         promoSubtitle: promoSubtitleInput?.value?.trim() || '',
         promoCtaText: promoCtaTextInput?.value?.trim() || '',
@@ -1243,8 +1316,9 @@
     slideshowPool?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-pick-slideshow]');
       if (!btn) return;
-      const url = btn.getAttribute('data-pick-slideshow');
-      if (!url) return;
+      const url = normalizeHomeImageUrl(btn.getAttribute('data-pick-slideshow'));
+      if (!url || !isRenderableImageUrl(url)) return;
+
       if (slideshowUrls.includes(url)) {
         slideshowUrls = slideshowUrls.filter((item) => item !== url);
       } else {
@@ -1261,7 +1335,7 @@
     slideshowSelected?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-remove-slideshow]');
       if (!btn) return;
-      const url = btn.getAttribute('data-remove-slideshow');
+      const url = normalizeHomeImageUrl(btn.getAttribute('data-remove-slideshow'));
       slideshowUrls = slideshowUrls.filter((item) => item !== url);
       renderAll();
     });
@@ -1353,7 +1427,6 @@
       setStatus('');
     }
   }
-
 
   // -----------------------------
   // Boot
