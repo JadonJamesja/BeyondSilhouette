@@ -80,6 +80,9 @@ function normalizeHomeUploadUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
 
+  // Keep data URLs untouched.
+  if (raw.startsWith("data:image/")) return raw;
+
   // Keep fully-qualified external URLs untouched.
   if (/^https?:\/\//i.test(raw)) return raw;
 
@@ -105,6 +108,10 @@ function normalizeHomeUploadUrl(value) {
 function isExistingHomeUploadUrl(value) {
   const url = normalizeHomeUploadUrl(value);
   if (!url) return false;
+
+  // Inline homepage images do not need a filesystem check.
+  if (url.startsWith("data:image/")) return true;
+
   if (!url.startsWith("/uploads/home/")) return true;
   const filename = path.basename(url);
   if (!filename || filename === "." || filename === "..") return false;
@@ -115,10 +122,15 @@ function isExistingHomeUploadUrl(value) {
 function isSafeHomeUploadUrl(value) {
   const url = normalizeHomeUploadUrl(value);
   if (!url) return false;
+
+  // Allow inline homepage images.
+  if (url.startsWith("data:image/")) return true;
+
   if (!url.startsWith("/uploads/home/")) return true;
   const filename = path.basename(url);
   return !!filename && filename !== "." && filename !== "..";
 }
+
 
 function sanitizeHomeUploadUrls(values) {
   const list = Array.isArray(values) ? values : [];
@@ -505,6 +517,7 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
     const mime = match[1];
     const base64 = match[2];
     const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+
     if (!allowed.has(mime)) {
       return res.status(400).json({ ok: false, error: "Only PNG, JPG, and WEBP are allowed" });
     }
@@ -513,21 +526,25 @@ app.post("/api/admin/site/home/upload", async (req, res) => {
     if (!buffer.length) {
       return res.status(400).json({ ok: false, error: "Empty image" });
     }
+
     if (buffer.length > 5 * 1024 * 1024) {
       return res.status(400).json({ ok: false, error: "Image must be 5MB or smaller" });
     }
 
-    const ext = safeImageExtension(mime, filename);
-    const finalName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`;
-    const absPath = path.join(HOME_UPLOAD_DIR, finalName);
-    fs.writeFileSync(absPath, buffer);
-
-    return res.json({ ok: true, url: `/uploads/home/${finalName}` });
+    // Return the validated data URL directly so homepage CMS images do not depend
+    // on Railway local disk persistence.
+    return res.json({
+      ok: true,
+      url: dataUrl,
+      storage: "inline-data-url",
+      filename,
+    });
   } catch (err) {
     console.error("POST /api/admin/site/home/upload failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to upload image" });
   }
 });
+
 
 // Admin: PUT /api/admin/site/home (upsert singleton)
 app.put("/api/admin/site/home", async (req, res) => {
