@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link rel="icon" type="image/png" href="/assets/favicon.png">  <title>Beyond Silhouette</title>
-<link rel="stylesheet" href="./css/style.css" />
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <title>Beyond Silhouette</title>
+  <link rel="stylesheet" href="./css/style.css" />
 </head>
 
 <body id="home-page">
-    <!-- HEADER -->
+  <!-- HEADER -->
   <header id="site-header">
     <div class="container header-container">
       <nav id="main-nav">
@@ -105,5 +107,23 @@
   </footer>
 
   <script src="js/main.js"></script>
+  <!-- PROMO POPUP -->
+  <div id="promoPopup" class="promo-popup" hidden>
+    <div class="promo-popup-backdrop"></div>
+
+    <div class="promo-popup-content">
+      <button id="promoPopupClose" class="promo-popup-close">✕</button>
+
+      <div id="promoPopupMedia" class="promo-popup-media"></div>
+
+      <div class="promo-popup-text">
+        <h2 id="promoPopupTitle"></h2>
+        <p id="promoPopupSubtitle"></p>
+        <a id="promoPopupCta" class="btn-primary" href="#">Shop Now</a>
+      </div>
+    </div>
+  </div>
+
 </body>
+
 </html>

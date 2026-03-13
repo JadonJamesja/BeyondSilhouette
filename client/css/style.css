@@ -754,3 +754,67 @@ html[data-theme="dark"] .btn-secondary {
   background: hsla(var(--text), 0.06);
   border-color: hsla(var(--border), 0.95);
 }
+
+/* ==============================
+   PROMO POPUP MODAL
+============================== */
+
+.promo-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+}
+
+.promo-popup-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(3px);
+}
+
+.promo-popup-content {
+  position: relative;
+  background: hsl(var(--surface));
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: 640px;
+  width: 92%;
+  box-shadow: var(--shadow-med);
+  z-index: 2;
+}
+
+.promo-popup-media {
+  height: 280px;
+  background-size: cover;
+  background-position: center;
+}
+
+.promo-popup-text {
+  padding: 28px;
+  text-align: center;
+}
+
+.promo-popup-text h2 {
+  font-size: 1.9rem;
+  margin-bottom: 10px;
+}
+
+.promo-popup-text p {
+  margin-bottom: 18px;
+}
+
+.promo-popup-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: pointer;
+}

@@ -168,14 +168,14 @@
   function applyAdminTheme(theme) {
     const safe = theme === 'dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', safe);
-    try { localStorage.setItem(THEME_KEY, safe); } catch (_) {}
+    try { localStorage.setItem(THEME_KEY, safe); } catch (_) { }
   }
 
   function bindThemeToggle() {
     try {
       const saved = localStorage.getItem(THEME_KEY);
       if (saved) applyAdminTheme(saved);
-    } catch (_) {}
+    } catch (_) { }
 
     qsa('[data-action="toggle-theme"]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -528,7 +528,7 @@
               <div class="row gap-8 order-status-row">
                 ${statusChip(currentStatus)}
                 <select class="input input-sm" id="orderStatusSelect">
-                  ${['placed','processing','shipped','delivered','cancelled'].map((status) => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${escapeHtml(prettyStatus(status))}</option>`).join('')}
+                  ${['placed', 'processing', 'shipped', 'delivered', 'cancelled'].map((status) => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${escapeHtml(prettyStatus(status))}</option>`).join('')}
                 </select>
                 <button class="btn btn-primary btn-sm" type="button" id="orderStatusSave">Update</button>
               </div>
@@ -717,9 +717,9 @@
                 <thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
                 <tbody>
                   ${stats.orders
-                    .map((o) => {
-                      const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
-                      return `
+            .map((o) => {
+              const date = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+              return `
                         <tr>
                           <td class="mono">${escapeHtml(o.id)}</td>
                           <td>${escapeHtml(String(o.status || '').toUpperCase())}</td>
@@ -727,8 +727,8 @@
                           <td>${escapeHtml(date)}</td>
                         </tr>
                       `;
-                    })
-                    .join('')}
+            })
+            .join('')}
                 </tbody>
               </table>
             </div>`
@@ -839,8 +839,8 @@
           return `
             <div class="card mini" style="padding:10px;display:flex;gap:10px;align-items:center;">
               ${isRenderableImageUrl(safeUrl)
-                ? `<img src="${escapeHtml(safeUrl)}" alt="Image ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />`
-                : `<div class="picker-thumb picker-thumb-empty" style="width:72px;height:72px;border-radius:12px;">No image</div>`}
+              ? `<img src="${escapeHtml(safeUrl)}" alt="Image ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;" />`
+              : `<div class="picker-thumb picker-thumb-empty" style="width:72px;height:72px;border-radius:12px;">No image</div>`}
               <div class="muted">Image ${i + 1}</div>
             </div>
           `;
@@ -870,10 +870,10 @@
       stockXL.value = String(bySize.XL || 0);
       images = Array.isArray(product.images)
         ? product.images.map((img) => ({
-            url: normalizeRenderableImageUrl(img.url),
-            alt: img.alt || '',
-            sortOrder: Number(img.sortOrder || 0),
-          }))
+          url: normalizeRenderableImageUrl(img.url),
+          alt: img.alt || '',
+          sortOrder: Number(img.sortOrder || 0),
+        }))
         : [];
       updatePreview();
     }
@@ -1116,10 +1116,10 @@
       if (slideshowSelected) {
         slideshowSelected.innerHTML = slideshowUrls.length
           ? slideshowUrls.map((url) => {
-              const safeUrl = normalizeHomeImageUrl(url);
-              const hit = allImages.find((img) => img.url === safeUrl);
-              return `<button type="button" class="selection-card is-selected" data-remove-slideshow="${escapeHtml(safeUrl)}">${thumb(safeUrl, hit?.alt)}<div class="selection-card-body"><strong>${escapeHtml(hit?.productName || 'Custom slide')}</strong><span class="muted">Remove</span></div></button>`;
-            }).join('')
+            const safeUrl = normalizeHomeImageUrl(url);
+            const hit = allImages.find((img) => img.url === safeUrl);
+            return `<button type="button" class="selection-card is-selected" data-remove-slideshow="${escapeHtml(safeUrl)}">${thumb(safeUrl, hit?.alt)}<div class="selection-card-body"><strong>${escapeHtml(hit?.productName || 'Custom slide')}</strong><span class="muted">Remove</span></div></button>`;
+          }).join('')
           : '<div class="muted">No slideshow images selected yet.</div>';
       }
 
@@ -1130,9 +1130,9 @@
 
         slideshowPool.innerHTML = pool.length
           ? pool.map((img) => {
-              const active = slideshowUrls.includes(img.url);
-              return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-slideshow="${escapeHtml(img.url)}">${thumb(img.url, img.alt)}<div class="selection-card-body"><strong>${escapeHtml(img.productName)}</strong><span class="muted mono">${escapeHtml(img.productId)}</span></div></button>`;
-            }).join('')
+            const active = slideshowUrls.includes(img.url);
+            return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-slideshow="${escapeHtml(img.url)}">${thumb(img.url, img.alt)}<div class="selection-card-body"><strong>${escapeHtml(img.productName)}</strong><span class="muted mono">${escapeHtml(img.productId)}</span></div></button>`;
+          }).join('')
           : '<div class="muted">No product images available.</div>';
       }
     }
@@ -1141,10 +1141,10 @@
       if (featuredSelected) {
         featuredSelected.innerHTML = featuredIds.length
           ? featuredIds.map((id) => {
-              const p = products.find((row) => row.id === id);
-              const cover = normalizeRenderableImageUrl(p?.images?.[0]?.url || '');
-              return `<button type="button" class="selection-card is-selected" data-remove-featured="${escapeHtml(id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p?.name || id)}</strong><span class="muted">Remove</span></div></button>`;
-            }).join('')
+            const p = products.find((row) => row.id === id);
+            const cover = normalizeRenderableImageUrl(p?.images?.[0]?.url || '');
+            return `<button type="button" class="selection-card is-selected" data-remove-featured="${escapeHtml(id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p?.name || id)}</strong><span class="muted">Remove</span></div></button>`;
+          }).join('')
           : '<div class="muted">No featured products selected yet.</div>';
       }
 
@@ -1152,10 +1152,10 @@
         const pool = products.filter((p) => !!p?.isPublished).filter(matchesSearch);
         featuredPool.innerHTML = pool.length
           ? pool.map((p) => {
-              const active = featuredIds.includes(p.id);
-              const cover = normalizeRenderableImageUrl(p?.images?.[0]?.url || '');
-              return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-featured="${escapeHtml(p.id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p.name || 'Product')}</strong><span class="muted">${escapeHtml(p.isPublished ? 'Published' : 'Draft')}</span></div></button>`;
-            }).join('')
+            const active = featuredIds.includes(p.id);
+            const cover = normalizeRenderableImageUrl(p?.images?.[0]?.url || '');
+            return `<button type="button" class="selection-card ${active ? 'is-selected' : ''}" data-pick-featured="${escapeHtml(p.id)}">${thumb(cover, p?.name || 'Product')}<div class="selection-card-body"><strong>${escapeHtml(p.name || 'Product')}</strong><span class="muted">${escapeHtml(p.isPublished ? 'Published' : 'Draft')}</span></div></button>`;
+          }).join('')
           : '<div class="muted">No products available.</div>';
       }
     }
@@ -1196,9 +1196,9 @@
       promoImageUrl = normalizeHomeImageUrl(source.promoImageUrl);
       slideshowUrls = Array.isArray(source.slideshowUrls)
         ? source.slideshowUrls
-            .map((url) => normalizeHomeImageUrl(url))
-            .filter((url) => isRenderableImageUrl(url))
-            .slice(0, 6)
+          .map((url) => normalizeHomeImageUrl(url))
+          .filter((url) => isRenderableImageUrl(url))
+          .slice(0, 6)
         : [];
       featuredIds = Array.isArray(source.featuredProductIds)
         ? source.featuredProductIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 3)
@@ -1386,6 +1386,11 @@
       setStatus('Saving homepage settings…');
       try {
         await saveHome();
+
+        try {
+          localStorage.removeItem('promoDismissed');
+        } catch (_) { }
+
         showFlash(homeFlash, 'home', 'success', 'Settings saved successfully.');
         setStatus('Homepage settings saved. Refresh the homepage to confirm the changes.');
       } catch (e) {
@@ -1394,6 +1399,7 @@
         setStatus('');
       }
     });
+
 
     qs('[data-action="config-save"]')?.addEventListener('click', async () => {
       setError('');
