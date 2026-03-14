@@ -181,6 +181,14 @@
     return path.endsWith(`/admin/${name}`) || path.endsWith(`/admin/${name}.html`);
   }
 
+  function adminDashboardUrl() {
+    return './dashboard.html';
+  }
+
+  function storefrontLoginUrl() {
+    return `../login.html?returnTo=${encodeURIComponent('/admin/dashboard.html')}`;
+  }
+
   function isAdminLoginPage() {
     return pathIsAdminPage('login');
   }
@@ -190,11 +198,13 @@
 
     const me = await fetchMe();
 
-    // Allow unauthenticated users to remain on admin login page
-    if (!me && isAdminLoginPage()) return;
+    if (isAdminLoginPage()) {
+      location.replace(storefrontLoginUrl());
+      return;
+    }
 
     if (!me) {
-      location.href = './login.html';
+      location.href = storefrontLoginUrl();
       return;
     }
 
@@ -204,7 +214,7 @@
     }
 
     if (isAdminLoginPage()) {
-      location.href = './dashboard.html';
+      location.href = adminDashboardUrl();
     }
   }
 
@@ -292,7 +302,7 @@
     qsa('[data-action="logout"]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         await logoutEverywhere();
-        location.href = './login.html';
+        location.href = storefrontLoginUrl();
       });
     });
   }
@@ -874,6 +884,8 @@
     const saveDraftBtn = buttons[0] || null;
     const publishBtn = buttons[1] || null;
     const deleteBtn = buttons[2] || null;
+    const newProductBtn = qs('#newProductBtn');
+    const openShopBtn = qs('#openShopBtn');
 
     let products = [];
     let editingId = null;
@@ -1045,6 +1057,14 @@
     saveDraftBtn?.addEventListener('click', () => saveProduct(false));
     publishBtn?.addEventListener('click', () => saveProduct(true));
     deleteBtn?.addEventListener('click', deleteProduct);
+    newProductBtn?.addEventListener('click', () => {
+      resetForm();
+      nameInput?.focus();
+      adminToast('Ready for a new product.');
+    });
+    openShopBtn?.addEventListener('click', () => {
+      window.open('../shop-page.html', '_blank', 'noopener');
+    });
 
     resetForm();
     await loadProducts();

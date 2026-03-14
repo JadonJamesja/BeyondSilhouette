@@ -1972,7 +1972,7 @@ app.patch("/api/admin/inventory", async (req, res) => {
 // -----------------------------
 app.get("/admin", (req, res) => {
   const sess = readSession(req);
-  if (!sess?.userId) return res.redirect("/admin/login.html");
+  if (!sess?.userId) return res.redirect("/login.html?returnTo=%2Fadmin%2Fdashboard.html");
   if (sess.role !== "admin") return res.redirect("/");
   return res.redirect("/admin/dashboard.html");
 });
@@ -1981,8 +1981,11 @@ app.use("/admin", (req, res, next) => {
   const p = req.path || "/";
 
   // Always allow login page (and typical static assets) without admin role
+  if (p === "/login.html") {
+    return res.redirect("/login.html?returnTo=%2Fadmin%2Fdashboard.html");
+  }
+
   const isPublic =
-    p === "/login.html" ||
     p.endsWith(".css") ||
     p.endsWith(".js") ||
     p.endsWith(".png") ||
@@ -1995,7 +1998,7 @@ app.use("/admin", (req, res, next) => {
   if (isPublic) return next();
 
   const sess = readSession(req);
-  if (!sess?.userId) return res.redirect("/admin/login.html");
+  if (!sess?.userId) return res.redirect("/login.html?returnTo=%2Fadmin%2Fdashboard.html");
   if (sess.role !== "admin") return res.redirect("/");
 
   return next();
